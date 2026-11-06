@@ -12,15 +12,14 @@
       <section id="editor-pane">
         <div id="editor"></div>
         <section id="variables" hidden>
-          <div class="vars-header"><span class="chevron">▾</span> Variables <span class="vars-count"></span>
-            <span class="vars-hint" title="Top-level `const NAME = 12; // Label [min, max, step]` lines appear here">?</span></div>
+          <div class="vars-header"><span class="chevron">▾</span> Variables <span class="vars-count"></span></div>
           <div class="vars-body"></div>
         </section>
-        <pre id="console"></pre>
       </section>
       <div id="divider"></div>
       <section id="viewer-pane">
         <canvas id="viewport"></canvas>
+        <pre id="console"></pre>
         <div id="top-right">
           <button id="run" class="primary" title="Run (Ctrl/Cmd+Enter)" hidden>▶ Run</button>
           <div class="menu" id="menu-root">
@@ -58,6 +57,9 @@
                   <hr />
                   <button type="button" data-sub="parts">Parts<span class="sub-arrow">›</span></button>
                   <hr />
+                  <button type="button" data-action="assistant"><span class="check"></span>Assistant</button>
+                  <button type="button" data-action="assistant-settings">Assistant settings…</button>
+                  <hr />
                   <a class="menu-link" href="api.html" target="_blank" rel="noopener">API reference
                     <svg class="ext" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M9 2.5h4.5V7M13.5 2.5 7 9M11 9.5v3.3a.7.7 0 0 1-.7.7H3.2a.7.7 0 0 1-.7-.7V5.7a.7.7 0 0 1 .7-.7h3.3"/></svg></a>
                 </div>
@@ -90,6 +92,23 @@
           <button id="cancel" type="button">Cancel</button>
         </div>
       </section>
+      <div id="divider2" hidden></div>
+      <section id="chat" hidden>
+        <div class="chat-head">
+          <span class="chat-title">Assistant</span>
+          <span class="chat-model"></span>
+          <button type="button" class="chat-new" title="Start a new conversation">New chat</button>
+          <button type="button" class="chat-close" title="Hide the assistant">×</button>
+        </div>
+        <div class="chat-log"></div>
+        <form class="chat-form">
+          <textarea class="chat-input" rows="2" placeholder="Describe a change, e.g. “add four M3 countersunk holes in the corners”"></textarea>
+          <div class="chat-buttons">
+            <button type="button" class="chat-stop secondary" hidden>Stop</button>
+            <button type="submit" class="chat-send">Send</button>
+          </div>
+        </form>
+      </section>
     </main>
     <dialog id="plate-dialog">
       <form method="dialog" id="plate-form">
@@ -103,6 +122,22 @@
         <div class="dialog-actions">
           <button type="button" class="secondary" value="cancel" data-cancel>Cancel</button>
           <button type="submit" value="ok">Apply</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="assistant-dialog">
+      <form method="dialog" id="assistant-form">
+        <h2>Assistant settings</h2>
+        <p class="muted">The assistant calls the Anthropic API directly from your browser with your own key. The key is stored only in this browser's local storage and sent only to api.anthropic.com. Usage is billed to your Anthropic account.</p>
+        <label class="field">Anthropic API key
+          <input type="password" name="apiKey" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" />
+        </label>
+        <label class="field">Model
+          <select name="model"></select>
+        </label>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" data-cancel>Cancel</button>
+          <button type="submit" value="ok">Save</button>
         </div>
       </form>
     </dialog>

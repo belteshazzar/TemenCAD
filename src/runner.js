@@ -75,6 +75,17 @@ export function runScript(code, post) {
   console.warn = (...a) => { warn(a.map(fmt).join(' ')); origWarn(...a); };
   console.error = (...a) => { warn(a.map(fmt).join(' ')); origError(...a); };
 
+  /** variable(label, value, min?, max?, step?) — declares a slider; at runtime it just returns the value. */
+  const variable = (label, value, min, max, step) => {
+    if (typeof label !== 'string') throw new TypeError(`variable: first argument must be a label string, got ${fmt(label)}`);
+    if (typeof value !== 'number' && typeof value !== 'boolean') throw new TypeError(`variable "${label}": value must be a number or boolean, got ${fmt(value)}`);
+    for (const [n, x] of [['min', min], ['max', max], ['step', step]]) if (x !== undefined && (typeof x !== 'number' || !Number.isFinite(x))) throw new TypeError(`variable "${label}": ${n} must be a number`);
+    if (typeof value === 'number') {
+      if (min !== undefined && value < min) warn(`variable "${label}": value ${value} is below its minimum ${min}.`);
+      if (max !== undefined && value > max) warn(`variable "${label}": value ${value} is above its maximum ${max}.`);
+    }
+    return value;
+  };
   const shown = [];
   /** show(shape | [shapes], { name, color, ghost, hidden }) */
   const show = (...args) => {
@@ -89,7 +100,7 @@ export function runScript(code, post) {
       shown.push(s);
     }
   };
-  const sandbox = { ...api, show, log, print: log };
+  const sandbox = { ...api, show, log, print: log, variable };
   const names = Object.keys(sandbox);
   const t0 = performance.now();
   try {

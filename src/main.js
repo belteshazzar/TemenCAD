@@ -7,15 +7,16 @@ import { exportSTL, export3MF } from './export.js';
 import { FileManager } from './files.js';
 import { VariablesPanel } from './variables.js';
 import { PLATES, fitProblems } from './plate.js';
+import { Agent, MODELS, DEFAULT_MODEL, describeAgentError } from './agent.js';
 
 const DEFAULT_SCRIPT = `// TextCAD kitchen-sink demo — write JavaScript, see the model.
 // Units are mm, Y is up, the build plate is y = 0. Click "API" for the full list.
 // Each block below shows one capability; they are spread out on the plate.
-// Top-level constants like these show up as sliders in the Variables panel:
-const T = 10;          // Mounting block thickness [4, 20, 1]
-const CUP_WALL = 1.6;  // Cup wall [0.8, 4, 0.1]
-const TEXT_SIZE = 7;   // Tag text size [4, 10, 0.5]
-const SHOW_TEXT = true; // Show text demos
+// variable(label, value, min, max, step) declares a slider in the Variables panel:
+const T = variable('Mounting block thickness', 10, 4, 20, 1);
+const CUP_WALL = variable('Cup wall', 1.6, 0.8, 4, 0.1);
+const TEXT_SIZE = variable('Tag text size', 7, 4, 10, 0.5);
+const SHOW_TEXT = variable('Show text demos', true);
 
 const parts = [];
 // place(shape, x, z, color, name?) — names show up in the Parts panel (top right of the viewport)
@@ -242,10 +243,19 @@ function markTrace(msg, severity, message) {
   t.slice(1).forEach((l, i) => addDiagnostic(l, `Called from here → ${severity} at line ${t[i]}: ${message}`, 'info'));
 }
 
+let lastReport = null;      // structured result of the last build, for the assistant
+let runWaiters = [];        // promises resolved when the next build finishes
+let runDiagnostics = [];    // warnings/errors collected during the current build
+/** Trigger a build and resolve with its report when it finishes. */
+function runAndWait() {
+  return new Promise((resolve) => { runWaiters.push(resolve); run(); });
+}
+
 function run() {
   if (current) { pending = true; return; }
   consoleEl.textContent = '';
   clearDiagnostics();
+  runDiagnostics = [];
   current = { id: ++runId };
   setBusy(true);
   worker.postMessage({ type: 'run', id: current.id, code: editor.state.doc.toString() });
@@ -269,6 +279,7 @@ function onWorkerMessage(e) {
   if (msg.type === 'warn') {
     logLine(`Warning${where(msg)}: ${msg.text}`, 'warn');
     markTrace(msg, 'warning', msg.text);
+    runDiagnostics.push({ severity: 'warning', line: msg.line, calledFrom: msg.trace?.slice(1), message: msg.text });
     return;
   }
   finish(msg);
@@ -352,12 +363,28 @@ function finish(msg) {
     const n = msg.meshes.length;
     const fit = checkFit();
     logLine(`Built ${n} part${n === 1 ? '' : 's'}, ${msg.tris} triangles, ${msg.ms.toFixed(0)} ms${fit}`, 'info');
+    const r3 = (v) => +v.toFixed(2);
+    lastReport = {
+      ok: true,
+      parts: msg.meshes.map((m, i) => {
+        const b = viewer.partBounds(i);
+        return { name: m.name, color: m.color, ghost: m.ghost, hidden: m.hidden, triangles: m.indices.length / 3, volume_mm3: r3(m.volume),
+          min: b ? b.min.toArray().map(r3) : null, max: b ? b.max.toArray().map(r3) : null };
+      }),
+      plate: plate ? { size: [plate.w, plate.d, plate.h], fits: fit.includes('fits the plate') && !fit.includes('not') } : null,
+      warnings: runDiagnostics,
+      build_ms: Math.round(msg.ms),
+    };
   } else {
     logLine(`Error${where(msg)}: ${msg.message}`, 'err');
     markTrace(msg, 'error', msg.message.split('\n')[0]);
+    lastReport = { ok: false, error: { line: msg.line, calledFrom: msg.trace?.slice(1), message: msg.message }, warnings: runDiagnostics };
   }
   current = null;
   setBusy(false);
+  const waiters = runWaiters; runWaiters = [];
+  const report = lastReport;
+  for (const w of waiters) w(report);
   if (pending) { pending = false; run(); }
 }
 
@@ -490,6 +517,125 @@ for (const m of menus) {
 document.addEventListener('click', closeMenus);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenus(); });
 
+// ---- Assistant (chat) ----
+const chatEl = document.getElementById('chat');
+const chatLog = chatEl.querySelector('.chat-log');
+const chatForm = chatEl.querySelector('.chat-form');
+const chatInput = chatEl.querySelector('.chat-input');
+const chatSend = chatEl.querySelector('.chat-send');
+const chatStop = chatEl.querySelector('.chat-stop');
+const chatModelEl = chatEl.querySelector('.chat-model');
+const assistantItem = document.querySelector('[data-action="assistant"]');
+const settings = (() => { try { return JSON.parse(localStorage.getItem('textcad.assistant') || '{}'); } catch { return {}; } })();
+const saveSettings = () => { try { localStorage.setItem('textcad.assistant', JSON.stringify(settings)); } catch {} };
+
+const agent = new Agent({
+  getScript: () => editor.state.doc.toString(),
+  setScript: (text) => {
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text } });
+    clearTimeout(timer); // the assistant builds explicitly via run_model
+  },
+  runAndWait,
+  lastReport: () => lastReport,
+  screenshot: async (view) => {
+    if (view && view !== 'iso') viewer.setView(view); else viewer.resetView();
+    await new Promise((r) => requestAnimationFrame(r));
+    return viewer.snapshot(1024);
+  },
+});
+function applyAssistantSettings() {
+  agent.configure({ apiKey: settings.apiKey, model: settings.model || DEFAULT_MODEL });
+  chatModelEl.textContent = settings.apiKey ? (MODELS.find((m) => m[0] === agent.model)?.[1] ?? agent.model) : 'No API key set';
+}
+applyAssistantSettings();
+
+function addMsg(cls, text = '') {
+  const el = document.createElement('div');
+  el.className = `msg ${cls}`;
+  el.textContent = text;
+  chatLog.appendChild(el);
+  chatLog.scrollTop = chatLog.scrollHeight;
+  return el;
+}
+/** Minimal markdown: fenced code blocks and inline code. */
+function renderMarkdown(el, text) {
+  el.textContent = '';
+  const parts = text.split(/```(?:\w+)?\n?([\s\S]*?)```/g);
+  parts.forEach((p, i) => {
+    if (i % 2) { const pre = document.createElement('pre'); pre.textContent = p.replace(/\n$/, ''); el.appendChild(pre); return; }
+    p.split(/(`[^`]+`)/g).forEach((seg) => {
+      if (/^`[^`]+`$/.test(seg)) { const c = document.createElement('code'); c.textContent = seg.slice(1, -1); el.appendChild(c); }
+      else el.appendChild(document.createTextNode(seg));
+    });
+  });
+}
+function showChatEmpty() {
+  if (!chatLog.children.length) addMsg('empty', settings.apiKey
+    ? 'Describe what you want to build or change. The assistant edits the script, builds it, and checks the result.'
+    : 'Set your Anthropic API key in Assistant settings to start.');
+}
+const divider2 = document.getElementById('divider2');
+function setChatOpen(open) {
+  chatEl.hidden = !open;
+  divider2.hidden = !open;
+  settings.open = open; saveSettings();
+  assistantItem.querySelector('.check').textContent = open ? '✓' : '';
+  if (open) { showChatEmpty(); chatInput.focus(); }
+}
+const TOOL_LABELS = { read_script: 'Reading the script', edit_script: 'Editing the script', write_script: 'Writing the script', run_model: 'Building the model', take_screenshot: 'Taking a screenshot' };
+
+chatForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = chatInput.value.trim();
+  if (!text || agent.busy) return;
+  if (!settings.apiKey) { openAssistantSettings(); return; }
+  chatLog.querySelector('.msg.empty')?.remove();
+  addMsg('user', text);
+  chatInput.value = '';
+  chatSend.disabled = true; chatStop.hidden = false;
+  let bubble = null;
+  const ensureBubble = () => bubble ?? (bubble = addMsg('assistant'));
+  let streamed = '';
+  try {
+    await agent.send(text, {
+      onText: (delta) => { streamed += delta; renderMarkdown(ensureBubble(), streamed); chatLog.scrollTop = chatLog.scrollHeight; },
+      onTool: (name) => { bubble = null; streamed = ''; addMsg('tool', `${TOOL_LABELS[name] ?? name}…`); },
+      onDone: (final) => { if (final?.stop_reason === 'refusal') addMsg('error', 'The model declined this request.'); },
+    });
+  } catch (err) {
+    addMsg('error', describeAgentError(err));
+    if (err instanceof Error && /API key/.test(err.message)) openAssistantSettings();
+  } finally {
+    chatSend.disabled = false; chatStop.hidden = true;
+    chatInput.focus();
+  }
+});
+chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); chatForm.requestSubmit(); } });
+chatStop.addEventListener('click', () => agent.stop());
+chatEl.querySelector('.chat-new').addEventListener('click', () => { if (agent.busy) agent.stop(); agent.reset(); chatLog.textContent = ''; showChatEmpty(); });
+chatEl.querySelector('.chat-close').addEventListener('click', () => setChatOpen(false));
+
+const assistantDialog = document.getElementById('assistant-dialog');
+const assistantForm = document.getElementById('assistant-form');
+for (const [id, label] of MODELS) assistantForm.elements.model.appendChild(Object.assign(document.createElement('option'), { value: id, textContent: label }));
+function openAssistantSettings() {
+  assistantForm.elements.apiKey.value = settings.apiKey || '';
+  assistantForm.elements.model.value = settings.model || DEFAULT_MODEL;
+  assistantForm.querySelector('[data-cancel]').onclick = () => assistantDialog.close('cancel');
+  assistantDialog.showModal();
+  assistantForm.elements.apiKey.focus();
+}
+assistantDialog.addEventListener('close', () => {
+  if (assistantDialog.returnValue !== 'ok') return;
+  settings.apiKey = assistantForm.elements.apiKey.value.trim();
+  settings.model = assistantForm.elements.model.value;
+  saveSettings();
+  applyAssistantSettings();
+  chatLog.querySelector('.msg.empty')?.remove();
+  if (!chatEl.hidden) showChatEmpty();
+});
+if (settings.open) setChatOpen(true);
+
 // Drill-down submenus (Plate, Parts): slide between the main panel and the sub panel.
 const mainMenu = document.querySelector('#menu-root > .menu-items');
 const panelMain = mainMenu.querySelector('.panel-main');
@@ -515,7 +661,10 @@ function closeSub() { mainMenu.classList.remove('drilled'); fitMenuHeight(); }
 mainMenu.addEventListener('click', (e) => {
   const subBtn = e.target.closest('[data-sub]');
   if (subBtn) { e.stopPropagation(); openSub(subBtn.dataset.sub); return; }
-  if (e.target.closest('.menu-back')) { e.stopPropagation(); closeSub(); }
+  if (e.target.closest('.menu-back')) { e.stopPropagation(); closeSub(); return; }
+  const action = e.target.closest('button')?.dataset.action;
+  if (action === 'assistant') { setChatOpen(chatEl.hidden); closeMenus(); }
+  if (action === 'assistant-settings') { openAssistantSettings(); closeMenus(); }
 });
 
 // File menu
@@ -546,15 +695,18 @@ menu.addEventListener('click', async (e) => {
   } catch (err) { reportErr(err); }
 });
 
-// Draggable divider
-const divider = document.getElementById('divider');
+// Draggable dividers: editor | viewer | chat
+function makeDivider(el, onMove) {
+  el.addEventListener('pointerdown', (e) => {
+    el.setPointerCapture(e.pointerId);
+    const move = (ev) => onMove(ev.clientX);
+    const up = () => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+  });
+}
 const editorPane = document.getElementById('editor-pane');
-divider.addEventListener('pointerdown', (e) => {
-  divider.setPointerCapture(e.pointerId);
-  const move = (ev) => { editorPane.style.width = `${Math.max(200, ev.clientX)}px`; };
-  const up = () => { divider.removeEventListener('pointermove', move); divider.removeEventListener('pointerup', up); };
-  divider.addEventListener('pointermove', move);
-  divider.addEventListener('pointerup', up);
-});
+makeDivider(document.getElementById('divider'), (x) => { editorPane.style.width = `${Math.max(200, x)}px`; });
+makeDivider(divider2, (x) => { chatEl.style.width = `${Math.max(260, window.innerWidth - x)}px`; });
 
 run();

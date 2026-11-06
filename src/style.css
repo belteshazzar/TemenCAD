@@ -29,9 +29,12 @@ button:hover { background: var(--accent-hover); }
 #editor .cm-activeLine { background: #f3f1ec; }
 #editor .cm-activeLineGutter { background: #f3f1ec; }
 #editor .cm-scroller { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-#console { margin: 0; height: 120px; overflow: auto; padding: 6px 10px; background: var(--sunken);
-  border-top: 1px solid var(--border); font-family: ui-monospace, monospace; font-size: 12px;
-  white-space: pre-wrap; color: var(--text); }
+/* Console: overlay along the bottom of the 3D view */
+#console { position: absolute; left: 10px; right: 10px; bottom: 10px; margin: 0; max-height: 30%; overflow: auto;
+  padding: 6px 10px; background: rgba(251,250,247,.9); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08); backdrop-filter: blur(2px); font-family: ui-monospace, monospace; font-size: 12px;
+  white-space: pre-wrap; color: var(--text); z-index: 15; }
+#console:empty { display: none; }
 #console .err { color: var(--error); }
 #console .warn { color: #9a6700; }
 #console .info { color: var(--muted); }
@@ -81,7 +84,6 @@ button:hover { background: var(--accent-hover); }
 #variables.collapsed .chevron { transform: rotate(-90deg); }
 #variables.collapsed .vars-body { display: none; }
 #variables .vars-count { color: var(--muted); font-weight: 400; }
-#variables .vars-hint { margin-left: auto; color: var(--muted); font-weight: 400; border: 1px solid var(--border); border-radius: 50%; width: 16px; height: 16px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; cursor: help; }
 #variables .vars-body { overflow: auto; padding: 4px 10px 8px; display: grid; grid-template-columns: minmax(70px, 1fr) 2fr 68px; gap: 4px 10px; align-items: center; }
 #variables .var-row { display: contents; }
 #variables .var-row label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -146,3 +148,30 @@ dialog .muted { color: var(--muted); margin: 0 0 14px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 button.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
 button.secondary:hover { background: var(--hover); }
+
+/* Assistant chat column */
+#chat { width: 360px; min-width: 260px; flex: none; background: var(--panel); display: flex; flex-direction: column; }
+#chat[hidden] { display: none; }
+#divider2 { width: 5px; cursor: col-resize; background: var(--border); flex: none; }
+#divider2:hover { background: var(--accent); }
+#divider2[hidden] { display: none; }
+.chat-head { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--border); }
+.chat-title { font-weight: 600; }
+.chat-model { color: var(--muted); font-size: 11px; flex: 1; }
+.chat-head button { background: transparent; color: var(--muted); padding: 2px 6px; font-size: 12px; }
+.chat-head button:hover { background: var(--hover); color: var(--text); }
+.chat-log { flex: 1; overflow: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+.msg { max-width: 92%; padding: 6px 10px; border-radius: 8px; white-space: pre-wrap; line-height: 1.45; }
+.msg.user { align-self: flex-end; background: #e3eefb; }
+.msg.assistant { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); }
+.msg.tool { align-self: flex-start; color: var(--muted); font-size: 11px; padding: 0 4px; }
+.msg.error { align-self: stretch; color: var(--error); background: #fdf1ef; border: 1px solid #f3c9c2; }
+.msg pre { background: var(--sunken); padding: 6px 8px; border-radius: 4px; overflow: auto; font-size: 12px; margin: 6px 0; }
+.msg code { font-family: ui-monospace, monospace; font-size: 12px; }
+.msg.empty { color: var(--muted); align-self: center; background: transparent; border: 0; text-align: center; }
+.chat-form { display: flex; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--border); align-items: flex-end; }
+.chat-input { flex: 1; resize: none; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
+.chat-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.chat-buttons { display: flex; gap: 6px; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+.field input, .field select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }

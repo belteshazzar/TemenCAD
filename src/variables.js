@@ -1,14 +1,12 @@
 /**
- * Variables panel: top-level `const NAME = <number|boolean>;` lines become sliders
- * and checkboxes. A trailing comment sets label and range:
- *   const W = 60;        // Width [10, 200, 1]      -> label "Width", min 10, max 200, step 1
- *   const R = 2.5;       // [0.5:10:0.5]            -> OpenSCAD-style range
- *   const SOLID = true;  // Solid body              -> checkbox
- * Changing a control rewrites the literal in the editor, so the script stays the single source of truth.
+ * Variables panel: top-level declarations that call variable() become sliders and checkboxes:
+ *   const W = variable("Width", 60, 10, 200, 1);   // label, value, min, max, step
+ *   const R = variable("Radius", 2.5);             // range inferred from the value
+ *   const SOLID = variable("Solid body", true);    // checkbox
+ * Changing a control rewrites the value argument in the editor, so the script stays the single source of truth.
  */
 
-const LINE_RE = /^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(-?\d+(?:\.\d+)?|true|false)\s*;?[ \t]*(?:\/\/[ \t]*(.*?))?[ \t]*$/;
-const RANGE_RE = /\[\s*(-?[\d.]+)\s*[:,]\s*(-?[\d.]+)\s*(?:[:,]\s*(-?[\d.]+)\s*)?\]/;
+const LINE_RE = /^(?<pre>(?:const|let|var)\s+(?<name>[A-Za-z_$][\w$]*)\s*=\s*variable\(\s*(?<q>["'`])(?<label>.*?)\k<q>\s*,\s*)(?<value>-?\d+(?:\.\d+)?|true|false)\s*(?:,\s*(?<min>-?\d+(?:\.\d+)?)\s*)?(?:,\s*(?<max>-?\d+(?:\.\d+)?)\s*)?(?:,\s*(?<step>-?\d+(?:\.\d+)?)\s*)?\)\s*;?[ \t]*(?:\/\/.*)?$/;
 
 function nice(x) { // round up to 1, 2, 5 × 10^k
   if (x <= 0) return 0;
@@ -32,18 +30,16 @@ export function parseVariables(text) {
   for (const line of text.split('\n')) {
     const m = line.match(LINE_RE);
     if (m) {
-      const [, name, literal, comment = ''] = m;
-      const litStart = offset + line.indexOf(literal, line.indexOf('=') + 1);
+      const { pre, name, label, value: literal, min, max, step } = m.groups;
+      const litStart = offset + pre.length;
       const isBool = literal === 'true' || literal === 'false';
-      const v = { name, from: litStart, to: litStart + literal.length, type: isBool ? 'boolean' : 'number' };
+      const v = { name, label: label.trim() || name, from: litStart, to: litStart + literal.length, type: isBool ? 'boolean' : 'number' };
       v.value = isBool ? literal === 'true' : Number(literal);
-      const r = comment.match(RANGE_RE);
-      v.label = comment.replace(RANGE_RE, '').trim() || name;
       if (!isBool) {
         const inf = inferRange(v.value, literal);
-        v.min = r ? Number(r[1]) : inf.min;
-        v.max = r ? Number(r[2]) : inf.max;
-        v.step = r && r[3] !== undefined ? Number(r[3]) : inf.step;
+        v.min = min !== undefined ? Number(min) : inf.min;
+        v.max = max !== undefined ? Number(max) : inf.max;
+        v.step = step !== undefined ? Number(step) : inf.step;
         if (!(v.max > v.min)) { v.min = inf.min; v.max = inf.max; }
         if (!(v.step > 0)) v.step = inf.step;
       }

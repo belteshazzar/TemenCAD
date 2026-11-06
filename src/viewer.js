@@ -196,6 +196,14 @@ export class Viewer {
     this.plateOutline.material.opacity = ok ? 0.6 : 0.95;
   }
 
+  /** World-space bounding box of one part by index (null if missing). */
+  partBounds(index) {
+    const m = this.modelGroup.children[index];
+    if (!m) return null;
+    if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    return m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld);
+  }
+
   /** Bounding box of visible, non-ghost parts (null if none). */
   visibleBounds() {
     const box = new THREE.Box3();
@@ -237,5 +245,21 @@ export class Viewer {
   render() {
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * Render now and return a PNG of the view, downscaled so the longest side is `maxDim`.
+   * Returns { dataUrl, mediaType, data } where data is base64 without the prefix.
+   */
+  snapshot(maxDim = 1024) {
+    this.render(); // the WebGL buffer is only readable right after a render
+    const src = this.renderer.domElement;
+    const scale = Math.min(1, maxDim / Math.max(src.width, src.height));
+    const w = Math.max(1, Math.round(src.width * scale)), h = Math.max(1, Math.round(src.height * scale));
+    const out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    out.getContext('2d').drawImage(src, 0, 0, w, h);
+    const dataUrl = out.toDataURL('image/png');
+    return { dataUrl, mediaType: 'image/png', data: dataUrl.slice(dataUrl.indexOf(',') + 1) };
   }
 }

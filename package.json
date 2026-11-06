@@ -12,6 +12,7 @@
     "vite": "^8.3.6"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lint": "^6.9.7",
     "codemirror": "^6.0.2",
