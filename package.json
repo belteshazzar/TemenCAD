@@ -1,0 +1,23 @@
+{
+  "name": "textcad",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^8.3.6"
+  },
+  "dependencies": {
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lint": "^6.9.7",
+    "codemirror": "^6.0.2",
+    "fflate": "^0.8.2",
+    "manifold-3d": "^3.5.4",
+    "opentype.js": "^2.0.0",
+    "three": "^0.187.0"
+  }
+}

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TextCAD API reference</title>
+    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/api.css" />
+  </head>
+  <body class="api-page">
+    <main class="api">
+<h2>TextCAD API</h2>
+      <p>Your script is JavaScript. Return a shape (or an array of shapes), or call <code>show(shape)</code>. Units are millimetres, Y is up, the build plate is y&nbsp;=&nbsp;0.</p>
+      <h3>3D primitives</h3>
+      <pre>box(w, h, d)                 roundedBox(w, h, d, r, { edges: 'all' | 'vertical' })
+sphere(r)                    cylinder(r, h)   cylinder({ r1, r2, h })   cone(r, h)
+torus(r, tube)               prism(sides, r, h)   polygon([[x,y], ...], h)
+polyhedron(points, faces)    loft([sk1, sk2, ...], height | [y1, y2, ...])
+text3d('Hi', { size, height, align })</pre>
+      <h3>2D sketches → 3D</h3>
+      <pre>circle(r)  rect(w, h)  roundedRect(w, h, r)  slot(length, r)  regularPolygon(n, r)  polygon2d(pts)
+sk.translate(x, y)  sk.rotate(deg)  sk.scale(x, y)  sk.mirror('x')  sk.add/subtract/intersect/hull(other)
+sk.offset(delta, { join: 'round' | 'miter' | 'square' })   // grow (+) or shrink (−) a 2D region
+sk.fillet(r)  sk.chamfer(d)                                 // round or cut every corner
+text('Hi', { size, font: 'Inter', align, letterSpacing })  // 2D text, baseline at y = 0
+extrude(sk, h, { center, twist, scale })      // up along Y;  sk.extrude(h, opts)
+revolve(sk, { angle, segments })              // around Y, sketch x = radius;  sk.revolve(opts)</pre>
+      <h3>Transforms (return a new shape)</h3>
+      <pre>s.translate(x, y, z)   s.rotate(xDeg, yDeg, zDeg)   s.scale(f | x, y, z)   s.mirror('x')   s.color('#f80')
+s.onPlate()   s.center()   s.centerXZ()   s.align({ x: 'min' | 'center' | 'max', y, z }, [tx, ty, tz])</pre>
+      <h3>Booleans, hull, Minkowski</h3>
+      <pre>union(a, b, ...)   difference(a, b, ...)   intersect(a, b)   hull(a, b, ... | [x,y,z] points)
+a.add(b)  a.subtract(b)  a.intersect(b)  a.hull(b)      // arrays of shapes are accepted everywhere
+minkowski(a, b)  a.round(r)  a.erode(t)                 // round() = Minkowski with a sphere
+shell(a, t, { open: 'top' | ['top', 'front'] })  a.shell(t, opts)   // hollow to a wall thickness</pre>
+      <h3>Arrays (return arrays; wrap in union() to merge)</h3>
+      <pre>linearArray(s, count, [dx, dy, dz])   polarArray(s, count, { radius, axis, start, sweep })
+grid(s, [nx, nz], [dx, dz])</pre>
+      <h3>Screw helpers (cutters to subtract; axis Y, top surface at y = 0)</h3>
+      <pre>screwHole('M3', length, { type: 'clearance' | 'tap' | 'countersunk' | 'counterbore', tolerance })
+nutPocket('M3', { depth })   heatInsert('M3', { depth })   screw('M3') → { d, clearance, head, csk, nut, insert, tap }
+Sizes: M2 M2.5 M3 M4 M5 M6 M8</pre>
+      <h3>Named parts</h3>
+      <pre>s.name('lid')        show(s, { name: 'lid', ghost: true })      return { body, lid }   // keys become names
+s.ghost()            // transparent reference, never exported
+s.hide()             // listed in the Parts panel but not drawn until you switch it on
+// The Parts panel (top right of the viewport) toggles visibility, ghosts, solos (double-click) and exports each part.</pre>
+      <h3>Variables panel</h3>
+      <pre>const W = 60;        // Width [10, 200, 1]   → slider with label, min, max, step
+const R = 2.5;       // [0.5:10:0.5]         → OpenSCAD-style range
+const SOLID = true;  // Solid body           → checkbox
+// Any top-level const/let with a plain number or boolean appears in the panel;
+// dragging a control rewrites the value in the script.</pre>
+      <h3>Helpers</h3>
+      <pre>show(shape)  log(...)  s.bounds()  s.volume()  s.surfaceArea()  deg(rad)  rad(deg)  Math.*</pre>
+      <p class="muted">Geometry kernel: <a href="https://github.com/elalish/manifold" target="_blank" rel="noopener">Manifold</a> (C++ via WebAssembly). All output is watertight.</p>
+      <p class="muted">Units are millimetres, Y is up, the build plate is y = 0. Every operation returns a new shape; nothing is mutated.</p>
+    </main>
+  </body>
+</html>
