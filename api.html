@@ -193,6 +193,15 @@ interference(a, b) / a.interference(b)            // shared volume in mm³; 0 wh
 intersects(a, b) / a.intersects(b)                // true when they share any volume
 overlap(a, b) / a.overlap(b)                      // the shared volume as a Shape, to show() or subtract
 // Check a design in the script: assert(clearance(lid, body) >= 0.3, 'lid binds'); assert(!intersects(screw, wall)).</pre>
+      <h3>Printability</h3>
+      <pre>minWallThickness(s) / s.minWallThickness()       // { thickness, at }: the thinnest wall, by casting rays inward from the surface
+overhangs(s, { angle }) / s.overhangs(opts)       // { area, worstAngle, lowest, faces }: undersides steeper than angle (45°) from vertical
+printability(s, { angle, minWall, maxUnsupported })  // { ok, problems: [...], overhangs, unsupported, minWall, bounds }: the verdict
+s.printability(opts)                              // method form
+unsupported(s, { angle }) / s.unsupported(opts)   // the overhangs with nothing of the shape below them: islands and bridges
+// Faces resting on the plate (y = 0) never count. Supports from other parts are not seen: check an assembly part by part.
+// assert(printability(part).ok, 'needs supports') makes the build fail until the design prints cleanly;
+// the command line runs the same check with --check and writes everything to JSON with --report.</pre>
       <h3>Projects and imports</h3>
       <pre>import { lid, WALL } from './lid.js'              // another script; lid.js uses export const / function
 import logo from './Logo.ttf'                     // a font in the project: text3d('Hi', { font: logo })

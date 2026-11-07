@@ -52,6 +52,11 @@ export const GLOBALS = [
   fn('interference', 'interference(${a}, ${b})', '(a, b)', 'Volume two shapes share in mm³.'),
   fn('intersects', 'intersects(${a}, ${b})', '(a, b)', 'True when two shapes share any volume.'),
   fn('overlap', 'overlap(${a}, ${b})', '(a, b)', 'The volume two shapes share, as a Shape.'),
+  // Printability
+  fn('printability', 'printability(${shape})', '(shape, { angle, minWall, maxUnsupported })', 'Printing verdict: { ok, problems, overhangs, unsupported, minWall }.'),
+  fn('overhangs', 'overhangs(${shape})', '(shape, { angle })', 'Area of undersides steeper than angle (45°) from vertical.'),
+  fn('unsupported', 'unsupported(${shape})', '(shape, { angle })', 'Overhangs with nothing below them: islands and bridges.'),
+  fn('minWallThickness', 'minWallThickness(${shape})', '(shape)', 'The thinnest wall: { thickness, at }.'),
   // Edges
   fn('fillet', "fillet(${shape}, ${r}, { edges: '${top}' })", '(shape | sketch, r, { edges, segments })', 'Round the sharp edges of a solid (or the corners of a sketch).'),
   fn('chamfer', "chamfer(${shape}, ${d}, { edges: '${top}' })", '(shape | sketch, d, { edges })', 'Bevel the sharp edges of a solid (or cut the corners of a sketch).'),
@@ -115,6 +120,10 @@ export const METHODS = [
   method('interference', 'interference(${other})', '(other)', 'Volume shared with another shape in mm³.', 'shape'),
   method('intersects', 'intersects(${other})', '(other)', 'True when the shapes share any volume.', 'shape'),
   method('overlap', 'overlap(${other})', '(other)', 'The volume shared with another shape, as a Shape.', 'shape'),
+  method('printability', 'printability()', '({ angle, minWall })', 'Printing verdict: { ok, problems, ... }.', 'shape'),
+  method('overhangs', 'overhangs()', '({ angle })', 'Undersides steeper than 45°: { area, worstAngle }.', 'shape'),
+  method('unsupported', 'unsupported()', '({ angle })', 'Islands and bridges: overhangs with nothing below.', 'shape'),
+  method('minWallThickness', 'minWallThickness()', '()', 'The thinnest wall: { thickness, at }.', 'shape'),
   method('surfaceArea', 'surfaceArea()', '()', 'Surface area in mm².', 'shape'),
   method('isEmpty', 'isEmpty()', '()', 'True if the shape has no volume / area.', 'both'),
   method('area', 'area()', '()', 'Area of a sketch in mm².', 'sketch'),

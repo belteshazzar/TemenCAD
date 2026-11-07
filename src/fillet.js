@@ -176,29 +176,92 @@ function endPlanes(e, atEnd, edges) {
   return planes;
 }
 
-/** The prism for one edge: its section swept from p0 to p1 with mitred ends. */
-function prism(e, sec, edges) {
-  const starts = endPlanes(e, false, edges), ends = endPlanes(e, true, edges);
-  const L = e.length;
-  const pos = [];
-  const lo = [], hi = [];
-  for (const q of sec) {
-    // Where several loops meet, keep the most generous mitre: overlaps merge, gaps would show.
-    let a = Infinity, b = -Infinity;
-    for (const n of starts) a = Math.min(a, -dot(q, n) / dot(e.t, n));
-    for (const n of ends) b = Math.max(b, L - dot(q, n) / dot(e.t, n));
-    if (b < a + 1e-4) b = a + 1e-4;
-    lo.push(a); hi.push(b);
+/** Ring of points for a section placed at `station`, projected along t onto the plane(s): the nearest for a start (min), the furthest for an end (max). */
+function ringAt(sec, t, station, planes, pickMax) {
+  return sec.map((q) => {
+    let best = pickMax ? -Infinity : Infinity;
+    for (const n of planes) { const l = -dot(q, n) / dot(t, n); best = pickMax ? Math.max(best, l) : Math.min(best, l); }
+    return addv(addv(station, q), mul(t, best));
+  });
+}
+
+/** An edge oriented to start at vertex key v. */
+const orient = (e, v) => (e.v0 === v ? e : { ...e, p0: e.p1, p1: e.p0, v0: e.v1, v1: e.v0, t: mul(e.t, -1) });
+const sharedFace = (a, b) => a.faces.find((f) => b.faces.includes(f));
+
+/**
+ * Group edges of one kind into chains: an edge continues through a vertex when exactly one other
+ * edge there shares a face with it, and the shared face stays the same along the chain. Returns
+ * [{ edges (oriented head to tail), face, closed }].
+ */
+function chains(edges) {
+  edges.forEach((e, i) => { e.id = i; });
+  const at = new Map();
+  for (const e of edges) for (const v of [e.v0, e.v1]) { const l = at.get(v); if (l) l.push(e); else at.set(v, [e]); }
+  const nextOf = (e, v) => { const c = (at.get(v) ?? []).filter((o) => o.id !== e.id && sharedFace(e, o) !== undefined); return c.length === 1 ? c[0] : null; };
+  const used = new Set(), out = [];
+  for (const start of edges) {
+    if (used.has(start.id)) continue;
+    // Walk back to the head of the chain, or detect a loop.
+    let head = start, v = start.v0, closed = false;
+    const back = new Set([start.id]);
+    for (;;) {
+      const p = nextOf(head, v);
+      if (!p) break;
+      if (p.id === start.id) { closed = true; break; }
+      if (back.has(p.id)) break;
+      back.add(p.id); v = p.v0 === v ? p.v1 : p.v0; head = p;
+    }
+    let cur = closed ? orient(start, start.v0) : orient(head, v);
+    let chain = [cur], face = null;
+    used.add(cur.id);
+    for (;;) {
+      const n = nextOf(cur, cur.v1);
+      if (!n || used.has(n.id)) break;
+      const f = sharedFace(cur, n);
+      if (face === null) face = f;
+      if (f !== face) { out.push({ edges: chain, face, closed: false }); chain = []; face = f; }
+      const o = orient(n, cur.v1);
+      chain.push(o); used.add(n.id); cur = o;
+    }
+    const loop = closed && chain.length >= 3 && chain[chain.length - 1].v1 === chain[0].v0 && sharedFace(chain[chain.length - 1], chain[0]) === face;
+    out.push({ edges: chain, face: face ?? chain[0].faces[0], closed: loop });
   }
-  const n = sec.length;
-  sec.forEach((q, i) => { const p = addv(addv(e.p0, q), mul(e.t, lo[i])); pos.push(p[0], p[1], p[2]); });
-  sec.forEach((q, i) => { const p = addv(addv(e.p0, q), mul(e.t, hi[i])); pos.push(p[0], p[1], p[2]); });
+  return out;
+}
+
+/** One continuous skin along a chain of edges: sections at every vertex, mitred, capped at open ends. */
+function chainMesh({ edges: chain, face, closed }, kind, amount, segments, eps, all) {
+  const k = chain.length;
+  // Sections with the chain's shared face as A, so every ring has the same point order.
+  const secs = chain.map((e) => section(e.faces[0] === face ? e : { ...e, nA: e.nB, nB: e.nA }, kind, amount, segments, eps));
+  const n = secs[0].length;
+  const rings = [];
+  const stations = closed ? k : k + 1;
+  for (let i = 0; i < stations; i++) {
+    const ein = chain[(i - 1 + k) % k], eout = chain[i % k];
+    const station = i < k ? eout.p0 : ein.p1;
+    if (!closed && i === 0) rings.push(ringAt(secs[0], eout.t, station, endPlanes(eout, false, all), false));
+    else if (!closed && i === k) rings.push(ringAt(secs[k - 1], ein.t, station, endPlanes(ein, true, all), true));
+    else {
+      let nb = norm(addv(ein.t, eout.t));
+      if (len(nb) < 1e-6 || Math.abs(dot(nb, ein.t)) < 0.05) nb = ein.t;
+      rings.push(ringAt(secs[(i - 1 + k) % k], ein.t, station, [nb], true));
+    }
+  }
+  const pos = [];
+  for (const ring of rings) for (const p of ring) pos.push(p[0], p[1], p[2]);
   const tris = [];
-  for (let k = 0; k < n; k++) { const k2 = (k + 1) % n; tris.push(k, k2, n + k2, k, n + k2, n + k); }
-  // Caps: triangulate the section in its own plane.
-  const e1 = e.nA, e2 = cross(e.t, e.nA);
-  const flat = sec.map((q) => [dot(q, e1), dot(q, e2)]);
-  for (const [i0, i1, i2] of M().triangulate([flat], 1e-9)) { tris.push(i0, i2, i1); tris.push(n + i0, n + i1, n + i2); }
+  for (let i = 0; i < k; i++) {
+    const a = i * n, b = ((i + 1) % rings.length) * n;
+    for (let j = 0; j < n; j++) { const j2 = (j + 1) % n; tris.push(a + j, a + j2, b + j2, a + j, b + j2, b + j); }
+  }
+  if (!closed) {
+    const cap = (sec, e) => { const e1 = e.faces[0] === face ? e.nA : e.nB, e2 = cross(e.t, e1); return M().triangulate([sec.map((q) => [dot(q, e1), dot(q, e2)])], 1e-9); };
+    for (const [i0, i1, i2] of cap(secs[0], chain[0])) tris.push(i0, i2, i1);
+    const top = k * n;
+    for (const [i0, i1, i2] of cap(secs[k - 1], chain[k - 1])) tris.push(top + i0, top + i1, top + i2);
+  }
   return manifoldFromTriangles('fillet', pos, tris);
 }
 
@@ -207,10 +270,10 @@ function pass(shape, kind, amount, { want, segments, minAngle, eps }, concavePas
   const chosen = all.filter((e) => want(e) && (!e.convex) === concavePass);
   if (!chosen.length) return { shape, count: 0 };
   const parts = [];
-  for (const e of chosen) {
-    if (e.length < amount * 0.05) continue; // slivers: nothing to round
-    try { parts.push(prism(e, section(e, kind, amount, segments, eps), chosen)); }
-    catch (err) { hooks.warn(`${kind}: skipped an edge (${err.message})`); }
+  const edges = chosen.filter((e) => e.length >= amount * 0.05); // slivers: nothing to round
+  for (const c of chains(edges)) {
+    try { parts.push(chainMesh(c, kind, amount, segments, eps, edges)); }
+    catch (err) { hooks.warn(`${kind}: skipped ${c.edges.length} edge${c.edges.length === 1 ? '' : 's'} (${err.message})`); }
   }
   if (!parts.length) return { shape, count: 0 };
   const MF = M().Manifold;
@@ -242,3 +305,4 @@ Shape.prototype.fillet = function (r, opts) { return filletEdges('fillet', this,
 Shape.prototype.chamfer = function (d, opts) { return filletEdges('chamfer', this, d, opts); };
 
 export const filletApi = { fillet, chamfer, sharpEdges };
+export const _internals = { section, chains, chainMesh, endPlanes };

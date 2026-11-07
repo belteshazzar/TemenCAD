@@ -13,11 +13,12 @@ TemenCAD is a code-driven CAD for 3D printing: a JavaScript script is the model.
 node bin/temencad.mjs model.js -o model.stl --png model.png   # build, export, and render a picture to look at
 node bin/temencad.mjs model.js --png sheet.png --views all     # iso, top, front, right, bottom, back on one sheet, labelled
 node bin/temencad.mjs model.js --png cut.png --section y=5     # cut open at a plane; cut faces are red
+node bin/temencad.mjs model.js --check --report report.json    # printability warnings (exit 3) and a JSON report to parse
 node bin/temencad.mjs model.js --plate prusa-mk4              # exit code 2 if it does not fit the plate
 node bin/temencad.mjs project.temen -o out.3mf --parts        # a .temen archive; one STL per named part too
 ```
 
-The build prints `ECHO` lines from `echo()`, warnings with file and line, and errors with a stack mapped back to the script. `assert()` stops the build with a message. Look at the PNG: part names, the size in each view, a scale bar and an axis triad are drawn on it; ghost (reference) parts are translucent. In the script, `clearance(a, b)`, `interference(a, b)`, `intersects(a, b)` and `overlap(a, b)` measure how parts relate, so `assert(clearance(part, reference) >= 0.5)` makes the build itself catch a bad fit.
+The build prints `ECHO` lines from `echo()`, warnings with file and line, and errors with a stack mapped back to the script. `assert()` stops the build with a message. Look at the PNG: part names, the size in each view, a scale bar and an axis triad are drawn on it; ghost (reference) parts are translucent. In the script, `clearance(a, b)`, `interference(a, b)`, `intersects(a, b)` and `overlap(a, b)` measure how parts relate, so `assert(clearance(part, reference) >= 0.5)` makes the build itself catch a bad fit. `printability(part)` reports overhangs past 45°, unsupported islands and bridges, and the thinnest wall; `assert(printability(part).ok)` fails the build until it prints cleanly. Prefer `--report` JSON over parsing the console.
 
 ## Repository map
 

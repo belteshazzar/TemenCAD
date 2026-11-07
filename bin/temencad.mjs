@@ -9,6 +9,7 @@
  *   temencad model.js --plate prusa-mk4   check the result against a printer's build volume
  *   temencad model.js --png out.png   also render a picture of the result (no browser needed)
  *   temencad model.js --png out.png --views all --section y=5   a contact sheet of views, cut open at y = 5
+ *   temencad model.js --check --report report.json   printability warnings, and everything as JSON for tools and agents
  *   temencad api                      print the API reference as plain text (for people and agents)
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -21,6 +22,8 @@ import { buildProject, loadProject } from '../src/headless.js';
 import { readPackage, vendorPackage, addImportLine } from '../src/package.js';
 import { CATALOG_URL } from '../src/config.js';
 import { renderViews, sectionMeshes, VIEW_NAMES } from '../src/render.js';
+import { meshStats, printability } from '../src/print.js';
+import { polyhedronFromMesh } from '../src/cad.js';
 import { colorHex } from '../src/export.js';
 import { referenceFromHtml } from '../src/api-text.js';
 import { fileURLToPath } from 'node:url';
@@ -48,13 +51,17 @@ Options:
                         (x and z remove the positive side); cut faces are drawn red
       --size <WxH>      Size of one view in pixels (default 960x720)
       --no-labels       Plain render without labels
+      --check           Check each part for printing: overhangs past 45°, unsupported islands and bridges,
+                        walls under 0.8 mm, parts below the plate. Problems are printed as warnings; exit code 3
+      --report <file>   Write a JSON report: parts (bounds, volume, surface area, centre of mass), warnings with
+                        file and line, echo lines, the plate check and the --check results
       --into <file>     For "add": the project to add to (default ./main.js)
   -q, --quiet           Only print errors
   -h, --help            Show this help
 `;
 
 function parseArgs(argv) {
-  const o = { script: null, output: null, parts: false, plate: null, quiet: false, add: null, into: null, png: null, size: [960, 720], views: ['iso'], section: null, labels: true };
+  const o = { script: null, output: null, parts: false, plate: null, quiet: false, add: null, into: null, png: null, size: [960, 720], views: ['iso'], section: null, labels: true, check: false, report: null };
   if (argv[0] === 'api') { process.stdout.write(referenceFromHtml(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'api.html'), 'utf8')) + '\n'); process.exit(0); }
   if (argv[0] === 'add') { o.add = argv[1] ?? fail(USAGE); argv = argv.slice(2); }
   for (let i = 0; i < argv.length; i++) {
@@ -69,6 +76,8 @@ function parseArgs(argv) {
     else if (a === '--views') { const v = (argv[++i] ?? '').toLowerCase(); o.views = v === 'all' ? ['iso', 'top', 'front', 'right', 'bottom', 'back'] : v.split(',').map((s) => s.trim()).filter(Boolean); for (const n of o.views) if (!VIEW_NAMES.includes(n)) fail(`Unknown view "${n}". Use ${VIEW_NAMES.join(', ')} or all.`); }
     else if (a === '--section') { const m = (argv[++i] ?? '').match(/^([xyz])\s*=\s*(-?\d+(?:\.\d+)?)$/i); if (!m) fail('--section needs axis=value, e.g. --section y=5'); o.section = { axis: m[1].toLowerCase(), value: +m[2] }; }
     else if (a === '--no-labels') o.labels = false;
+    else if (a === '--check') o.check = true;
+    else if (a === '--report') o.report = argv[++i];
     else if (a === '--size') { const m = (argv[++i] ?? '').match(/^(\d+)x(\d+)$/i); if (!m) fail('--size needs WxH in pixels, e.g. 960x720'); o.size = [+m[1], +m[2]]; }
     else if (a === '-q' || a === '--quiet') o.quiet = true;
     else if (a.startsWith('-')) fail(`Unknown option ${a}\n\n${USAGE}`);
@@ -113,10 +122,18 @@ async function main() {
   const plate = opts.plate ? parsePlate(opts.plate) : null;
 
   const where = (m) => whereText(m.trace);
+  const logs = [], warnings = [];
+  const report = { ok: false, script: scriptPath, output: null, parts: [], warnings, logs, plate: null, check: null, triangles: 0, ms: 0 };
+  const writeReport = () => { if (opts.report) { mkdirSync(dirname(resolve(opts.report)), { recursive: true }); writeFileSync(resolve(opts.report), JSON.stringify(report, null, 2) + '\n'); log(`Wrote ${resolve(opts.report)}`); } };
   let result;
   try {
-    result = await buildProject(project, { onLog: log, onWarn: (m) => console.error(`Warning${where(m)}: ${m.text}`) });
+    result = await buildProject(project, {
+      onLog: (t) => { logs.push(t); log(t); },
+      onWarn: (m) => { warnings.push({ text: m.text, file: m.file ?? null, line: m.line ?? null }); console.error(`Warning${where(m)}: ${m.text}`); },
+    });
   } catch (err) {
+    report.error = { message: err.message, file: err.file ?? null, line: err.line ?? null, trace: err.trace ?? [] };
+    writeReport();
     fail(`Error${where(err)}: ${err.message}`);
   }
 
@@ -124,16 +141,31 @@ async function main() {
   const parts = all.filter((m) => !m.ghost && !m.hidden);
   const skipped = all.length - parts.length;
   log(`Built ${all.length} part${all.length === 1 ? '' : 's'}, ${result.tris} triangles, ${result.ms.toFixed(0)} ms${skipped ? ` (${skipped} ghost/hidden not exported)` : ''}`);
-  if (!parts.length) fail('Nothing to export: no visible, non-ghost parts');
+  report.ok = true; report.triangles = result.tris; report.ms = +result.ms.toFixed(1);
+  report.parts = all.map((p) => { const st = meshStats(p.positions, p.indices); return { name: p.name, color: p.color, ghost: p.ghost, hidden: p.hidden, triangles: p.indices.length / 3, volume: +st.volume.toFixed(3), surfaceArea: +st.surfaceArea.toFixed(3), centerOfMass: st.centerOfMass.map((v) => +v.toFixed(3)), bounds: { min: st.bounds.min, max: st.bounds.max, size: st.bounds.size } }; });
+  if (!parts.length) { writeReport(); fail('Nothing to export: no visible, non-ghost parts'); }
   for (const p of parts) log(`  ${p.name}: ${p.indices.length / 3} triangles, ${p.volume.toFixed(1)} mm³`);
+
+  let checkFailed = false;
+  if (opts.check) {
+    report.check = [];
+    for (const p of parts) {
+      const r = printability(polyhedronFromMesh(p.name, p.positions, p.indices));
+      report.check.push({ name: p.name, ok: r.ok, problems: r.problems, overhangArea: +r.overhangs.area.toFixed(2), unsupportedArea: +r.unsupported.area.toFixed(2), minWall: Number.isFinite(r.minWall.thickness) ? +r.minWall.thickness.toFixed(3) : null });
+      for (const pr of r.problems) { console.error(`Check: ${p.name}: ${pr}`); checkFailed = true; }
+      if (r.ok) log(`  ${p.name}: prints without supports (walls ≥ ${Number.isFinite(r.minWall.thickness) ? r.minWall.thickness.toFixed(2) : '∞'} mm)`);
+    }
+  }
 
   if (plate) {
     const over = fitProblems(bounds(parts), plate);
+    report.plate = { id: plate.id, size: [plate.w, plate.d, plate.h], fits: !over.length, problems: over };
     if (over.length) console.error(`Does not fit ${plate.w}×${plate.d}×${plate.h} plate: ${over.join(', ')}.`);
     else log(`Fits the ${plate.w}×${plate.d}×${plate.h} plate.`);
   }
 
   mkdirSync(dirname(output), { recursive: true });
+  report.output = output;
   if (format === '.stl') { const { data, triangles } = buildSTL(parts); writeFileSync(output, Buffer.from(data)); log(`Wrote ${output} (${triangles} triangles)`); }
   else { writeFileSync(output, build3MF(parts)); log(`Wrote ${output} (${parts.length} part${parts.length === 1 ? '' : 's'})`); }
 
@@ -155,7 +187,8 @@ async function main() {
       log(`Wrote ${file}`);
     }
   }
-  process.exitCode = plate && fitProblems(bounds(parts), plate).length ? 2 : 0;
+  writeReport();
+  process.exitCode = plate && fitProblems(bounds(parts), plate).length ? 2 : checkFailed ? 3 : 0;
 }
 
 /** temencad add <name>: fetch the package from the catalogue and vendor it into a folder project or a .temen file. */

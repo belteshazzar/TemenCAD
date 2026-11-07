@@ -16,8 +16,9 @@ Run `npx temencad api` (in this repository: `node bin/temencad.mjs api`) and rea
 1. Write `model.js`. Declare dimensions as named constants at the top so the part stays parametric.
 2. Build and look: `npx temencad model.js -o model.stl --png model.png --views iso,top,front,right`, then view the PNG: each view is labelled with the part names, its size, a scale bar and axes; ghosts (reference parts) are translucent. `--section y=5` cuts the model open to inspect holes and cavities. (In the app the same sheet comes from Menu → Render views…, and the in-app assistant has it as the `render_views` tool.) Read every `Warning` and `ECHO` line. Use `echo(shape.bounds())` and `assert()` liberally while developing.
    - Model the thing the part must fit as a ghost (`show(ref, { ghost: true })`) and check it in code: `assert(clearance(part, ref) >= 0.5, 'binds')`, `assert(!intersects(cutter, wall))`, `echo(interference(a, b))`. `overlap(a, b)` returns the shared volume as a shape you can show.
-3. Check the plate when the printer is known: `--plate prusa-mk4` (`--list-plates` for presets, or `220x220x250`).
-4. Export STL for single-material prints or `-o model.3mf` for named, coloured parts.
+3. Run `--check` (overhangs past 45°, islands and bridges, walls under 0.8 mm, below the plate) and read `--report report.json` instead of parsing the console: it holds every part's bounds, volume, surface area and centre of mass, the warnings with file and line, the echo lines and the plate check. In the script, `assert(printability(part).ok, 'needs supports')` makes the build fail until the design prints cleanly.
+4. Check the plate when the printer is known: `--plate prusa-mk4` (`--list-plates` for presets, or `220x220x250`).
+5. Export STL for single-material prints or `-o model.3mf` for named, coloured parts.
 
 ## Conventions that avoid most mistakes
 
