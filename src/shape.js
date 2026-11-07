@@ -10,6 +10,7 @@ export const hooks = { warn: (msg) => console.warn(msg) };
 // ---- Argument checking: fail at the call site with a readable message ----
 export function describe(v) {
   if (v instanceof Shape) return 'a Shape';
+  if (v?.cs && typeof v.toPolygons === 'function') return 'a 2D sketch'; // duck-typed: sketch.js imports this module
   if (v === null) return 'null';
   if (Array.isArray(v)) return `an array [${v.slice(0, 4).map(describe).join(', ')}${v.length > 4 ? ', …' : ''}]`;
   if (typeof v === 'string') return JSON.stringify(v);

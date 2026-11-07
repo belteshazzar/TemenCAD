@@ -25,7 +25,8 @@ sk.offset(delta, { join: 'round' | 'miter' | 'square' })   // grow (+) or shrink
 sk.fillet(r)  sk.chamfer(d)                                 // round or cut every corner
 text('Hi', { size, font: 'Inter', align, letterSpacing })  // 2D text, baseline at y = 0
 extrude(sk, h, { center, twist, scale })      // up along Y;  sk.extrude(h, opts)
-revolve(sk, { angle, segments })              // around Y, sketch x = radius;  sk.revolve(opts)</pre>
+revolve(sk, { angle, segments })              // around Y, sketch x = radius;  sk.revolve(opts)
+projection(s)  projection(s, { cut: true | y })   // 3D → 2D: footprint seen from above, or the slice at y;  s.projection(opts)</pre>
       <h3>Transforms (return a new shape)</h3>
       <pre>s.translate(x, y, z)   s.rotate(xDeg, yDeg, zDeg)   s.scale(f | x, y, z)   s.mirror('x')   s.color('#f80')
 s.onPlate()   s.center()   s.centerXZ()   s.align({ x: 'min' | 'center' | 'max', y, z }, [tx, ty, tz])

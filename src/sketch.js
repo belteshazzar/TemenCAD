@@ -227,6 +227,26 @@ export function slot(length = 2, r = 0.5, { segments = 32 } = {}) {
   return hull2d(circle(r, { segments }).translate(-length / 2, 0), circle(r, { segments }).translate(length / 2, 0));
 }
 
+// ---------- 3D -> 2D ----------
+
+/** Inverse of Z_TO_Y: takes a world-space (Y-up) solid back to Manifold's Z-up frame, so Y becomes the projection axis. */
+const Y_TO_Z = [90, 0, 0];
+
+/**
+ * Flatten a solid onto the ground plane as a 2D sketch (sketch x = world X, sketch y = world -Z).
+ * projection(s)                    — outline of the whole solid seen from above (its footprint)
+ * projection(s, { cut: true })     — the cross-section where the plane y = 0 slices the solid
+ * projection(s, { cut: 12 })       — the cross-section at y = 12
+ */
+export function projection(shape, { cut = false } = {}) {
+  if (!(shape instanceof Shape)) throw new TypeError(`projection: first argument must be a Shape, got ${describe(shape)}`);
+  const zUp = track(shape.m.rotate(Y_TO_Z));
+  if (cut === false || cut === undefined) return new Sketch(zUp.project());
+  const y = cut === true ? 0 : checkNumber('projection', 'cut', cut);
+  return new Sketch(zUp.slice(y));
+}
+Shape.prototype.projection = function (opts) { return projection(this, opts); };
+
 // ---------- 2D -> 3D ----------
 
 /**
@@ -257,5 +277,5 @@ export function revolve(sketch, { angle = 360, segments = 64 } = {}) {
 
 export const sketchApi = {
   Sketch, circle, ellipse, rect, square, roundedRect, regularPolygon, polygon2d, slot, text, text3d,
-  union2d, difference2d, intersect2d, hull2d, extrude, revolve,
+  union2d, difference2d, intersect2d, hull2d, extrude, revolve, projection,
 };
