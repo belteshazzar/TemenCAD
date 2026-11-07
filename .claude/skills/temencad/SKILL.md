@@ -35,6 +35,7 @@ Run `npx temencad api --list` (in this repository: `node bin/temencad.mjs api`) 
 
 ## Design for printing
 
+- Labels and logos: `part.emboss('v2', part.face('front'), { depth: 0.8, size: 6 })` or `engrave`; both take a sketch too, orient it to read from outside, centre it on the face (or `at: [u, v]`), and work on anchors with a direction.
 - Declare the printer at the top: `printer({ nozzle: 0.4, layer: 0.2, holeCompensation: 0.2 })`. Then `wall(1)` gives a wall of whole extrusion lines (1.2), `layers(3.1)` a height of whole layers (3.2), `fit(6, 'slide')` the hole diameter for a 6 mm peg and `peg(6, 'slide')` the peg for a 6 mm hole; `hole()` compensates itself. Kinds: press, snug, slide, clearance, loose, or an allowance in mm.
 
 - Horizontal holes: `hole(r, length, { axis: 'z' })` gives a teardrop that prints without sagging; `shape: 'bridge'` keeps it round with a flat ceiling; `flat` clips the point near a surface.

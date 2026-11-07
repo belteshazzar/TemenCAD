@@ -135,6 +135,8 @@ export const METHODS = [
   method('intersects', 'intersects(${other})', '(other)', 'True when the shapes share any volume.', 'shape'),
   method('overlap', 'overlap(${other})', '(other)', 'The volume shared with another shape, as a Shape.', 'shape'),
   method('anchor', "anchor('${name}', [${x}, ${y}, ${z}])", '(name, [x, y, z], [nx, ny, nz]?) | (name)', 'Record a named point that moves with the shape, or get it back as { point, normal }.', 'shape'),
+  method('emboss', "emboss('${text}', ${face}, { depth: ${1} })", "(sketch | 'text', face | anchor, { depth, at, angle, size, font, center })", 'Raise a sketch or text out of a face, oriented to read from outside.', 'shape'),
+  method('engrave', "engrave('${text}', ${face}, { depth: ${0.6} })", "(sketch | 'text', face | anchor, { depth, at, angle, size, font, center })", 'Cut a sketch or text into a face.', 'shape'),
   method('face', "face('${top}')", "('top' | 'bottom' | 'front' | 'back' | 'left' | 'right')", 'A face of the bounding box: { center, normal, min, max, size }.', 'shape'),
   method('at', 'at(${face}, [${u}, ${v}])', '(face, [u, v], { gap, orient })', "Put the shape's origin on a face with +Y along its normal (cutters and bosses land on it).", 'shape'),
   method('placeOn', "placeOn(${base}, '${top}')", "(base, face, { at: [u, v], gap, align })", 'Put the shape on a face of another, touching and centred.', 'shape'),

@@ -138,6 +138,10 @@ if (SHOW_TEXT) {
   place(text3d('3D', { size: 12, height: 3, align: 'center', font: 'Nunito Bold' }), 35, 50, '#ff8f8f');
 }
 
+// 12b. Lettering on any face: emboss raises, engrave cuts; text reads correctly from outside
+const tagBlock = box(18, 8, 12).onPlate();
+place(tagBlock.emboss('TEMEN', tagBlock.face('front'), { depth: 0.8, size: 4 }).engrave('v2', tagBlock.face('top'), { depth: 0.5, size: 5 }), 65, 50, '#ffd27f', 'lettered');
+
 // 13. Loft between profiles, and a shelled cup (hollow with an open top)
 place(loft([circle(6), rect(8, 8).fillet(2), regularPolygon(6, 4)], [0, 8, 16]), 60, 50, '#d3a6ff');
 place(cylinder(7, 14).shell(CUP_WALL, { open: 'top' }), -70, 75, '#7fe0e0', 'cup');

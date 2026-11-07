@@ -11,6 +11,7 @@ import { placeApi } from './place.js';
 import { annotateApi } from './annotate.js';
 import { sketchPathApi } from './sketch-path.js';
 import { printProfileApi, printProfile } from './print-profile.js';
+import { embossApi } from './emboss.js';
 
 export { Shape, Sketch, deg, rad };
 
@@ -484,6 +485,7 @@ export const api = {
   ...annotateApi,
   ...sketchPathApi,
   ...printProfileApi,
+  ...embossApi,
   Shape, box, cube, roundedBox, sphere, cylinder, cone, torus, polygon, prism,
   union, difference, intersect, hull, minkowski, shell, polyhedron, loft, resize, roof,
   linearArray, polarArray, grid,

@@ -159,6 +159,13 @@ sharpEdges(s, minAngle)                           // the edges found: [{ p0, p1,
 // Works on solids with flat faces: boxes, prisms, extrusions, unions of those. Edges between faces that meet at
 // less than minAngle (30°) are left alone, so the facets of cylinders and spheres are not treated as edges.
 // Convex edges lose material, concave edges (where a boss meets a plate) gain a fillet. Corners are mitred.</pre>
+      <h3>Lettering on a face</h3>
+      <pre>s.emboss(sketch | 'text', face | anchor, { depth, at, angle, size, font, center })  // raise a sketch or text out of a face by depth (default 1)
+s.engrave(sketch | 'text', face | anchor, opts)   // cut it in by depth
+// Laid on the face so it reads from outside: top as a drawing seen from above; front, back, left and right upright with
+// x to the viewer's right; bottom seen from below. Centred on the face (or on at: [u, v]) unless center is false;
+// angle turns it in the plane. A string becomes text(str, { size (6), font, align: 'center' }).
+// box(40, 20, 30).onPlate().emboss('TEMEN', s.face('front'), { depth: 1, size: 7 }).engrave('v2', s.face('top'), { depth: 0.6 })</pre>
       <h3>Placement by named features</h3>
       <pre>s.face('top' | 'bottom' | 'front' | 'back' | 'left' | 'right')  // a face of the bounding box: { center, normal, min, max, size, u, v }
 face.point([u, v]) / face.point({ x, y, z })      // a point on the face: [u, v] along its in-plane axes (top: x, z; front: x, y; right: z, y)
