@@ -267,6 +267,50 @@ export function loft(profiles, heights = 1, { segments = 64 } = {}) {
   return new Shape(manifoldFromTriangles('loft', pos, tris));
 }
 
+// ---------- Roof ----------
+
+/**
+ * Solid over a sketch whose height at each point is the distance to the nearest outline edge
+ * (times tan(angle)), like OpenSCAD's roof(): a pyramid from a square, a hip roof from a rectangle,
+ * a cone from a circle; holes and concave corners form valleys. The base sits on y = 0.
+ * opts: { angle=45 (slope in degrees, 0 < angle < 90), segments=16, tolerance=0.01 }
+ *
+ * Built exactly: a point lies above the roof when some outline point is closer than its height, so
+ * the part to remove from the straight extrusion is, per edge, hull(cone at a, cone at b). Those are
+ * subtracted in small sequential batches with staggered cone heights, which the kernel handles far
+ * faster than one union of hundreds of overlapping, coplanar-topped cutters. `tolerance` simplifies
+ * the outline first (text outlines carry many sub-0.01 mm edges that cost time and add nothing).
+ */
+export function roof(sketch, { angle = 45, segments = 16, tolerance = 0.01 } = {}) {
+  if (!(sketch instanceof Sketch)) throw new TypeError(`roof: first argument must be a 2D sketch, got ${describe(sketch)}`);
+  checkNumber('roof', 'angle', angle); checkInt('roof', 'segments', segments, 3); checkNonNegative('roof', 'tolerance', tolerance);
+  if (!(angle > 0 && angle < 90)) throw new RangeError(`roof: angle must be between 0 and 90 degrees, got ${angle}`);
+  if (sketch.isEmpty()) throw new RangeError('roof: the sketch is empty');
+  const cs = tolerance > 0 ? track(sketch.cs.simplify(tolerance)) : sketch.cs;
+  const slope = Math.tan((angle * Math.PI) / 180);
+  // No point is farther from the outline than half the smaller bounding-box side.
+  const R = Math.min(...sketch.bounds().size) / 2 * 1.01 + 1e-6;
+  const H = R * slope;
+  // A few cone sizes so neighbouring cutters never share a top plane (coplanar faces are the slow path).
+  const cones = Array.from({ length: 7 }, (_, k) => { const r = R * (1.05 + 0.03 * k); return track(MF().cylinder(r * slope, 0, r, segments, false)); });
+  const cutters = [];
+  let k = 0;
+  for (const ring of cs.toPolygons()) {
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length], cone = cones[k++ % cones.length];
+      cutters.push(track(MF().hull([track(cone.translate([a[0], a[1], 0])), track(cone.translate([b[0], b[1], 0]))])));
+    }
+  }
+  let zUp = track(cs.extrude(H));
+  const CHUNK = 32;
+  for (let i = 0; i < cutters.length; i += CHUNK) {
+    zUp = track(MF().difference([zUp, ...cutters.slice(i, i + CHUNK)]));
+    zUp.numTri(); // evaluate now; one lazy tree over every cutter is the slow path again
+  }
+  return new Shape(zUp.rotate(Z_TO_Y));
+}
+Sketch.prototype.roof = function (opts) { return roof(this, opts); };
+
 // ---------- Minkowski, rounding, shell ----------
 
 /** Minkowski sum: sweep `b` over every point of `a`. Rounds `a` when `b` is a sphere. */
@@ -454,7 +498,7 @@ export function heatInsert(size, { depth, tolerance = 0, segments = 32 } = {}) {
 export const api = {
   ...sketchApi,
   Shape, box, cube, roundedBox, sphere, cylinder, cone, torus, polygon, prism,
-  union, difference, intersect, hull, minkowski, shell, polyhedron, loft, resize,
+  union, difference, intersect, hull, minkowski, shell, polyhedron, loft, resize, roof,
   linearArray, polarArray, grid,
   SCREWS, screw, screwHole, nutPocket, heatInsert,
   deg, rad,
