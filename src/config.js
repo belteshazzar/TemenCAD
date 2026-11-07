@@ -13,4 +13,4 @@ export const CATALOG_REPO_URL = 'https://github.com/belteshazzar/TemenCAD-catalo
  * submitted package into a pull request. Empty means "not deployed": the Share dialog then downloads the
  * package and explains how to open the pull request by hand.
  */
-export const PUBLISH_URL = '';
+export const PUBLISH_URL = 'https://temencad-publish.temen.workers.dev';
