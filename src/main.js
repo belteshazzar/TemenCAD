@@ -5,7 +5,6 @@ import { lintGutter, setDiagnostics } from '@codemirror/lint';
 import { Viewer } from './viewer.js';
 import { exportSTL, export3MF } from './export.js';
 import { FileManager } from './files.js';
-import { VariablesPanel } from './variables.js';
 import { PLATES, fitProblems } from './plate.js';
 import { Builder } from './build.js';
 import { PartsPanel } from './parts-panel.js';
@@ -42,7 +41,7 @@ function scheduleRun(delay = 400) {
 }
 function run() { builder.run(); }
 
-// ---- Editor, file manager, variables ----
+// ---- Editor and file manager ----
 const editor = new EditorView({
   doc: store.get(STORAGE_KEY) ?? DEFAULT_SCRIPT,
   extensions: [
@@ -59,7 +58,6 @@ const editor = new EditorView({
       if (u.docChanged) {
         store.set(STORAGE_KEY, u.state.doc.toString());
         files?.markChanged();
-        variables?.refresh();
         scheduleRun();
       }
     }),
@@ -78,9 +76,6 @@ const files = new FileManager({
   fileInput: document.getElementById('file-input'),
   onChange: (f) => { document.title = `${f.dirty ? '• ' : ''}${f.name} — TemenCAD`; },
 });
-// Sliders rewrite the source; rebuild quickly since the kernel is fast.
-const variables = new VariablesPanel(document.getElementById('variables'), editor, () => scheduleRun(60));
-variables.refresh();
 window.addEventListener('beforeunload', (e) => { if (files.dirty) e.preventDefault(); });
 
 // ---- Diagnostics (editor squiggles) ----

@@ -2,11 +2,11 @@
 export const DEFAULT_SCRIPT = `// TemenCAD kitchen-sink demo — write JavaScript, see the model.
 // Units are mm, Y is up, the build plate is y = 0. Click "API" for the full list.
 // Each block below shows one capability; they are spread out on the plate.
-// variable(label, value, min, max, step) declares a slider in the Variables panel:
-const T = variable('Mounting block thickness', 10, 4, 20, 1);
-const CUP_WALL = variable('Cup wall', 1.6, 0.8, 4, 0.1);
-const TEXT_SIZE = variable('Tag text size', 7, 4, 10, 0.5);
-const SHOW_TEXT = variable('Show text demos', true);
+// Dimensions declared up top keep the model parametric: change a number, the model rebuilds.
+const T = 10;          // mounting block thickness
+const CUP_WALL = 1.6;  // cup wall thickness
+const TEXT_SIZE = 7;   // tag text size
+const SHOW_TEXT = true;
 
 const parts = [];
 // place(shape, x, z, color, name?) — names show up in the Parts panel (top right of the viewport)

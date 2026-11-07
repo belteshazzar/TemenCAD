@@ -45,12 +45,6 @@ Sizes: M2 M2.5 M3 M4 M5 M6 M8</pre>
 s.ghost()            // transparent reference, never exported
 s.hide()             // listed in the Parts panel but not drawn until you switch it on
 // The Parts panel (top right of the viewport) toggles visibility, ghosts, solos (double-click) and exports each part.</pre>
-      <h3>Variables panel</h3>
-      <pre>const W = variable('Width', 60, 10, 200, 1);   // label, value, min, max, step → slider
-const R = variable('Radius', 2.5);             // range inferred from the value
-const SOLID = variable('Solid body', true);    // checkbox
-// Must be a top-level const/let. At run time variable() simply returns the value;
-// dragging a control rewrites the value argument in the script.</pre>
       <h3>Helpers</h3>
       <pre>show(shape)  log(...)  s.bounds()  s.volume()  s.surfaceArea()  deg(rad)  rad(deg)  Math.*</pre>
       <p class="muted">Geometry kernel: <a href="https://github.com/elalish/manifold" target="_blank" rel="noopener">Manifold</a> (C++ via WebAssembly). All output is watertight.</p>

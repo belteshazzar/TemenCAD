@@ -76,20 +76,6 @@ button:hover { background: var(--accent-hover); }
 #busy button:hover { background: var(--hover); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Variables panel */
-#variables { border-top: 1px solid var(--border); background: var(--panel); max-height: 40%; display: flex; flex-direction: column; }
-#variables .vars-header { padding: 5px 10px; font-weight: 600; cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
-#variables .vars-header:hover { background: var(--hover); }
-#variables .chevron { display: inline-block; transition: transform .15s; font-size: 11px; }
-#variables.collapsed .chevron { transform: rotate(-90deg); }
-#variables.collapsed .vars-body { display: none; }
-#variables .vars-count { color: var(--muted); font-weight: 400; }
-#variables .vars-body { overflow: auto; padding: 4px 10px 8px; display: grid; grid-template-columns: minmax(70px, 1fr) 2fr 68px; gap: 4px 10px; align-items: center; }
-#variables .var-row { display: contents; }
-#variables .var-row label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#variables input[type=range] { width: 100%; margin: 0; accent-color: var(--accent); }
-#variables input[type=number] { width: 68px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 3px; background: var(--surface); color: var(--text); font: inherit; }
-#variables input[type=checkbox] { grid-column: 2 / 4; justify-self: start; accent-color: var(--accent); }
 
 /* Parts dropdown */
 .parts-items .parts-body { padding: 0 4px 4px; }
