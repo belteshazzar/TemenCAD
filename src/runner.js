@@ -1,19 +1,24 @@
 /**
- * Runs a user script against the CAD API and turns the result into mesh buffers.
- * Pure module (no bundler-specific imports) so it can be tested in Node.
+ * Runs a project against the CAD API and turns the result into mesh buffers.
+ * Scripts are real ES modules (see modules.js); the entry's top-level code runs as the body of
+ * an async function so `return` and `await` work. Pure module (no bundler-specific imports) so
+ * the command-line tool can use it in Node.
  */
-import { api, Shape, Sketch } from './cad.js';
+import { api, Shape, Sketch, polyhedronFromMesh } from './cad.js';
 import { hooks } from './shape.js';
 import { releaseAll } from './engine.js';
-
-const PRELUDE = '"use strict";\n';
+import { registerFont } from './fonts.js';
+import { buildModules, ModuleError } from './modules.js';
+import { isFontFile, isMeshFile, ENTRY } from './project.js';
+import { parseSTL } from './stl.js';
+import { locText } from './trace.js';
 
 /** Thrown by a script's assert(); reported without the "Error:" class prefix. */
 class AssertionError extends Error { constructor(message) { super(message); this.name = 'AssertionError'; } }
 
-/** A script failure with the user-script line(s) it came from. */
+/** A script failure with the user-script location(s) it came from: trace = [{ file, line }], innermost first. */
 export class ScriptError extends Error {
-  constructor(message, trace) { super(message); this.name = 'ScriptError'; this.trace = trace; this.line = trace[0] ?? null; }
+  constructor(message, trace) { super(message); this.name = 'ScriptError'; this.trace = trace; this.file = trace[0]?.file ?? null; this.line = trace[0]?.line ?? null; }
 }
 
 export function fmt(v) {
@@ -42,33 +47,26 @@ export function fmtEcho(v, depth = 0) {
 }
 
 /**
- * Find user-script lines in a stack trace. Engines report code inside
- * `new Function` differently (V8: "<anonymous>:L:C", Firefox: "Function:L:C",
- * Safari: "anonymous@...:L:C") and add a different number of header lines,
- * so we probe once and subtract that offset.
+ * Map a stack trace to project files. Every frame that mentions one of this run's module URLs
+ * followed by :line:column is translated through `locate(url)` -> { file, offset }.
  */
-function rawLines(stack = '') {
+function traceFrom(stack = '', modules) {
   const out = [];
+  const seen = new Set();
   for (const frame of stack.split('\n')) {
-    const m = frame.match(/(?:<anonymous>|\bFunction|\banonymous@?)[^\n]*?:(\d+):(\d+)\)?\s*$/) || frame.match(/(?:<anonymous>|\bFunction):(\d+)/);
-    if (m) out.push(+m[1]);
+    for (const url of modules.urls) {
+      const i = frame.indexOf(url);
+      if (i < 0) continue;
+      const m = frame.slice(i + url.length).match(/^:(\d+)(?::(\d+))?/);
+      if (!m) continue;
+      const { file, offset } = modules.locate(url);
+      const line = Math.max(1, +m[1] - offset);
+      const key = `${file}:${line}`;
+      if (!seen.has(key)) { seen.add(key); out.push({ file, line }); }
+      break;
+    }
   }
   return out; // innermost first
-}
-const LINE_OFFSET = (() => {
-  try { new Function(PRELUDE + '\nthrow new Error("probe")')(); } // user line 2
-  catch (e) { const l = rawLines(e.stack)[0] ?? (e.line ? e.line : null); if (l != null) return l - 2; }
-  return null;
-})();
-/** All user-script lines on the stack, innermost first, deduplicated. */
-export function userTrace(err) {
-  if (LINE_OFFSET == null) return [];
-  let lines = rawLines(err?.stack);
-  if (!lines.length) {
-    const l = typeof err?.line === 'number' ? err.line : typeof err?.lineNumber === 'number' ? err.lineNumber : null;
-    if (l != null) lines = [l];
-  }
-  return [...new Set(lines.map((l) => Math.max(1, l - LINE_OFFSET)))];
 }
 
 /**
@@ -88,14 +86,32 @@ function collect(items, nameHint) {
   return out;
 }
 
+// Parsed fonts and meshes are cached across runs by name, size and a sparse checksum of the bytes.
+const assetCache = new Map();
+function checksum(buffer) {
+  const b = new Uint8Array(buffer);
+  let h = b.length;
+  for (let i = 0; i < b.length; i += 997) h = (h * 31 + b[i]) >>> 0;
+  return h;
+}
+function cached(name, buffer, parse) {
+  const key = `${name}:${buffer.byteLength}:${checksum(buffer)}`;
+  if (!assetCache.has(key)) assetCache.set(key, parse());
+  return assetCache.get(key);
+}
+
 /**
- * Execute `code`. `post(msg)` receives { type: 'log' | 'warn', ... } during the run.
- * Returns { meshes: [{ positions, indices, color }], tris, ms }.
- * Throws a ScriptError (message, line, trace) on failure. Always frees wasm objects afterwards.
+ * Execute a project. `files` is { name: string | ArrayBuffer } with a main.js entry.
+ * `post(msg)` receives { type: 'log' | 'warn', ... } during the run.
+ * `env.makeUrl(source)` creates an importable module URL; `env.revokeUrl(url)` frees it afterwards.
+ * Resolves to { meshes: [{ positions, indices, color, name, ghost, hidden, volume }], tris, ms }.
+ * Rejects with a ScriptError (message, file, line, trace). Always frees wasm objects afterwards.
  */
-export function runScript(code, post) {
+export async function runScript(files, post, env) {
+  let modules = { urls: [], locate: () => null };
+  const trace = (err) => traceFrom(err?.stack, modules);
   const log = (...args) => post({ type: 'log', text: args.map(fmt).join(' ') });
-  const warn = (text, trace = userTrace(new Error())) => post({ type: 'warn', text, line: trace[0] ?? null, trace });
+  const warn = (text, t = trace(new Error())) => post({ type: 'warn', text, file: t[0]?.file ?? null, line: t[0]?.line ?? null, trace: t });
   const origWarnHook = hooks.warn;
   hooks.warn = (msg) => warn(msg);
   const origWarn = console.warn, origError = console.error;
@@ -104,8 +120,8 @@ export function runScript(code, post) {
 
   /** echo(...values) — OpenSCAD-style console output: ECHO: 1, "a", [1, 2], w = 10. Returns the first value, so it works inline. */
   const echo = (...args) => {
-    const trace = userTrace(new Error());
-    post({ type: 'log', text: `ECHO${trace[0] ? ` (line ${trace[0]})` : ''}: ${args.map((a) => fmtEcho(a)).join(', ')}` });
+    const t = trace(new Error());
+    post({ type: 'log', text: `ECHO${t[0] ? ` (${locText(t[0])})` : ''}: ${args.map((a) => fmtEcho(a)).join(', ')}` });
     return args[0];
   };
   /** assert(condition, message?) — stops the build with an error at the call site when the condition is falsy. Returns the condition. */
@@ -127,12 +143,22 @@ export function runScript(code, post) {
       shown.push(s);
     }
   };
+  /** `import part from './part.stl'` evaluates to this: the mesh as a Shape, Z-up converted to Y-up. */
+  const loadMesh = (name) => {
+    const { positions, tris } = cached(name, files[name], () => parseSTL(files[name]));
+    return polyhedronFromMesh(name, positions, tris);
+  };
   const sandbox = { ...api, show, log, print: log, echo, assert };
-  const names = Object.keys(sandbox);
   const t0 = performance.now();
+  const prev = globalThis.__temen;
+  globalThis.__temen = { api: sandbox, loadMesh };
   try {
-    const fn = new Function(...names, PRELUDE + code);
-    const result = fn(...names.map((n) => sandbox[n]));
+    for (const [name, content] of Object.entries(files)) {
+      if (isFontFile(name)) cached(name, content, () => { registerFont(name, content); return true; });
+    }
+    modules = buildModules(files, Object.keys(sandbox), env.makeUrl);
+    const mod = await import(/* @vite-ignore */ modules.entryUrl);
+    const result = await mod.default();
     const shapes = [...shown, ...collect(result === undefined ? [] : [result])];
 
     const meshes = [];
@@ -149,10 +175,15 @@ export function runScript(code, post) {
     });
     return { meshes, tris, ms: performance.now() - t0 };
   } catch (err) {
-    throw new ScriptError(err instanceof AssertionError ? err.message : String(err), userTrace(err));
+    if (err instanceof ModuleError) throw new ScriptError(err.message, err.file ? [{ file: err.file, line: err.line ?? 1 }] : []);
+    const t = trace(err);
+    if (!t.length && err instanceof SyntaxError && modules.urls.length) t.push({ file: ENTRY, line: null });
+    throw new ScriptError(err instanceof AssertionError ? err.message : String(err), t);
   } finally {
     console.warn = origWarn; console.error = origError;
     hooks.warn = origWarnHook;
+    globalThis.__temen = prev;
+    for (const url of modules.urls) env.revokeUrl?.(url);
     releaseAll();
   }
 }

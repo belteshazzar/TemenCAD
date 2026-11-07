@@ -30,8 +30,8 @@ function referenceText() {
 const SYSTEM = `You are the modelling assistant inside TemenCAD, a browser app where a JavaScript script describes a 3D model for 3D printing. The user types plain English; you change the script so the model matches, then build it and check the result.
 
 How to work:
-- The current script and the last build report are included with every user message. Read them before deciding what to change.
-- Make the smallest edit that does the job with edit_script (exact-match replacement). Use write_script only for new models or large rewrites.
+- The project's files and the last build report are included with every user message. Read them before deciding what to change. main.js is the entry script; other .js files are ES modules it imports (\`import { lid } from './lid.js'\`, \`export const lid = ...\`). Fonts (.ttf/.otf) and meshes (.stl) in the project are imported the same way: \`import logo from './Logo.ttf'\` gives a font name for text(), \`import part from './part.stl'\` gives a Shape.
+- Make the smallest edit that does the job with edit_script (exact-match replacement; pass \`file\` for anything other than main.js). Use write_script only for new models, new files or large rewrites.
 - After every change call run_model and read the report. Fix any error or warning it reports (they include line numbers) before replying. If the report says the model does not fit the plate, tell the user rather than silently shrinking their design.
 - Use take_screenshot when the shape of the result matters and the build report can't confirm it (first version of a new model, visual arrangement, anything you are unsure of).
 - Keep designs parametric: declare dimensions as named constants at the top of the script. Return parts as an object so they are named: \`return { body, lid }\`.
@@ -44,9 +44,9 @@ The complete API reference follows. Only these functions exist; do not invent ot
 ${referenceText()}`;
 
 const TOOL_DESCRIPTIONS = {
-  read_script: 'Return the full current script. Usually unnecessary because the script is included with each user message; use it after your own edits if you need to re-read.',
-  edit_script: 'Replace one exact occurrence of old_text with new_text in the script. old_text must match exactly once (include enough surrounding lines to be unique). Preferred for all changes.',
-  write_script: 'Replace the entire script. Use for a brand-new model or a complete rewrite only.',
+  read_script: 'Return the full text of a script file (default main.js). Usually unnecessary because the files are included with each user message; use it after your own edits if you need to re-read.',
+  edit_script: 'Replace one exact occurrence of old_text with new_text in a script file (default main.js). old_text must match exactly once (include enough surrounding lines to be unique). Preferred for all changes.',
+  write_script: 'Replace the entire text of a script file, creating it if it does not exist (default main.js). Use for a brand-new model, a new module file, or a complete rewrite only.',
   run_model: 'Build the current script and return the report: parts (name, size, volume), warnings and errors with line numbers, and whether it fits the selected build plate.',
   take_screenshot: 'Render the current 3D view and return it as an image, with the camera framing the model. Optional view: iso, top, front, right, left, back.',
 };
@@ -82,32 +82,40 @@ export class Agent {
     return [
       betaTool({
         name: 'read_script', description: TOOL_DESCRIPTIONS.read_script,
-        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-        run: async () => host.getScript(),
+        inputSchema: { type: 'object', properties: { file: { type: 'string', description: 'Project file name, e.g. main.js or lib/part.js' } }, additionalProperties: false },
+        run: async ({ file }) => { const text = host.getScript(file || 'main.js'); return typeof text === 'string' ? text : `Error: no script file named ${file}. Files: ${host.listFiles().join(', ')}`; },
       }),
       betaTool({
         name: 'edit_script', description: TOOL_DESCRIPTIONS.edit_script,
         eager_input_streaming: true,
         inputSchema: {
           type: 'object',
-          properties: { old_text: { type: 'string' }, new_text: { type: 'string' } },
+          properties: { file: { type: 'string', description: 'Project file name (default main.js)' }, old_text: { type: 'string' }, new_text: { type: 'string' } },
           required: ['old_text', 'new_text'], additionalProperties: false,
         },
-        run: async ({ old_text, new_text }) => {
+        run: async ({ file, old_text, new_text }) => {
           str(old_text, 'old_text'); str(new_text, 'new_text');
-          const src = host.getScript();
+          const name = file || 'main.js';
+          const src = host.getScript(name);
+          if (typeof src !== 'string') return `Error: no script file named ${name}. Files: ${host.listFiles().join(', ')}`;
           const first = src.indexOf(old_text);
-          if (first < 0) return 'Error: old_text was not found in the script. Re-read the script and match it exactly (whitespace included).';
+          if (first < 0) return `Error: old_text was not found in ${name}. Re-read the file and match it exactly (whitespace included).`;
           if (src.indexOf(old_text, first + 1) >= 0) return 'Error: old_text occurs more than once; include more surrounding context so it is unique.';
-          host.setScript(src.slice(0, first) + new_text + src.slice(first + old_text.length));
-          return 'Edited. Call run_model to build and check.';
+          host.setScript(name, src.slice(0, first) + new_text + src.slice(first + old_text.length));
+          return `Edited ${name}. Call run_model to build and check.`;
         },
       }),
       betaTool({
         name: 'write_script', description: TOOL_DESCRIPTIONS.write_script,
         eager_input_streaming: true,
-        inputSchema: { type: 'object', properties: { script: { type: 'string' } }, required: ['script'], additionalProperties: false },
-        run: async ({ script }) => { str(script, 'script'); host.setScript(script); return 'Script replaced. Call run_model to build and check.'; },
+        inputSchema: { type: 'object', properties: { file: { type: 'string', description: 'Project file name (default main.js); a new .js name creates the file' }, script: { type: 'string' } }, required: ['script'], additionalProperties: false },
+        run: async ({ file, script }) => {
+          str(script, 'script');
+          const name = file || 'main.js';
+          if (!/\.(js|mjs)$/i.test(name)) return 'Error: write_script can only write .js files.';
+          host.setScript(name, script);
+          return `Wrote ${name}. Call run_model to build and check.`;
+        },
       }),
       betaTool({
         name: 'run_model', description: TOOL_DESCRIPTIONS.run_model,
@@ -128,10 +136,14 @@ export class Agent {
     ];
   }
 
-  /** Context appended to every user turn so the model always sees the live script. */
+  /** Context appended to every user turn so the model always sees the live project. */
   turnContext() {
     const report = this.host.lastReport();
-    return `\n\n<current_script>\n${this.host.getScript()}\n</current_script>\n\n<last_build>\n${report ? JSON.stringify(report, null, 1) : 'not built yet'}\n</last_build>`;
+    const files = this.host.listFiles().map((name) => {
+      const text = this.host.getScript(name);
+      return typeof text === 'string' ? `<file name="${name}">\n${text}\n</file>` : `<file name="${name}" binary="true" />`;
+    }).join('\n');
+    return `\n\n<project>\n${files}\n</project>\n\n<last_build>\n${report ? JSON.stringify(report, null, 1) : 'not built yet'}\n</last_build>`;
   }
 
   /**

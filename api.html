@@ -50,6 +50,12 @@ Sizes: M2 M2.5 M3 M4 M5 M6 M8</pre>
 s.ghost()            // transparent reference, never exported
 s.hide()             // listed in the Parts panel but not drawn until you switch it on
 // The Parts panel (top right of the viewport) toggles visibility, ghosts, solos (double-click) and exports each part.</pre>
+      <h3>Projects and imports</h3>
+      <pre>// A project is a .temen file (a zip). main.js is the entry; other files are added with the + button above the editor.
+import { lid, WALL } from './lid.js';      // lid.js:  export const WALL = 2;  export function lid(r) { ... }
+import logo from './Logo.ttf';             // a font in the project: text3d('Hi', { font: logo })
+import part from './part.stl';             // a mesh in the project, as a Shape (Z-up STL becomes Y-up)
+// Imports work like normal JavaScript modules; only main.js may use a top-level return.</pre>
       <h3>Helpers</h3>
       <pre>show(shape)  log(...)  s.bounds()  s.volume()  s.surfaceArea()  deg(rad)  rad(deg)  Math.*
 echo(a, b, { w, h })        // console: ECHO (line 12): 1, "x", w = 10, h = 2 — returns a, so echo() works inline

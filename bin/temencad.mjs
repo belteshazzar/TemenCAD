@@ -2,12 +2,13 @@
 /**
  * TemenCAD command line: build a model script and write STL or 3MF, no browser needed.
  *
- *   temencad model.js                 -> model.stl
+ *   temencad model.js                 -> model.stl   (imports resolved from the script's folder)
+ *   temencad project.temen            -> project.stl (a .temen project archive)
  *   temencad model.js -o out.3mf      -> 3MF with named, colored parts
  *   temencad model.js --parts         -> one STL per part next to the output
  *   temencad model.js --plate prusa-mk4   check the result against a printer's build volume
  */
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { init } from '../src/engine.js';
@@ -15,12 +16,15 @@ import { registerFont, FONTS } from '../src/fonts.js';
 import { runScript } from '../src/runner.js';
 import { buildSTL, build3MF } from '../src/export.js';
 import { PLATES, fitProblems } from '../src/plate.js';
+import { Project, ENTRY, PROJECT_EXT, findImports, resolveImport, isScript, isTextFile, normalizePath } from '../src/project.js';
+import { whereText } from '../src/trace.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-const USAGE = `Usage: temencad <script.js> [options]
+const USAGE = `Usage: temencad <main.js | project.temen> [options]
 
-Builds the script with the same engine as the app and writes the visible, non-ghost parts.
+Builds the script or project with the same engine as the app and writes the visible, non-ghost parts.
+A plain script may import sibling files (./lib.js, ./Logo.ttf, ./part.stl); they are read from its folder.
 
 Options:
   -o, --output <file>   Output file; the extension picks the format: .stl or .3mf (default: <script>.stl)
@@ -70,12 +74,33 @@ function bounds(parts) {
 
 const safeName = (s) => s.replace(/[^\w.-]+/g, '_');
 
+/** A project from a script on disk: the script becomes main.js and its imports are read relative to it, recursively. */
+function projectFromDisk(entryPath) {
+  const root = dirname(entryPath);
+  const project = new Project();
+  const visit = (name, diskPath) => {
+    if (project.has(name)) return;
+    if (!existsSync(diskPath)) { if (name === ENTRY) throw new Error(`${diskPath}: no such file`); return; } // the module builder reports missing imports with the importing line
+    let content = isTextFile(name) ? readFileSync(diskPath, 'utf8') : readFileSync(diskPath);
+    if (content instanceof Buffer) content = content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength);
+    project.set(name, content);
+    if (!isScript(name)) return;
+    for (const im of findImports(content)) {
+      const target = resolveImport(im.spec, name);
+      if (target) visit(target, join(root, target));
+    }
+  };
+  visit(ENTRY, entryPath);
+  return project;
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const log = opts.quiet ? () => {} : (s) => console.log(s);
   const scriptPath = resolve(opts.script);
-  let code;
-  try { code = readFileSync(scriptPath, 'utf8'); } catch (e) { fail(`Cannot read ${opts.script}: ${e.message}`); }
+  let project;
+  try { project = scriptPath.toLowerCase().endsWith(PROJECT_EXT) ? Project.fromZip(readFileSync(scriptPath)) : projectFromDisk(scriptPath); }
+  catch (e) { fail(`Cannot load ${opts.script}: ${e.message}`); }
   const output = resolve(opts.output ?? scriptPath.replace(/\.[^.]*$/, '') + '.stl');
   const format = extname(output).toLowerCase();
   if (format !== '.stl' && format !== '.3mf') fail(`Output must end in .stl or .3mf, got ${basename(output)}`);
@@ -87,14 +112,15 @@ async function main() {
     registerFont(name, b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
   }
 
-  const where = (m) => (m.trace?.length ? ` (line ${m.trace[0]}${m.trace.length > 1 ? `, called from line ${m.trace.slice(1).join(' ← ')}` : ''})` : m.line ? ` (line ${m.line})` : '');
-  let warnings = 0;
+  const where = (m) => whereText(m.trace);
+  // Scripts become data: module URLs, which Node can import without touching the filesystem.
+  const env = { makeUrl: (source) => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}` };
   let result;
   try {
-    result = runScript(code, (m) => {
+    result = await runScript(project.toFiles(), (m) => {
       if (m.type === 'log') log(m.text);
-      else if (m.type === 'warn') { warnings++; console.error(`Warning${where(m)}: ${m.text}`); }
-    });
+      else if (m.type === 'warn') console.error(`Warning${where(m)}: ${m.text}`);
+    }, env);
   } catch (err) {
     fail(`Error${where(err)}: ${err.message}`);
   }

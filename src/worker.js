@@ -1,6 +1,6 @@
 /**
- * Model-building worker. Loads the Manifold wasm, then executes scripts sent as
- * { type: 'run', id, code } and posts back mesh buffers (transferred, not copied).
+ * Model-building worker. Loads the Manifold wasm and the bundled fonts, then builds projects sent as
+ * { type: 'run', id, files } and posts back mesh buffers (transferred, not copied).
  */
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { init } from './engine.js';
@@ -13,6 +13,12 @@ const loadFonts = Promise.all(FONTS.map(({ name, file }) =>
   fetch(fontUrls[`./assets/${file}`]).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); })
     .then((buf) => registerFont(name, buf))
     .catch((err) => console.warn(`Font "${name}" failed to load: ${err.message}`))));
+
+// Project scripts become blob: module URLs, importable from a module worker.
+const env = {
+  makeUrl: (source) => URL.createObjectURL(new Blob([source], { type: 'text/javascript' })),
+  revokeUrl: (url) => URL.revokeObjectURL(url),
+};
 
 const queue = [];
 let ready = false;
@@ -30,13 +36,13 @@ Promise.all([init({ locateFile: () => wasmUrl }), loadFonts])
     self.onmessage = (e) => self.postMessage({ type: 'error', id: e.data.id, message: `Geometry engine failed to load: ${err?.message ?? err}` });
   });
 
-function handle({ type, id, code }) {
+async function handle({ type, id, files }) {
   if (type !== 'run') return;
   try {
-    const { meshes, tris, ms } = runScript(code, (m) => self.postMessage({ ...m, id }));
+    const { meshes, tris, ms } = await runScript(files, (m) => self.postMessage({ ...m, id }), env);
     const transfer = meshes.flatMap((m) => [m.positions.buffer, m.indices.buffer]);
     self.postMessage({ type: 'result', id, meshes, tris, ms }, transfer);
   } catch (err) {
-    self.postMessage({ type: 'error', id, message: err.message ?? String(err), line: err.line ?? null, trace: err.trace ?? [] });
+    self.postMessage({ type: 'error', id, message: err.message ?? String(err), file: err.file ?? null, line: err.line ?? null, trace: err.trace ?? [] });
   }
 }

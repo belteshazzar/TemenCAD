@@ -184,6 +184,12 @@ function manifoldFromTriangles(fn, positions, tris) {
   return m;
 }
 
+/** Solid from an indexed triangle mesh (positions flat [x,y,z,...], tris flat indices), e.g. an imported STL. */
+export function polyhedronFromMesh(name, positions, tris) {
+  if (!tris.length) throw new Error(`${name}: the mesh has no triangles`);
+  return new Shape(manifoldFromTriangles(name, positions, tris));
+}
+
 /**
  * Solid from raw vertices and faces, like OpenSCAD's polyhedron.
  * `points`: [[x,y,z], ...]; `faces`: arrays of point indices (triangles or planar polygons).

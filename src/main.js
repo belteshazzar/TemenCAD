@@ -1,7 +1,8 @@
 import { EditorView, basicSetup } from 'codemirror';
+import { EditorState } from '@codemirror/state';
 import { javascript } from '@codemirror/lang-javascript';
 import { keymap } from '@codemirror/view';
-import { lintGutter, setDiagnostics } from '@codemirror/lint';
+import { lintGutter } from '@codemirror/lint';
 import { Viewer } from './viewer.js';
 import { exportSTL, export3MF } from './export.js';
 import { FileManager } from './files.js';
@@ -11,8 +12,12 @@ import { PartsPanel } from './parts-panel.js';
 import { initMenus } from './menu.js';
 import { initChat } from './chat.js';
 import { DEFAULT_SCRIPT } from './default-script.js';
+import { Project, ENTRY } from './project.js';
+import { Tabs } from './tabs.js';
+import { whereText } from './trace.js';
 
-const STORAGE_KEY = 'temencad.script';
+const STORAGE_KEY = 'temencad.project';
+const LEGACY_SCRIPT_KEY = 'temencad.script';
 const store = {
   get(key) { try { return localStorage.getItem(key); } catch { return null; } },
   set(key, value) { try { localStorage.setItem(key, value); } catch {} },
@@ -41,9 +46,22 @@ function scheduleRun(delay = 400) {
 }
 function run() { builder.run(); }
 
-// ---- Editor and file manager ----
-const editor = new EditorView({
-  doc: store.get(STORAGE_KEY) ?? DEFAULT_SCRIPT,
+// ---- Project, editor tabs and file manager ----
+function loadProject() {
+  try {
+    const saved = store.get(STORAGE_KEY);
+    if (saved) return Project.fromJSON(JSON.parse(saved));
+    const legacy = store.get(LEGACY_SCRIPT_KEY); // single-script storage from before projects
+    if (legacy) return Project.fromScript(legacy);
+  } catch {}
+  return Project.fromScript(DEFAULT_SCRIPT);
+}
+let project = loadProject();
+const persist = () => store.set(STORAGE_KEY, JSON.stringify(project.toJSON()));
+
+/** Every text file gets its own editor state so undo history and diagnostics stay per file. */
+const makeState = (doc) => EditorState.create({
+  doc,
   extensions: [
     basicSetup,
     lintGutter(),
@@ -55,54 +73,47 @@ const editor = new EditorView({
       { key: 'Shift-Mod-s', run: () => (files.saveAs().catch(reportErr), true) },
     ]),
     EditorView.updateListener.of((u) => {
-      if (u.docChanged) {
-        store.set(STORAGE_KEY, u.state.doc.toString());
-        files?.markChanged();
-        scheduleRun();
+      if (u.docChanged && tabs.active) {
+        project.set(tabs.active, u.state.doc.toString());
+        projectChanged();
       }
     }),
   ],
-  parent: document.getElementById('editor'),
 });
-const getScript = () => editor.state.doc.toString();
-const setScript = (text) => {
-  editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text } });
-  clearTimeout(timer);
-};
+const editor = new EditorView({ state: makeState(''), parent: document.getElementById('editor') });
+
+const tabs = new Tabs(document.getElementById('tabs'), {
+  editor,
+  makeState,
+  project,
+  assetEl: document.getElementById('asset-info'),
+  fileInput: document.getElementById('add-file-input'),
+  onChange: () => projectChanged(),
+});
+function projectChanged() {
+  persist();
+  files?.markChanged();
+  scheduleRun();
+}
 
 const files = new FileManager({
-  getText: getScript,
-  setText: (text) => { setScript(text); run(); },
+  getProject: () => project,
+  setProject: (p) => { project = p; tabs.setProject(p); persist(); clearTimeout(timer); run(); },
   fileInput: document.getElementById('file-input'),
   onChange: (f) => { document.title = `${f.dirty ? '• ' : ''}${f.name} — TemenCAD`; },
 });
 window.addEventListener('beforeunload', (e) => { if (files.dirty) e.preventDefault(); });
+tabs.select(ENTRY);
 
-// ---- Diagnostics (editor squiggles) ----
-let diagnostics = [];
-function clearDiagnostics() { diagnostics = []; editor.dispatch(setDiagnostics(editor.state, [])); }
-/** Mark a source line in the editor (squiggle + gutter icon + hover message). */
-function addDiagnostic(line, message, severity) {
-  if (!line) return;
-  const doc = editor.state.doc;
-  const l = doc.line(Math.min(Math.max(1, line), doc.lines));
-  const from = l.from + (l.text.match(/^\s*/)?.[0].length ?? 0);
-  diagnostics.push({ from, to: Math.max(from + 1, l.to), severity, message });
-  editor.dispatch(setDiagnostics(editor.state, diagnostics));
-}
-const traceOf = (msg) => (msg.trace?.length ? msg.trace : msg.line ? [msg.line] : []);
-/** " (line 6, called from line 32)" */
-function where(msg) {
-  const t = traceOf(msg);
-  if (!t.length) return '';
-  return ` (line ${t[0]}${t.length > 1 ? `, called from line ${t.slice(1).join(' ← ')}` : ''})`;
-}
-/** Mark the innermost line with the message and each caller with a pointer to it. */
+// ---- Diagnostics (editor squiggles, per file) ----
+const traceOf = (msg) => (msg.trace?.length ? msg.trace : msg.line ? [{ file: msg.file ?? ENTRY, line: msg.line }] : []);
+const where = (msg) => whereText(traceOf(msg));
+/** Mark the innermost location with the message and each caller with a pointer to it. */
 function markTrace(msg, severity, message) {
   const t = traceOf(msg);
   if (!t.length) return;
-  addDiagnostic(t[0], message, severity);
-  t.slice(1).forEach((l, i) => addDiagnostic(l, `Called from here → ${severity} at line ${t[i]}: ${message}`, 'info'));
+  tabs.addDiagnostic(t[0].file, t[0].line, message, severity);
+  t.slice(1).forEach((l, i) => tabs.addDiagnostic(l.file, l.line, `Called from here → ${severity} at ${t[i].file} line ${t[i].line}: ${message}`, 'info'));
 }
 
 // ---- Build pipeline ----
@@ -122,10 +133,10 @@ let runDiagnostics = [];    // warnings collected during the current build
 let framedOnce = false;
 
 const builder = new Builder({
-  getCode: getScript,
+  getFiles: () => project.toFiles(),
   onStart: () => {
     consoleEl.textContent = '';
-    clearDiagnostics();
+    tabs.clearDiagnostics();
     runDiagnostics = [];
     setBusy(true);
   },
@@ -133,7 +144,7 @@ const builder = new Builder({
   onWarn: (msg) => {
     logLine(`Warning${where(msg)}: ${msg.text}`, 'warn');
     markTrace(msg, 'warning', msg.text);
-    runDiagnostics.push({ severity: 'warning', line: msg.line, calledFrom: msg.trace?.slice(1), message: msg.text });
+    runDiagnostics.push({ severity: 'warning', file: msg.file ?? ENTRY, line: msg.line, calledFrom: msg.trace?.slice(1), message: msg.text });
   },
   onCancel: () => { setBusy(false); logLine('Build cancelled.', 'err'); },
   onFinish: (msg) => {
@@ -141,7 +152,7 @@ const builder = new Builder({
     if (msg.type !== 'result') {
       logLine(`Error${where(msg)}: ${msg.message}`, 'err');
       markTrace(msg, 'error', msg.message.split('\n')[0]);
-      lastReport = { ok: false, error: { line: msg.line, calledFrom: msg.trace?.slice(1), message: msg.message }, warnings: runDiagnostics };
+      lastReport = { ok: false, error: { file: msg.file ?? ENTRY, line: msg.line, calledFrom: msg.trace?.slice(1), message: msg.message }, warnings: runDiagnostics };
       return lastReport;
     }
     // Catch anything Three.js complains about while building the display meshes.
@@ -304,8 +315,9 @@ const chat = initChat({
   divider: divider2,
   menuItem: document.querySelector('[data-action="assistant"]'),
   host: {
-    getScript,
-    setScript, // the assistant builds explicitly via run_model, so no auto-run
+    listFiles: () => project.names(),
+    getScript: (file = ENTRY) => tabs.text(file),
+    setScript: (file, text) => { tabs.setText(file, text); clearTimeout(timer); }, // the assistant builds explicitly via run_model, so no auto-run
     runAndWait: () => builder.runAndWait(),
     lastReport: () => lastReport,
     screenshot: async (view) => {
@@ -329,7 +341,7 @@ document.getElementById('file-menu').addEventListener('click', async (e) => {
   const base = files.name.replace(/\.[^.]*$/, '');
   try {
     switch (action) {
-      case 'new': if (files.newFile(DEFAULT_SCRIPT)) run(); break;
+      case 'new': files.newProject(DEFAULT_SCRIPT); break;
       case 'open': await files.open(); break;
       case 'save': await files.save(); break;
       case 'save-as': await files.saveAs(); break;
