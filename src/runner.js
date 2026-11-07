@@ -8,6 +8,11 @@ import { releaseAll } from './engine.js';
 
 const PRELUDE = '"use strict";\n';
 
+/** A script failure with the user-script line(s) it came from. */
+export class ScriptError extends Error {
+  constructor(message, trace) { super(message); this.name = 'ScriptError'; this.trace = trace; this.line = trace[0] ?? null; }
+}
+
 export function fmt(v) {
   if (v instanceof Shape) { const b = v.bounds(); return `Shape(${v.meta.name ? `"${v.meta.name}", ` : ''}size ${b.size.map((n) => +n.toFixed(3)).join('×')})`; }
   if (typeof v === 'object') { try { return JSON.stringify(v); } catch { return String(v); } }
@@ -64,7 +69,7 @@ function collect(items, nameHint) {
 /**
  * Execute `code`. `post(msg)` receives { type: 'log' | 'warn', ... } during the run.
  * Returns { meshes: [{ positions, indices, color }], tris, ms }.
- * Throws { message, line, trace } on failure. Always frees wasm objects afterwards.
+ * Throws a ScriptError (message, line, trace) on failure. Always frees wasm objects afterwards.
  */
 export function runScript(code, post) {
   const log = (...args) => post({ type: 'log', text: args.map(fmt).join(' ') });
@@ -122,8 +127,7 @@ export function runScript(code, post) {
     });
     return { meshes, tris, ms: performance.now() - t0 };
   } catch (err) {
-    const trace = userTrace(err);
-    throw { message: String(err), line: trace[0] ?? null, trace };
+    throw new ScriptError(String(err), userTrace(err));
   } finally {
     console.warn = origWarn; console.error = origError;
     hooks.warn = origWarnHook;

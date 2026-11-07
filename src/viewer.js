@@ -12,7 +12,6 @@ export class Viewer {
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.01, 5000);
     this.camera.up.set(0, 1, 0);
-    this.plate = null;
     this.modelGroup = new THREE.Group();
     this.resetView();
 
@@ -62,7 +61,7 @@ export class Viewer {
       const { w, d, h } = this.plate;
       box = new THREE.Box3(new THREE.Vector3(-w / 2, 0, -d / 2), new THREE.Vector3(w / 2, h, d / 2));
     } else {
-      box = this.visibleBounds?.() ?? null;
+      box = this.visibleBounds();
     }
     if (!box || box.isEmpty()) box = new THREE.Box3(new THREE.Vector3(-100, 0, -100), new THREE.Vector3(100, 100, 100));
     // Look at the centre of the print area on the plate surface (the origin), as the original view did.
@@ -112,7 +111,7 @@ export class Viewer {
 
   /**
    * Replace the displayed model. Each entry is
-   * { positions, indices?, color, name?, ghost?, visible? }.
+   * { positions, indices?, color, name?, ghost?, hidden? }.
    */
   setMeshes(meshes) {
     this.clear();
@@ -133,11 +132,11 @@ export class Viewer {
         new THREE.LineBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity: 0.35 }),
       );
       mesh.add(edges);
-      this.updatePart(i, { ghost: !!m.ghost, visible: m.visible !== false });
+      this.updatePart(i, { ghost: !!m.ghost, visible: !m.hidden });
     });
-    // Scale the grid to the model size
-    const box = new THREE.Box3().setFromObject(this.modelGroup);
-    if (!box.isEmpty()) {
+    // Scale the grid to the size of the visible, non-ghost parts
+    const box = this.visibleBounds();
+    if (box) {
       const size = box.getSize(new THREE.Vector3()).length();
       const g = Math.max(10, Math.pow(10, Math.ceil(Math.log10(size))));
       this.grid.scale.setScalar(g / 20);

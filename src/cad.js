@@ -89,24 +89,18 @@ function flatShapes(fn, list) {
 }
 const allSketches = (list) => list.length > 0 && list.every((s) => s instanceof Sketch);
 
-export function union(...shapes) {
-  const list = shapes.flat(Infinity);
-  if (allSketches(list)) return sketchApi.union2d(...list);
-  const l = flatShapes('union', list);
-  return l.length === 1 ? l[0] : new Shape(MF().union(l.map((s) => s.m)), l[0].colorValue);
+/** A boolean over Shapes (or, when every argument is a sketch, the 2D equivalent). Keeps the first shape's color. */
+function boolean(fn, kernelOp, sketchOp) {
+  return (...shapes) => {
+    const list = shapes.flat(Infinity);
+    if (allSketches(list)) return sketchOp(...list);
+    const l = flatShapes(fn, list);
+    return l.length === 1 ? l[0] : new Shape(MF()[kernelOp](l.map((s) => s.m)), l[0].colorValue);
+  };
 }
-export function difference(...shapes) {
-  const list = shapes.flat(Infinity);
-  if (allSketches(list)) return sketchApi.difference2d(...list);
-  const l = flatShapes('difference', list);
-  return l.length === 1 ? l[0] : new Shape(MF().difference(l.map((s) => s.m)), l[0].colorValue);
-}
-export function intersect(...shapes) {
-  const list = shapes.flat(Infinity);
-  if (allSketches(list)) return sketchApi.intersect2d(...list);
-  const l = flatShapes('intersect', list);
-  return l.length === 1 ? l[0] : new Shape(MF().intersection(l.map((s) => s.m)), l[0].colorValue);
-}
+export const union = boolean('union', 'union', sketchApi.union2d);
+export const difference = boolean('difference', 'difference', sketchApi.difference2d);
+export const intersect = boolean('intersect', 'intersection', sketchApi.intersect2d);
 
 /** Convex hull of any number of shapes (or raw [x,y,z] points, or arrays of either). 2D sketches hull in 2D. */
 export function hull(...items) {

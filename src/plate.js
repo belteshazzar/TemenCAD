@@ -26,9 +26,3 @@ export function fitProblems(b, plate, eps = 1e-3) {
   if (b.min.y < -eps) over.push(`${(-b.min.y).toFixed(1)} mm below the plate`);
   return over;
 }
-
-/** Parse "200 x 200 x 200" style input into [w, d, h] or null. */
-export function parsePlateSize(text) {
-  const m = text?.match(/(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)/);
-  return m ? [+m[1], +m[2], +m[3]] : null;
-}

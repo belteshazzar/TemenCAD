@@ -136,7 +136,7 @@ export class Agent {
 
   /**
    * Send a user message and stream the reply.
-   * events: onText(delta), onTool(name, input), onToolDone(name, result), onDone(finalMessage), onError(err)
+   * events: onText(delta), onTool(name), onDone(finalMessage), onError(err)
    */
   async send(text, events) {
     if (!this.client) throw new Error('No API key set. Open Assistant settings and paste your Anthropic API key.');
@@ -174,7 +174,6 @@ export class Agent {
             const hasToolUse = message.content.some((b) => b.type === 'tool_use');
             if (message.stop_reason === 'max_tokens' && hasToolUse) throw Object.assign(new Error('The reply was cut off (max_tokens) while writing a tool call.'), { fatal: true });
             if (message.stop_reason === 'refusal') break;
-            if (hasToolUse) events.onToolTurn?.(message);
           }
           break;
         } catch (err) {

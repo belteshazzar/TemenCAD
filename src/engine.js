@@ -30,5 +30,3 @@ export function releaseAll() {
   for (const o of live) { try { o.delete(); } catch { /* already freed */ } }
   live.clear();
 }
-
-export const liveCount = () => live.size;

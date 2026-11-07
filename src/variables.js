@@ -83,7 +83,7 @@ export class VariablesPanel {
     this.root.hidden = vars.length === 0;
     const sig = vars.map((v) => `${v.name}:${v.type}:${v.min}:${v.max}:${v.step}:${v.label}`).join('|');
     if (sig !== this.signature) { this.signature = sig; this.rebuild(vars); }
-    else for (const v of vars) this.rows.get(v.name)?.update(v);
+    else for (const v of vars) this.rows.get(v.name)?.(v);
   }
 
   rebuild(vars) {
@@ -115,7 +115,7 @@ export class VariablesPanel {
           if (document.activeElement !== range && document.activeElement !== num) { range.value = nv.value; num.value = format(nv.value, v.step); }
         };
       }
-      this.rows.set(v.name, { el: row, update });
+      this.rows.set(v.name, update);
       this.body.appendChild(row);
     }
   }
