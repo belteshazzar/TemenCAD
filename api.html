@@ -80,6 +80,31 @@ sk.revolve(opts)                                  // method form of revolve
 roof(sk, { angle, segments, tolerance })          // height = distance to the outline: pyramid, hip roof
 sk.roof(opts)                                     // method form of roof
 // Sketch x is world X, sketch y is world −Z: seen from above, a sketch reads like a drawing.</pre>
+      <h3>Paths and sweeps</h3>
+      <pre>arc(r, angle, { segments })                       // arc on the ground plane, centred on the origin, from +X anticlockwise seen from above
+bezier(p0, p1, p2, p3, { segments })              // cubic Bézier from p0 to p3 with control points p1, p2
+helix(r, height, turns, { segments })             // around Y from [r, 0, 0]; negative turns wind the other way
+line(a, b)                                        // straight path from a to b
+path([[x, y, z], ...], { closed, smooth })        // polyline; [x, y] points lie on the ground plane like a sketch
+p.append(other)                                   // continue with another path, moved to start where this one ends
+p.bounds()                                        // { min, max, size, center }
+p.close()                                         // join the ends: the sweep becomes a ring with no caps
+p.length()                                        // length in mm
+p.mirror('x' | 'y' | 'z')                         // mirror across the axis plane through the origin
+p.pointAt(t) / p.tangentAt(t)                     // point and unit direction at fraction t (0..1) of the length
+p.points                                          // the vertices as [x, y, z][]
+p.reverse()                                       // travel the other way
+p.rotate(xDeg, yDeg, zDeg)                        // rotate in degrees about X, then Y, then Z
+p.scale(f) / p.scale(x, y, z)                     // scale uniformly or per axis
+p.smooth({ segments })                            // replace the corners with a smooth curve through the same points
+p.translate(x, y, z)                              // move
+sweep(sk, p, { frame, up, twist, scale, segments })  // sweep a sketch along a path; closed paths make rings
+sweep((t) => sk, p, opts)                         // the profile may vary: t is the fraction of the length (0..1)
+sk.sweep(p, opts)                                 // method form of sweep
+// The sketch sits across the path: sketch x to the right, sketch y up (a vertical path matches extrude).
+// frame 'minimal' (default) never twists the profile; 'upright' keeps sketch y pointing to `up` (default +Y).
+// twist in degrees over the whole path; scale a factor or [sx, sy] reached at the end.
+// Corners are mitred; a bend tighter than the profile is wide warns, because the surface folds into itself.</pre>
       <h3>Transforms (return a new shape)</h3>
       <pre>s.align({ x, y, z }, [tx, ty, tz])                // each axis 'min' | 'center' | 'max' to the point
 s.center()                                        // centre on the origin

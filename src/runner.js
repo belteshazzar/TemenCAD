@@ -111,12 +111,18 @@ export async function runScript(files, post, env) {
   let modules = { urls: [], locate: () => null };
   const trace = (err) => traceFrom(err?.stack, modules);
   const log = (...args) => post({ type: 'log', text: args.map(fmt).join(' ') });
-  const warn = (text, t = trace(new Error())) => post({ type: 'warn', text, file: t[0]?.file ?? null, line: t[0]?.line ?? null, trace: t });
+  // The host may print a posted warning with console.warn/error itself, so don't relay those again.
+  let posting = false;
+  const warn = (text, t = trace(new Error())) => {
+    posting = true;
+    try { post({ type: 'warn', text, file: t[0]?.file ?? null, line: t[0]?.line ?? null, trace: t }); } finally { posting = false; }
+  };
   const origWarnHook = hooks.warn;
   hooks.warn = (msg) => warn(msg);
   const origWarn = console.warn, origError = console.error;
-  console.warn = (...a) => { warn(a.map(fmt).join(' ')); origWarn(...a); };
-  console.error = (...a) => { warn(a.map(fmt).join(' ')); origError(...a); };
+  const relay = (orig) => (...a) => { if (!posting) warn(a.map(fmt).join(' ')); orig(...a); };
+  console.warn = relay(origWarn);
+  console.error = relay(origError);
 
   /** echo(...values) — OpenSCAD-style console output: ECHO: 1, "a", [1, 2], w = 10. Returns the first value, so it works inline. */
   const echo = (...args) => {

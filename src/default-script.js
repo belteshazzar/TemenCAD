@@ -112,6 +112,11 @@ if (SHOW_TEXT) {
 place(loft([circle(6), rect(8, 8).fillet(2), regularPolygon(6, 4)], [0, 8, 16]), 60, 50, '#d3a6ff');
 place(cylinder(7, 14).shell(CUP_WALL, { open: 'top' }), -70, 75, '#7fe0e0', 'cup');
 
+// 13b. Sweep a profile along a path: a hook from a smoothed polyline, and a spring from a helix
+const hookPath = path([[0, 0, 0], [0, 14, 0], [6, 18, 0], [12, 14, 0], [12, 8, 0]]).smooth();
+place(sweep(circle(1.5), hookPath), 5, 75, '#c2e86b', 'hook');
+place(sweep(circle(1.2), helix(5, 16, 4)), 30, 75, '#c2e86b', 'spring');
+
 // 14. Minkowski rounding and a hand-built polyhedron (a wedge)
 place(box(10, 6, 8).round(1.5), -45, 75, '#8fb3ff');
 const wedge = polyhedron(

@@ -35,6 +35,13 @@ export const GLOBALS = [
   fn('revolve', 'revolve(${sketch})', '(sketch, { angle, segments })', 'Revolve a sketch around Y; sketch x is the radius.'),
   fn('roof', 'roof(${sketch})', '(sketch, { angle, segments, tolerance })', 'Solid whose height is the distance to the outline: pyramid from a square, hip roof from a rectangle.'),
   fn('projection', 'projection(${shape})', '(shape, { cut: true | y })', 'Flatten a solid to a 2D sketch: footprint from above, or the slice at height y.'),
+  // Paths and sweeps
+  fn('path', 'path([${points}])', '([[x, y, z], ...], { closed, smooth })', 'Polyline through 3D points (Y up); [x, y] points lie on the ground plane.'),
+  fn('line', 'line([${x1}, ${y1}, ${z1}], [${x2}, ${y2}, ${z2}])', '(a, b)', 'Straight path from a to b.'),
+  fn('arc', 'arc(${r}, ${90})', '(r, angle, { segments })', 'Arc on the ground plane centred on the origin, from +X anticlockwise seen from above.'),
+  fn('helix', 'helix(${r}, ${height}, ${turns})', '(r, height, turns, { segments })', 'Helix around Y starting at [r, 0, 0].'),
+  fn('bezier', 'bezier([${p0}], [${p1}], [${p2}], [${p3}])', '(p0, p1, p2, p3, { segments })', 'Cubic Bézier curve as a path.'),
+  fn('sweep', 'sweep(${sketch}, ${path})', '(sketch | (t) => sketch, path, { frame, up, twist, scale, segments })', 'Sweep a 2D profile along a path; closed paths make rings. frame: \'minimal\' (no twist) or \'upright\'.'),
   // Booleans and friends
   fn('union', 'union(${a}, ${b})', '(a, b, ...)', 'Merge shapes (or 2D sketches). Arrays are accepted.'),
   fn('difference', 'difference(${a}, ${b})', '(a, b, ...)', 'Subtract every following shape from the first.'),
@@ -62,7 +69,7 @@ export const GLOBALS = [
   fn('rad', 'rad(${degrees})', '(degrees)', 'Degrees to radians.'),
 ];
 
-/** Methods on 3D shapes ('shape'), 2D sketches ('sketch') or both. */
+/** Methods on 3D shapes ('shape'), 2D sketches ('sketch'), paths ('path') or both shapes and sketches ('both'). */
 export const METHODS = [
   method('translate', 'translate(${x}, ${y}, ${z})', '(x, y, z)', 'Move; sketches take (x, y).', 'both'),
   method('rotate', 'rotate(${x}, ${y}, ${z})', '(xDeg, yDeg, zDeg)', 'Rotate in degrees; sketches take one angle.', 'both'),
@@ -99,4 +106,13 @@ export const METHODS = [
   method('revolve', 'revolve()', '({ angle, segments })', 'Revolve a sketch around Y.', 'sketch'),
   method('roof', 'roof()', '({ angle, segments, tolerance })', 'Roof solid from a sketch.', 'sketch'),
   method('toPolygons', 'toPolygons()', '()', 'Outline rings of a sketch as [[x, y], ...][].', 'sketch'),
+  method('sweep', 'sweep(${path})', '(path, { frame, up, twist, scale, segments })', 'Sweep a sketch along a path.', 'sketch'),
+  // Paths
+  method('append', 'append(${path})', '(path)', 'Continue with another path, moved to start where this one ends.', 'path'),
+  method('close', 'close()', '()', 'Join the ends of a path so the sweep is a ring.', 'path'),
+  method('smooth', 'smooth()', '({ segments })', 'Replace the corners of a path with a smooth curve.', 'path'),
+  method('reverse', 'reverse()', '()', 'Travel a path the other way.', 'path'),
+  method('length', 'length()', '()', 'Length of a path in mm.', 'path'),
+  method('pointAt', 'pointAt(${t})', '(t)', 'Point at fraction t (0..1) of a path.', 'path'),
+  method('tangentAt', 'tangentAt(${t})', '(t)', 'Unit direction at fraction t (0..1) of a path.', 'path'),
 ];
