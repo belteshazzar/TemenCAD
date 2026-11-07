@@ -8,6 +8,7 @@ import { imageApi } from './image.js';
 import { measureApi } from './measure.js';
 import { printApi } from './print.js';
 import { placeApi } from './place.js';
+import { annotateApi } from './annotate.js';
 
 export { Shape, Sketch, deg, rad };
 
@@ -470,6 +471,7 @@ export const api = {
   ...measureApi,
   ...printApi,
   ...placeApi,
+  ...annotateApi,
   Shape, box, cube, roundedBox, sphere, cylinder, cone, torus, polygon, prism,
   union, difference, intersect, hull, minkowski, shell, polyhedron, loft, resize, roof,
   linearArray, polarArray, grid,

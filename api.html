@@ -207,6 +207,12 @@ interference(a, b) / a.interference(b)            // shared volume in mm³; 0 wh
 intersects(a, b) / a.intersects(b)                // true when they share any volume
 overlap(a, b) / a.overlap(b)                      // the shared volume as a Shape, to show() or subtract
 // Check a design in the script: assert(clearance(lid, body) >= 0.3, 'lid binds'); assert(!intersects(screw, wall)).</pre>
+      <h3>Annotations on renders</h3>
+      <pre>dimension(a, b, { label, offset })               // a measured line between two points, faces or shape centres; returns the length in mm
+mark(point, text)                                 // a dot with a label; point is [x, y, z], a face or a shape
+// Drawn over the rendered views (Menu → Render views…, the assistant's render_views, temencad --png) and listed in --report.
+// Never geometry. label defaults to the length; offset: [dx, dy, dz] moves the line clear of the part.
+// dimension(plate.face('left'), plate.face('right'), { offset: [0, 0, 20] }); mark(lens.face('top'), 'lens');</pre>
       <h3>Printability</h3>
       <pre>minWallThickness(s) / s.minWallThickness()       // { thickness, at }: the thinnest wall, by casting rays inward from the surface
 overhangs(s, { angle }) / s.overhangs(opts)       // { area, worstAngle, lowest, faces }: undersides steeper than angle (45°) from vertical

@@ -145,6 +145,7 @@ function setBusy(on) {
 
 let lastReport = null;      // structured result of the last build, for the assistant
 let lastMeshes = null;
+let lastAnnotations = [];
 let runDiagnostics = [];    // warnings collected during the current build
 let framedOnce = false;
 
@@ -175,7 +176,7 @@ const builder = new Builder({
     const origWarn = console.warn;
     console.warn = (...a) => { logLine(`Warning: ${a.join(' ')}`, 'warn'); origWarn(...a); };
     try { viewer.setMeshes(msg.meshes); } finally { console.warn = origWarn; }
-    lastMeshes = msg.meshes;
+    lastMeshes = msg.meshes; lastAnnotations = msg.annotations ?? [];
     parts.setParts(msg.meshes.map((m) => ({ name: m.name, color: m.color, ghost: m.ghost, hidden: m.hidden, volume: m.volume, tris: m.indices.length / 3 })));
     if (!framedOnce) { framedOnce = true; if (!plate) viewer.resetView(); }
     const n = msg.meshes.length;
@@ -404,7 +405,7 @@ document.getElementById('file-menu').addEventListener('click', async (e) => {
 /** Render the last build's meshes in the worker: { views, section, width, height, labels }. */
 async function renderSheet(opts) {
   if (!lastMeshes?.length) throw new Error('Build the model first');
-  return builder.render(lastMeshes, opts);
+  return builder.render(lastMeshes, { ...opts, annotations: lastAnnotations });
 }
 
 /** The Render views dialog; resolves with options or null. */

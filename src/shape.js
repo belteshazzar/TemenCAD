@@ -5,7 +5,7 @@ export const deg = (r) => (r * 180) / Math.PI;
 export const rad = (d) => (d * Math.PI) / 180;
 
 /** Overridable hooks; the worker routes warnings to the UI. */
-export const hooks = { warn: (msg) => console.warn(msg) };
+export const hooks = { warn: (msg) => console.warn(msg), annotate: () => {} };
 
 // ---- Argument checking: fail at the call site with a readable message ----
 export function describe(v) {

@@ -233,7 +233,7 @@ async function main() {
   const parts = all.filter((m) => !m.ghost && !m.hidden);
   const skipped = all.length - parts.length;
   log(`Built ${all.length} part${all.length === 1 ? '' : 's'}, ${result.tris} triangles, ${result.ms.toFixed(0)} ms${skipped ? ` (${skipped} ghost/hidden not exported)` : ''}`);
-  report.ok = true; report.triangles = result.tris; report.ms = +result.ms.toFixed(1);
+  report.ok = true; report.triangles = result.tris; report.ms = +result.ms.toFixed(1); report.annotations = result.annotations ?? [];
   report.parts = all.map((p) => { const st = meshStats(p.positions, p.indices); return { name: p.name, color: p.color, ghost: p.ghost, hidden: p.hidden, triangles: p.indices.length / 3, volume: +st.volume.toFixed(3), surfaceArea: +st.surfaceArea.toFixed(3), centerOfMass: st.centerOfMass.map((v) => +v.toFixed(3)), bounds: { min: st.bounds.min, max: st.bounds.max, size: st.bounds.size } }; });
   if (!parts.length) { writeReport(); fail('Nothing to export: no visible, non-ghost parts'); }
   for (const p of parts) log(`  ${p.name}: ${p.indices.length / 3} triangles, ${p.volume.toFixed(1)} mm³`);
@@ -266,7 +266,7 @@ async function main() {
     mkdirSync(dirname(png), { recursive: true });
     let meshes = all;
     if (opts.section) meshes = sectionMeshes(all, opts.section);
-    writeFileSync(png, renderViews(meshes, { views: opts.views, width: opts.size[0], height: opts.size[1], colorHex, labels: opts.labels, section: opts.section }));
+    writeFileSync(png, renderViews(meshes, { views: opts.views, width: opts.size[0], height: opts.size[1], colorHex, labels: opts.labels, section: opts.section, annotations: result.annotations ?? [] }));
     log(`Rendered ${png}${opts.views.length > 1 ? ` (${opts.views.join(', ')})` : ''}${opts.section ? `, cut at ${opts.section.axis} = ${opts.section.value}` : ''}`);
   }
 

@@ -51,6 +51,9 @@ export const GLOBALS = [
   fn('distance', 'distance(${a}, ${b})', '(face | point, face | point)', 'Distance between faces (along the normal), a face and a point, or two points.'),
   fn('rectPattern', 'rectPattern(${w}, ${d})', '(w, d)', 'The four corners of a w × d rectangle as [u, v] points, for hole patterns.'),
   fn('gridPattern', 'gridPattern(${nu}, ${nv}, ${pitch})', '(nu, nv, du, dv)', 'A grid of [u, v] points at that pitch, centred.'),
+  // Annotations
+  fn('dimension', 'dimension(${a}, ${b})', '(a, b, { label, offset })', 'A measured line between points, faces or shapes, drawn on rendered views; returns the length.'),
+  fn('mark', "mark(${point}, '${text}')", '(point | face | shape, text)', 'A labelled dot drawn on rendered views.'),
   // Checks
   fn('clearance', 'clearance(${a}, ${b})', '(a, b)', 'Smallest gap between two shapes in mm; 0 when they touch or overlap.'),
   fn('interference', 'interference(${a}, ${b})', '(a, b)', 'Volume two shapes share in mm³.'),

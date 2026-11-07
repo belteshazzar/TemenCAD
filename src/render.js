@@ -2,7 +2,7 @@
  * Renderer with no browser (used by the command line and the catalogue): a small z-buffer rasteriser
  * over the meshes a build produces, written out as PNG.
  *   renderThumbnail(meshes, { width, height, colorHex })            -> Uint8Array (PNG), one isometric view, no labels
- *   renderViews(meshes, { views, width, height, colorHex, labels, section, ghosts }) -> Uint8Array (PNG), a contact sheet
+ *   renderViews(meshes, { views, width, height, colorHex, labels, section, ghosts, annotations }) -> Uint8Array (PNG), a contact sheet
  *   sectionMeshes(meshes, { axis, value })                           -> meshes cut open at that plane (needs the engine)
  * views: any of 'iso' 'top' 'bottom' 'front' 'back' 'left' 'right' (width × height is the size of ONE view).
  * Ghost meshes are drawn translucent; `section: { axis, value }` tints faces lying on that plane as cut faces.
@@ -89,7 +89,7 @@ class Canvas {
 }
 
 /** Draw one view into a region of the canvas. */
-function drawView(cv, region, meshes, viewName, { colorHex, labels, section, ghosts, supersample }) {
+function drawView(cv, region, meshes, viewName, { colorHex, labels, section, ghosts, supersample, annotations = [] }) {
   const view = VIEWS[viewName];
   const { eye } = view;
   const right = norm(cross(view.up, eye)), up = cross(eye, right);
@@ -167,6 +167,7 @@ function drawView(cv, region, meshes, viewName, { colorHex, labels, section, gho
   // Ghosts: translucent over everything in front of them, and their outline stays faint behind solids.
   for (const m of ghostMeshes) raster(m, 0.35, false);
 
+  drawAnnotations(cv, annotations, project, toScreen, supersample);
   if (!labels) return;
   const S = supersample, fs = 13 * S, small = 11 * S;
   // Title with the visible size in this view's axes.
@@ -234,8 +235,38 @@ export function sectionMeshes(meshes, { axis, value }) {
   return out;
 }
 
+const NOTE = [36, 72, 140];
+/** Dimensions and marks from the script, drawn over everything. */
+function drawAnnotations(cv, annotations, project, toScreen, S) {
+  const small = 11 * S;
+  const label = (text, x, y) => {
+    const w = cv.textWidth(text, small, 'Inter Bold');
+    cv.fillRings([[[x - 3 * S, y - small], [x + w + 3 * S, y - small], [x + w + 3 * S, y + 3 * S], [x - 3 * S, y + 3 * S]]], BG, 0.85);
+    cv.text(text, x, y, small, NOTE, { weight: 'Inter Bold' });
+  };
+  for (const a of annotations) {
+    if (a.type === 'dimension') {
+      const [x0, y0] = toScreen(project(...a.a)), [x1, y1] = toScreen(project(...a.b));
+      const dx = x1 - x0, dy = y1 - y0, l = Math.hypot(dx, dy);
+      if (l < 1) { // seen end-on: a dot and the label
+        cv.line2d(x0 - 3 * S, y0, x0 + 3 * S, y0, NOTE, 1, 2 * S); label(a.label, x0 + 6 * S, y0 + 4 * S); continue;
+      }
+      const nx = -dy / l, ny = dx / l, t = 5 * S;
+      cv.line2d(x0, y0, x1, y1, NOTE, 1, 1.5 * S);
+      cv.line2d(x0 + nx * t, y0 + ny * t, x0 - nx * t, y0 - ny * t, NOTE, 1, 1.5 * S);
+      cv.line2d(x1 + nx * t, y1 + ny * t, x1 - nx * t, y1 - ny * t, NOTE, 1, 1.5 * S);
+      const w = cv.textWidth(a.label, small, 'Inter Bold');
+      label(a.label, (x0 + x1) / 2 - w / 2 + nx * 10 * S, (y0 + y1) / 2 + 4 * S + ny * 10 * S);
+    } else if (a.type === 'mark') {
+      const [x, y] = toScreen(project(...a.p));
+      for (let k = 0; k < 8; k++) { const t0 = (k / 8) * 2 * Math.PI, t1 = ((k + 1) / 8) * 2 * Math.PI; cv.line2d(x + 3 * S * Math.cos(t0), y + 3 * S * Math.sin(t0), x + 3 * S * Math.cos(t1), y + 3 * S * Math.sin(t1), NOTE, 1, 2 * S); }
+      if (a.text) label(a.text, x + 7 * S, y + 4 * S);
+    }
+  }
+}
+
 /** Several views tiled into one picture; width × height is the size of one view. */
-export function renderViews(meshes, { views = ['iso'], width = 480, height = 360, colorHex = cssToHex, supersample = 2, labels = true, section = null, ghosts = true } = {}) {
+export function renderViews(meshes, { views = ['iso'], width = 480, height = 360, colorHex = cssToHex, supersample = 2, labels = true, section = null, ghosts = true, annotations = [] } = {}) {
   const names = views.filter((v) => VIEWS[v]);
   if (!names.length) throw new Error(`renderViews: views must be some of ${VIEW_NAMES.join(', ')}`);
   const cols = names.length === 1 ? 1 : names.length <= 4 ? 2 : 3, rows = Math.ceil(names.length / cols);
@@ -243,7 +274,7 @@ export function renderViews(meshes, { views = ['iso'], width = 480, height = 360
   const cv = new Canvas(W, H);
   names.forEach((name, i) => {
     const region = { x: (i % cols) * width * S, y: Math.floor(i / cols) * height * S, w: width * S, h: height * S };
-    drawView(cv, region, meshes, name, { colorHex, labels, section, ghosts, supersample: S });
+    drawView(cv, region, meshes, name, { colorHex, labels, section, ghosts, supersample: S, annotations });
     if (names.length > 1) { // tile borders
       cv.line2d(region.x, region.y, region.x + region.w, region.y, GRID, 1, S);
       cv.line2d(region.x, region.y, region.x, region.y + region.h, GRID, 1, S);

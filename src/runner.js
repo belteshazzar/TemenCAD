@@ -118,7 +118,7 @@ function cached(name, buffer, parse) {
  * Execute a project. `files` is { name: string | ArrayBuffer } with a main.js entry.
  * `post(msg)` receives { type: 'log' | 'warn', ... } during the run.
  * `env.makeUrl(source)` creates an importable module URL; `env.revokeUrl(url)` frees it afterwards.
- * Resolves to { meshes: [{ positions, indices, color, name, ghost, hidden, volume }], tris, ms }.
+ * Resolves to { meshes: [{ positions, indices, color, name, ghost, hidden, volume }], tris, ms, annotations }.
  * Rejects with a ScriptError (message, file, line, trace). Always frees wasm objects afterwards.
  */
 export async function runScript(files, post, env) {
@@ -131,8 +131,10 @@ export async function runScript(files, post, env) {
     posting = true;
     try { post({ type: 'warn', text, file: t[0]?.file ?? null, line: t[0]?.line ?? null, trace: t }); } finally { posting = false; }
   };
-  const origWarnHook = hooks.warn;
+  const origWarnHook = hooks.warn, origAnnotate = hooks.annotate;
   hooks.warn = (msg) => warn(msg);
+  const annotations = [];
+  hooks.annotate = (a) => { annotations.push(a); };
   const origWarn = console.warn, origError = console.error;
   const relay = (orig) => (...a) => { if (!posting) warn(a.map(fmt).join(' ')); orig(...a); };
   console.warn = relay(origWarn);
@@ -197,7 +199,7 @@ export async function runScript(files, post, env) {
       tris += indices.length / 3;
       meshes.push({ positions, indices, color: s.colorValue, name, named: s.meta.name !== undefined, ghost: !!s.meta.ghost, hidden: !!s.meta.hidden, volume: s.volume() });
     });
-    return { meshes, tris, ms: performance.now() - t0 };
+    return { meshes, tris, ms: performance.now() - t0, annotations };
   } catch (err) {
     if (err instanceof ModuleError) throw new ScriptError(err.message, err.file ? [{ file: err.file, line: err.line ?? 1 }] : []);
     const t = trace(err);
@@ -205,7 +207,7 @@ export async function runScript(files, post, env) {
     throw new ScriptError(err instanceof AssertionError ? err.message : String(err), t);
   } finally {
     console.warn = origWarn; console.error = origError;
-    hooks.warn = origWarnHook;
+    hooks.warn = origWarnHook; hooks.annotate = origAnnotate;
     globalThis.__temen = prev;
     for (const url of modules.urls) env.revokeUrl?.(url);
     releaseAll();

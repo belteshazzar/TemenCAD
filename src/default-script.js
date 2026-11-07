@@ -94,6 +94,9 @@ const bosses = union(rectPattern(22, 14).map((p) => cylinder(2.5, 6, { center: f
 const trayWithBosses = tray.add(bosses).subtract(rectPattern(22, 14).map((p) => screwHole('M2', 5, { type: 'tap' }).at(bosses.face('top'), p)));
 const trayLid = box(30, 2, 22).alignTo(trayWithBosses, { x: 'center', z: 'center', y: 'above' }, { gap: 1.5 });
 place(trayWithBosses.add(trayLid.name('lid')), 115, 25, '#7fe0e0', 'tray');
+// Annotations appear on rendered views (Menu → Render views…), never in the geometry
+dimension([100, 12, 36], [130, 12, 36], { label: 'tray 30 mm' });
+mark([115, 13, 25], 'lid');
 
 // 9b. Printable horizontal holes: hole() gives a teardrop (or a bridged flat top) so nothing sags
 const bar = box(30, 12, 10).onPlate();

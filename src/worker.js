@@ -48,7 +48,7 @@ async function handle({ type, id, files, meshes, options }) {
   if (type === 'render') {
     try {
       const list = options.section ? sectionMeshes(meshes, options.section) : meshes;
-      const png = renderViews(list, { views: options.views, width: options.width, height: options.height, labels: options.labels !== false, section: options.section ?? null });
+      const png = renderViews(list, { views: options.views, width: options.width, height: options.height, labels: options.labels !== false, section: options.section ?? null, annotations: options.annotations ?? [] });
       self.postMessage({ type: 'rendered', id, png }, [png.buffer]);
     } catch (err) {
       self.postMessage({ type: 'render-error', id, message: err.message ?? String(err) });
@@ -57,9 +57,9 @@ async function handle({ type, id, files, meshes, options }) {
   }
   if (type !== 'run') return;
   try {
-    const { meshes, tris, ms } = await runScript(files, (m) => self.postMessage({ ...m, id }), env);
+    const { meshes, tris, ms, annotations } = await runScript(files, (m) => self.postMessage({ ...m, id }), env);
     const transfer = meshes.flatMap((m) => [m.positions.buffer, m.indices.buffer]);
-    self.postMessage({ type: 'result', id, meshes, tris, ms }, transfer);
+    self.postMessage({ type: 'result', id, meshes, tris, ms, annotations }, transfer);
   } catch (err) {
     self.postMessage({ type: 'error', id, message: err.message ?? String(err), file: err.file ?? null, line: err.line ?? null, trace: err.trace ?? [] });
   }
