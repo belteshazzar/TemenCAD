@@ -71,6 +71,19 @@ text(str, { size, font, align, letterSpacing })   // outline, baseline y = 0; al
 sk.toPolygons()                                   // outline rings as [[x, y], ...][]
 sk.translate(x, y)                                // move
 // fonts: 'Inter' (default), 'Inter Bold', 'Nunito Bold', 'Source Serif 4', 'JetBrains Mono', or an imported .ttf</pre>
+      <h3>Drawing a profile</h3>
+      <pre>sketch() / sketch([[x, y], ...])                 // a pen for one closed outline; close() turns it into a sketch
+b.arcTo(x, y, { r, side, large, segments })       // circular arc of radius r to (x, y); side 'left' (anticlockwise, default) | 'right'; large: the long way
+b.close({ mirror, segments })                     // finish: the Sketch. mirror 'x' | 'y' appends the mirror image, for symmetric outlines
+b.fillet(r)                                       // round the corner just drawn (clamped when the corner is too short)
+b.horizontal(dx) / b.vertical(dy)                 // axis-aligned relative segments
+b.line(dx, dy)                                    // relative segment
+b.lineTo(x, y)                                    // segment to a point
+b.moveTo(x, y)                                    // where the outline starts
+b.points()                                        // the points so far, for inspection
+b.tangentArcTo(x, y, { segments })                // arc tangent to the previous segment, ending at (x, y)
+// sketch().moveTo(0, 0).lineTo(30, 0).arcTo(30, 10, { r: 5 }).lineTo(0, 10).fillet(2).close().extrude(3)
+// revolve(sketch().moveTo(0, 0).lineTo(12, 0).lineTo(14, 20).fillet(3).lineTo(10, 40).lineTo(0, 40).close())</pre>
       <h3>2D → 3D and back</h3>
       <pre>extrude(sk, h, { center, twist, scale, slices })  // up along Y; twist in degrees, scale at the top
 sk.extrude(h, opts)                               // method form of extrude
@@ -149,13 +162,17 @@ sharpEdges(s, minAngle)                           // the edges found: [{ p0, p1,
       <h3>Placement by named features</h3>
       <pre>s.face('top' | 'bottom' | 'front' | 'back' | 'left' | 'right')  // a face of the bounding box: { center, normal, min, max, size, u, v }
 face.point([u, v]) / face.point({ x, y, z })      // a point on the face: [u, v] along its in-plane axes (top: x, z; front: x, y; right: z, y)
+s.anchor(name, [x, y, z], [nx, ny, nz]?)          // record a named point (and optional direction) that moves with the shape through every transform and boolean
+s.anchor(name)                                    // get it back: { name, point, normal }; s.anchors lists them all
+s.at(anchor, [dx, dy, dz]?, { gap })              // put s's origin on an anchor, +Y turned along its direction (if it has one)
 a.alignTo(b, { x, y, z }, { gap })                // per axis: 'min' | 'center' | 'max' match that side of b, or sit against it:
                                                   //   x: 'left' | 'right', y: 'below' | 'above', z: 'back' | 'front'; axes left out stay put
 s.at(face, [u, v], { gap, orient })               // put s's origin on the face with +Y along the normal: cutters and bosses built on y = 0 land on it
 part.placeOn(base, 'top', { at, gap, align })     // part's opposite face touches base's face, centred on it (align 'keep' only moves along the normal)
-distance(a, b)                                    // between faces (along the first one's normal), a face and a point, or two [x, y, z] points
+distance(a, b)                                    // between faces (along the first one's normal), anchors, [x, y, z] points, in any mix
 gridPattern(nu, nv, du, dv)                       // nu × nv [u, v] points at that pitch, centred
 rectPattern(w, d)                                 // the four corners of a w × d rectangle as [u, v] points
+// const pin = cylinder(1, 10, { center: false }).anchor('tip', [0, 10, 0], [0, 1, 0]);  cap.at(pin.rotate(0, 0, -90).anchor('tip'))
 // const top = plate.face('top');
 // const risers = union(rectPattern(21, 12.5).map((p) => cylinder(2.5, 4, { center: false }).at(top, p)));
 // plate = plate.add(risers).subtract(rectPattern(21, 12.5).map((p) => screwHole('M2', 6, { type: 'tap' }).at(risers.face('top'), p)));
@@ -208,8 +225,8 @@ intersects(a, b) / a.intersects(b)                // true when they share any vo
 overlap(a, b) / a.overlap(b)                      // the shared volume as a Shape, to show() or subtract
 // Check a design in the script: assert(clearance(lid, body) >= 0.3, 'lid binds'); assert(!intersects(screw, wall)).</pre>
       <h3>Annotations on renders</h3>
-      <pre>dimension(a, b, { label, offset })               // a measured line between two points, faces or shape centres; returns the length in mm
-mark(point, text)                                 // a dot with a label; point is [x, y, z], a face or a shape
+      <pre>dimension(a, b, { label, offset })               // a measured line between points, faces, anchors or shape centres; returns the length in mm
+mark(point, text)                                 // a dot with a label; point is [x, y, z], a face, an anchor or a shape
 // Drawn over the rendered views (Menu → Render views…, the assistant's render_views, temencad --png) and listed in --report.
 // Never geometry. label defaults to the length; offset: [dx, dy, dz] moves the line clear of the part.
 // dimension(plate.face('left'), plate.face('right'), { offset: [0, 0, 20] }); mark(lens.face('top'), 'lens');</pre>

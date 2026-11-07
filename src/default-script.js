@@ -57,6 +57,10 @@ const star = polygon2d(Array.from({ length: 10 }, (_, k) => {
 }));
 place(extrude(star, 4), -10, -5, '#8fe3a8');
 
+// 5b. Draw a profile like a pen: lines, a tangent arc, a per-corner fillet; close() gives a sketch
+const bracketProfile = sketch().moveTo(0, 0).lineTo(16, 0).lineTo(16, 4).fillet(1.5).lineTo(4, 4).tangentArcTo(0, 8).lineTo(0, 14).lineTo(-3, 14).lineTo(-3, 0).close();
+place(extrude(bracketProfile, 10).rotate(90, 0, 0).onPlate(), -60, 10, '#8fe3a8', 'drawn profile');
+
 // 6. Revolve: a vase profile (sketch x = radius, sketch y = height), and a partial revolve
 const vase = polygon2d([[0, 0], [7, 0], [8, 2], [5, 9], [6, 16], [4.6, 16], [3.8, 9], [6.8, 2], [6.2, 1.2], [0, 1.2]]);
 place(revolve(vase, { segments: 72 }), 15, -5, '#d3a6ff');
@@ -88,12 +92,16 @@ const cutters = [
 ];
 place(block.subtract(cutters), 55, 25, '#ff8f8f', 'mounting block');
 
-// 8b. Placement by named features: bosses on a face at a hole pattern, cutters on the boss tops, a lid above
+// 8b. Placement by named features: bosses on a face at a hole pattern, cutters on the boss tops, a lid above.
+//     Anchors are named points that travel with a shape: the pin keeps its 'tip' through the rotation and the union.
 const tray = box(30, 4, 22).onPlate();
 const bosses = union(rectPattern(22, 14).map((p) => cylinder(2.5, 6, { center: false }).at(tray.face('top'), p)));
 const trayWithBosses = tray.add(bosses).subtract(rectPattern(22, 14).map((p) => screwHole('M2', 5, { type: 'tap' }).at(bosses.face('top'), p)));
 const trayLid = box(30, 2, 22).alignTo(trayWithBosses, { x: 'center', z: 'center', y: 'above' }, { gap: 1.5 });
-place(trayWithBosses.add(trayLid.name('lid')), 115, 25, '#7fe0e0', 'tray');
+const pin = cylinder(1.2, 8, { center: false }).anchor('tip', [0, 8, 0], [0, 1, 0]).rotate(0, 0, -90).placeOn(trayWithBosses, 'right', { align: 'keep' });
+const trayAssembly = trayWithBosses.add(trayLid.name('lid')).add(pin);
+mark(trayAssembly.anchor('tip'), 'pin tip');
+place(trayAssembly, 115, 25, '#7fe0e0', 'tray');
 // Annotations appear on rendered views (Menu → Render views…), never in the geometry
 dimension([100, 12, 36], [130, 12, 36], { label: 'tray 30 mm' });
 mark([115, 13, 25], 'lid');

@@ -9,10 +9,18 @@ import { measureApi } from './measure.js';
 import { printApi } from './print.js';
 import { placeApi } from './place.js';
 import { annotateApi } from './annotate.js';
+import { sketchPathApi } from './sketch-path.js';
 
 export { Shape, Sketch, deg, rad };
 
 const MF = () => M().Manifold;
+
+/** Anchors of several shapes combined for a boolean result; the first shape's win on a clash. */
+function mergeAnchors(shapes) {
+  const anchors = {};
+  for (const s of shapes) for (const [k, a] of Object.entries(s.meta.anchors ?? {})) if (!(k in anchors)) anchors[k] = a;
+  return Object.keys(anchors).length ? { ...shapes[0].meta, anchors } : shapes[0].meta;
+}
 
 // ---------- 3D primitives ----------
 
@@ -109,7 +117,7 @@ function boolean(fn, kernelOp, sketchOp) {
     const list = shapes.flat(Infinity);
     if (allSketches(list)) return sketchOp(...list);
     const l = flatShapes(fn, list);
-    return l.length === 1 ? l[0] : new Shape(MF()[kernelOp](l.map((s) => s.m)), l[0].colorValue);
+    return l.length === 1 ? l[0] : new Shape(MF()[kernelOp](l.map((s) => s.m)), l[0].colorValue, mergeAnchors(l));
   };
 }
 export const union = boolean('union', 'union', sketchApi.union2d);
@@ -472,6 +480,7 @@ export const api = {
   ...printApi,
   ...placeApi,
   ...annotateApi,
+  ...sketchPathApi,
   Shape, box, cube, roundedBox, sphere, cylinder, cone, torus, polygon, prism,
   union, difference, intersect, hull, minkowski, shell, polyhedron, loft, resize, roof,
   linearArray, polarArray, grid,

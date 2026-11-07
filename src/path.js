@@ -1,5 +1,5 @@
 import { M } from './engine.js';
-import { Shape, describe, checkNumber, checkPositive, checkInt, hooks } from './shape.js';
+import { Shape, describe, checkNumber, checkPositive, checkInt, hooks, rotationMatrix } from './shape.js';
 import { Sketch } from './sketch.js';
 import { manifoldFromTriangles } from './mesh.js';
 
@@ -34,15 +34,6 @@ function checkPathPoints(fn, points) {
   });
   if (out.length < 2) throw new RangeError(`${fn}: the points are all the same`);
   return out;
-}
-
-function rotationMatrix(x, y, z) {
-  const [cx, sx, cy, sy, cz, sz] = [x, y, z].flatMap((d) => { const r = (d * Math.PI) / 180; return [Math.cos(r), Math.sin(r)]; });
-  const rx = [[1, 0, 0], [0, cx, -sx], [0, sx, cx]];
-  const ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]];
-  const rz = [[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]];
-  const mm = (a, b) => a.map((row) => [0, 1, 2].map((j) => row[0] * b[0][j] + row[1] * b[1][j] + row[2] * b[2][j]));
-  return mm(rz, mm(ry, rx));
 }
 
 /** Catmull-Rom spline through the points, `segments` samples per span. */

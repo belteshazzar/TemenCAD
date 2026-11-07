@@ -1,4 +1,4 @@
-import { Shape, hooks, describe, checkNumber } from './shape.js';
+import { Shape, Anchor, hooks, describe, checkNumber } from './shape.js';
 import { Face } from './place.js';
 
 /*
@@ -10,9 +10,10 @@ import { Face } from './place.js';
 
 function toPoint(fn, v) {
   if (v instanceof Face) return [...v.center];
+  if (v instanceof Anchor) return [...v.point];
   if (v instanceof Shape) return [...v.bounds().center];
   if (Array.isArray(v) && v.length === 3) return v.map((x, i) => checkNumber(fn, 'xyz'[i], x));
-  throw new TypeError(`${fn}: expected [x, y, z], a face or a shape, got ${describe(v)}`);
+  throw new TypeError(`${fn}: expected [x, y, z], a face, an anchor or a shape, got ${describe(v)}`);
 }
 
 const fmtMm = (v) => (Math.abs(v - Math.round(v)) < 0.005 ? String(Math.round(v)) : v.toFixed(2).replace(/0$/, ''));

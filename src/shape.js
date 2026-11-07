@@ -77,6 +77,30 @@ export function resizeFactors(fn, size, target, auto) {
 /** Rotation that turns Manifold's native Z-up constructions into our Y-up world. */
 export const Z_TO_Y = [-90, 0, 0];
 
+/** A named point on a shape, with an optional direction. */
+export class Anchor {
+  constructor(name, point, normal = null) { this.name = name; this.point = [...point]; this.normal = normal ? [...normal] : null; Object.freeze(this); }
+}
+
+export function rotationMatrix(x, y, z) {
+  const [cx, sx, cy, sy, cz, sz] = [x, y, z].flatMap((d) => { const r = (d * Math.PI) / 180; return [Math.cos(r), Math.sin(r)]; });
+  const rx = [[1, 0, 0], [0, cx, -sx], [0, sx, cx]], ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]], rz = [[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]];
+  const mm = (a, b) => a.map((row) => [0, 1, 2].map((j) => row[0] * b[0][j] + row[1] * b[1][j] + row[2] * b[2][j]));
+  return mm(rz, mm(ry, rx));
+}
+
+/** Apply a point transform to every anchor (and, for rotations and mirrors, to their directions too). */
+function mapAnchors(meta, mapPoint, directions = false) {
+  if (!meta.anchors) return meta;
+  const anchors = {};
+  for (const [k, a] of Object.entries(meta.anchors)) {
+    let normal = a.normal;
+    if (normal && directions) { const n = mapPoint(normal); const l = Math.hypot(...n) || 1; normal = n.map((v) => v / l); }
+    anchors[k] = { point: mapPoint(a.point), normal };
+  }
+  return { ...meta, anchors };
+}
+
 /** A solid: an immutable wrapper around a Manifold object (world space, Y up). */
 export class Shape {
   constructor(manifold, color = DEFAULT_COLOR, meta = {}) {
@@ -85,8 +109,26 @@ export class Shape {
     this.meta = meta; // { name, ghost, hidden }
   }
 
-  _wrap(m) { return new Shape(m, this.colorValue, this.meta); }
+  _wrap(m, mapPoint, directions = false) { return new Shape(m, this.colorValue, mapPoint ? mapAnchors(this.meta, mapPoint, directions) : this.meta); }
   _meta(patch) { return new Shape(this.m, this.colorValue, { ...this.meta, ...patch }); }
+
+  /**
+   * Named points that move with the shape: anchor('tip', [0, 10, 0]) records one (with an optional
+   * direction), anchor('tip') returns it as { name, point, normal } after every transform and boolean.
+   */
+  anchor(name, point, normal) {
+    if (typeof name !== 'string' || !name.trim()) throw new TypeError(`anchor: expected a name, got ${describe(name)}`);
+    if (point === undefined) {
+      const a = this.meta.anchors?.[name];
+      if (!a) throw new Error(`anchor: "${name}" is not an anchor of this shape${this.meta.anchors ? ` (it has ${Object.keys(this.meta.anchors).map((k) => `'${k}'`).join(', ')})` : ''}`);
+      return new Anchor(name, a.point, a.normal);
+    }
+    checkVec('anchor', 'point', point);
+    if (normal !== undefined) { checkVec('anchor', 'normal', normal); const l = Math.hypot(...normal) || 1; normal = normal.map((v) => v / l); }
+    return this._meta({ anchors: { ...this.meta.anchors, [name]: { point: [...point], normal: normal ? [...normal] : null } } });
+  }
+  /** All anchors as { name: Anchor }. */
+  get anchors() { return Object.fromEntries(Object.entries(this.meta.anchors ?? {}).map(([k, a]) => [k, new Anchor(k, a.point, a.normal)])); }
 
   /** Give the part a name (shown in the Parts panel and used for export file names). */
   name(n) {
@@ -101,14 +143,15 @@ export class Shape {
   translate(x = 0, y = 0, z = 0) {
     if (Array.isArray(x)) [x, y = 0, z = 0] = x;
     checkNumber('translate', 'x', x); checkNumber('translate', 'y', y); checkNumber('translate', 'z', z);
-    return this._wrap(this.m.translate([x, y, z]));
+    return this._wrap(this.m.translate([x, y, z]), (p) => [p[0] + x, p[1] + y, p[2] + z]);
   }
 
   /** Rotation in degrees around X, Y, Z (applied in that order). */
   rotate(x = 0, y = 0, z = 0) {
     if (Array.isArray(x)) [x, y = 0, z = 0] = x;
     checkNumber('rotate', 'x', x); checkNumber('rotate', 'y', y); checkNumber('rotate', 'z', z);
-    return this._wrap(this.m.rotate([x, y, z]));
+    const R = rotationMatrix(x, y, z);
+    return this._wrap(this.m.rotate([x, y, z]), (p) => R.map((row) => row[0] * p[0] + row[1] * p[1] + row[2] * p[2]), true);
   }
 
   scale(x = 1, y, z) {
@@ -116,13 +159,14 @@ export class Shape {
     if (y === undefined) { y = x; z = x; }
     checkNumber('scale', 'x', x); checkNumber('scale', 'y', y); checkNumber('scale', 'z', z);
     if (x === 0 || y === 0 || z === 0) throw new RangeError('scale: factors must not be 0');
-    return this._wrap(this.m.scale([x, y, z]));
+    return this._wrap(this.m.scale([x, y, z]), (p) => [p[0] * x, p[1] * y, p[2] * z]);
   }
 
   mirror(axis = 'x') {
     const n = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }[axis];
     if (!n) throw new Error(`mirror: axis must be 'x', 'y' or 'z'`);
-    return this._wrap(this.m.mirror(n));
+    const i = n.indexOf(1);
+    return this._wrap(this.m.mirror(n), (p) => p.map((v, k) => (k === i ? -v : v)), true);
   }
 
   /**

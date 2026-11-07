@@ -1,4 +1,4 @@
-import { Shape, describe, checkShape, checkNumber, checkNonNegative } from './shape.js';
+import { Shape, Anchor, describe, checkShape, checkNumber, checkNonNegative } from './shape.js';
 
 /*
  * Placement by named features, so scripts say where things go instead of doing the arithmetic:
@@ -51,9 +51,31 @@ export class Face {
 const isFace = (f) => f instanceof Face;
 const checkFace = (fn, f) => { if (!isFace(f)) throw new TypeError(`${fn}: expected a face (shape.face('top')), got ${describe(f)}`); return f; };
 
-/** Put this shape's origin on a point of a face, with its +Y turned along the face normal (so cutters and bosses built on y = 0 land on it). */
-function at(shape, face, offset = [0, 0], { gap = 0, orient = true } = {}) {
-  checkFace('at', face); checkNumber('at', 'gap', gap);
+/** Rotation (degrees about X, Y, Z) that turns +Y onto a unit direction. */
+function rotationToward(n) {
+  const [x, y, z] = n;
+  if (Math.abs(y - 1) < 1e-9) return [0, 0, 0];
+  if (Math.abs(y + 1) < 1e-9) return [180, 0, 0];
+  // Tilt about X by the angle from +Y toward the direction's projection, then turn about Y to face it.
+  const tilt = (Math.acos(Math.max(-1, Math.min(1, y))) * 180) / Math.PI;
+  const turn = (Math.atan2(x, z) * 180) / Math.PI;
+  return [tilt, turn, 0];
+}
+
+/**
+ * Put this shape's origin on a point of a face (or on an anchor), with its +Y turned along the face
+ * normal (or the anchor's direction), so cutters and bosses built on y = 0 land on it.
+ */
+function at(shape, target, offset = [0, 0], { gap = 0, orient = true } = {}) {
+  checkNumber('at', 'gap', gap);
+  if (target instanceof Anchor) {
+    const n = target.normal ?? [0, 1, 0];
+    const p = target.point.map((v, k) => v + n[k] * gap);
+    if (Array.isArray(offset) && offset.length === 3) for (let k = 0; k < 3; k++) p[k] += checkNumber('at', 'xyz'[k], offset[k]);
+    const s = orient && target.normal ? shape.rotate(...rotationToward(n)) : shape;
+    return s.translate(...p);
+  }
+  const face = checkFace('at', target);
   const f = FACES[face.name];
   const p = face.point(offset);
   for (let k = 0; k < 3; k++) p[k] += face.normal[k] * gap;
@@ -113,9 +135,9 @@ function alignTo(shape, other, spec = {}, { gap = 0 } = {}) {
 
 /** Distance between two faces (along the first one's normal), a face and a point, or two points. */
 export function distance(a, b) {
-  const pt = (v) => (isFace(v) ? v.center : Array.isArray(v) && v.length === 3 ? v.map((x, i) => checkNumber('distance', AXES[i], x)) : null);
+  const pt = (v) => (isFace(v) ? v.center : v instanceof Anchor ? v.point : Array.isArray(v) && v.length === 3 ? v.map((x, i) => checkNumber('distance', AXES[i], x)) : null);
   const pa = pt(a), pb = pt(b);
-  if (!pa || !pb) throw new TypeError(`distance: expected faces or [x, y, z] points, got ${describe(a)} and ${describe(b)}`);
+  if (!pa || !pb) throw new TypeError(`distance: expected faces, anchors or [x, y, z] points, got ${describe(a)} and ${describe(b)}`);
   if (isFace(a)) return Math.abs((pb[0] - pa[0]) * a.normal[0] + (pb[1] - pa[1]) * a.normal[1] + (pb[2] - pa[2]) * a.normal[2]);
   if (isFace(b)) return distance(b, a);
   return Math.hypot(pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]);
