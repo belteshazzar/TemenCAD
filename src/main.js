@@ -1,7 +1,10 @@
 import { EditorView, basicSetup } from 'codemirror';
 import { EditorState } from '@codemirror/state';
-import { javascript } from '@codemirror/lang-javascript';
+import { javascript, javascriptLanguage } from '@codemirror/lang-javascript';
 import { keymap } from '@codemirror/view';
+import { acceptCompletion } from '@codemirror/autocomplete';
+import { indentWithTab } from '@codemirror/commands';
+import { apiCompletions } from './completions.js';
 import { lintGutter } from '@codemirror/lint';
 import { Viewer } from './viewer.js';
 import { exportSTL, export3MF } from './export.js';
@@ -66,7 +69,10 @@ const makeState = (doc) => EditorState.create({
     basicSetup,
     lintGutter(),
     javascript(),
+    javascriptLanguage.data.of({ autocomplete: apiCompletions }),
     keymap.of([
+      { key: 'Tab', run: acceptCompletion }, // Tab accepts a suggestion (and then steps through snippet fields); otherwise it indents
+      indentWithTab,
       { key: 'Mod-Enter', run: () => (run(), true) },
       { key: 'Mod-o', run: () => (files.open().catch(reportErr), true) },
       { key: 'Mod-s', run: () => (files.save().catch(reportErr), true) },

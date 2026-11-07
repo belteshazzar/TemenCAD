@@ -1,0 +1,102 @@
+/**
+ * The built-in API as completion data: globals (functions available in every script) and methods on
+ * shapes and sketches. `snippet` uses CodeMirror placeholders (${name}); Tab moves between them.
+ * Keep in step with api.html when the API changes.
+ */
+
+const fn = (label, snippet, detail, info) => ({ label, snippet, detail, info, kind: 'function' });
+const method = (label, snippet, detail, info, on) => ({ label, snippet, detail, info, kind: 'method', on });
+
+export const GLOBALS = [
+  // 3D primitives
+  fn('box', 'box(${w}, ${h}, ${d})', '(w, h, d)', 'Box centred on the origin; one size makes a cube.'),
+  fn('cube', 'cube(${size})', '(size)', 'Alias of box().'),
+  fn('roundedBox', "roundedBox(${w}, ${h}, ${d}, ${r}, { edges: '${vertical}' })", '(w, h, d, r, { edges })', "Box with rounded edges; edges: 'all' or 'vertical' (only the four vertical edges, prints flat)."),
+  fn('sphere', 'sphere(${r})', '(r, { segments })', 'Sphere centred on the origin.'),
+  fn('cylinder', 'cylinder(${r}, ${h})', '(r, h) | ({ r1, r2, h })', 'Cylinder along Y, centred; r1/r2 give a tapered cylinder.'),
+  fn('cone', 'cone(${r}, ${h})', '(r, h)', 'Cone along Y with its base radius r.'),
+  fn('torus', 'torus(${r}, ${tube})', '(r, tube)', 'Torus in the XZ plane: ring radius r, tube radius tube.'),
+  fn('prism', 'prism(${sides}, ${r}, ${h})', '(sides, r, h)', 'Regular n-sided prism with circumradius r and height h.'),
+  fn('polygon', 'polygon([${points}], ${h})', '([[x, y], ...], h)', 'Extrude a 2D point list up along Y by h.'),
+  fn('polyhedron', 'polyhedron([${points}], [${faces}])', '(points, faces)', 'Solid from raw vertices and faces, like OpenSCAD; winding is fixed automatically.'),
+  fn('loft', 'loft([${sketches}], ${height})', '([sk1, sk2, ...], height | [y1, y2, ...])', 'Skin between 2D profiles stacked along Y.'),
+  fn('text3d', "text3d('${text}', { size: ${10}, height: ${2} })", "(str, { size, height, font, align })", 'Raised or engraved text as a solid, baseline at y = 0.'),
+  // 2D sketches
+  fn('circle', 'circle(${r})', '(r, { segments })', '2D circle.'),
+  fn('ellipse', 'ellipse(${rx}, ${ry})', '(rx, ry)', '2D ellipse.'),
+  fn('rect', 'rect(${w}, ${h})', '(w, h, { center })', '2D rectangle, centred by default.'),
+  fn('square', 'square(${size})', '(size)', 'Alias of rect().'),
+  fn('roundedRect', 'roundedRect(${w}, ${h}, ${r})', '(w, h, r, { center, segments })', '2D rectangle with rounded corners.'),
+  fn('slot', 'slot(${length}, ${r})', '(length, r)', 'Capsule: two semicircles length apart (centre to centre).'),
+  fn('regularPolygon', 'regularPolygon(${sides}, ${r})', '(sides, r)', 'Regular polygon with circumradius r.'),
+  fn('polygon2d', 'polygon2d([${points}])', '(points, { holes })', 'Arbitrary 2D polygon from [[x, y], ...]; pass { holes: [[...]] } for holes.'),
+  fn('text', "text('${text}', { size: ${10} })", "(str, { size, font, align, letterSpacing })", "2D text outline, baseline at y = 0. Fonts: 'Inter', 'Inter Bold', 'Nunito Bold', 'Source Serif 4', 'JetBrains Mono'."),
+  fn('extrude', 'extrude(${sketch}, ${h})', '(sketch, h, { center, twist, scale })', 'Extrude a sketch up along Y; twist in degrees, scale at the top.'),
+  fn('revolve', 'revolve(${sketch})', '(sketch, { angle, segments })', 'Revolve a sketch around Y; sketch x is the radius.'),
+  fn('roof', 'roof(${sketch})', '(sketch, { angle, segments, tolerance })', 'Solid whose height is the distance to the outline: pyramid from a square, hip roof from a rectangle.'),
+  fn('projection', 'projection(${shape})', '(shape, { cut: true | y })', 'Flatten a solid to a 2D sketch: footprint from above, or the slice at height y.'),
+  // Booleans and friends
+  fn('union', 'union(${a}, ${b})', '(a, b, ...)', 'Merge shapes (or 2D sketches). Arrays are accepted.'),
+  fn('difference', 'difference(${a}, ${b})', '(a, b, ...)', 'Subtract every following shape from the first.'),
+  fn('intersect', 'intersect(${a}, ${b})', '(a, b, ...)', 'Keep only the common volume.'),
+  fn('hull', 'hull(${a}, ${b})', '(a, b, ... | [x, y, z] points)', 'Convex hull of shapes, sketches or raw points.'),
+  fn('minkowski', 'minkowski(${a}, ${b})', '(a, b)', 'Minkowski sum: sweep b over every point of a.'),
+  fn('shell', "shell(${shape}, ${t}, { open: '${top}' })", "(shape, t, { open: 'top' | ['top', 'front'] })", 'Hollow a solid to wall thickness t, optionally removing faces.'),
+  fn('resize', 'resize(${shape}, [${w}, ${h}, ${d}])', '(shape, [w, h, d], { auto })', 'Scale to a bounding-box size; 0 keeps an axis, auto scales it proportionally.'),
+  // Arrays
+  fn('linearArray', 'linearArray(${shape}, ${count}, [${dx}, 0, 0])', '(shape, count, [dx, dy, dz])', 'count copies stepped by a vector (returns an array; wrap in union()).'),
+  fn('polarArray', 'polarArray(${shape}, ${count}, { radius: ${r} })', '(shape, count, { radius, axis, start, sweep })', 'count copies around an axis (returns an array).'),
+  fn('grid', 'grid(${shape}, [${nx}, ${nz}], [${dx}, ${dz}])', '(shape, [nx, nz], [dx, dz])', 'nx × nz grid on the ground plane (returns an array).'),
+  // Screws
+  fn('screwHole', "screwHole('${M3}', ${length})", "(size, length, { type: 'clearance' | 'tap' | 'countersunk' | 'counterbore', tolerance })", 'Cutter for a screw hole: axis Y, top surface at y = 0. Sizes M2 M2.5 M3 M4 M5 M6 M8.'),
+  fn('nutPocket', "nutPocket('${M3}')", '(size, { depth, tolerance })', 'Hexagonal nut pocket cutter: axis Y, top at y = 0.'),
+  fn('heatInsert', "heatInsert('${M3}')", '(size, { depth, tolerance })', 'Heat-set insert hole cutter: axis Y, top at y = 0.'),
+  fn('screw', "screw('${M3}')", '(size)', 'Screw dimensions: { d, clearance, head, csk, nut, insert, tap }.'),
+  { label: 'SCREWS', detail: 'object', info: 'Table of metric screw dimensions by size.', kind: 'constant' },
+  // Output and helpers
+  fn('show', 'show(${shape})', '(shape | [shapes], { name, color, ghost, hidden })', 'Display a shape without returning it.'),
+  fn('log', 'log(${value})', '(...values)', 'Print to the console.'),
+  fn('echo', 'echo(${value})', '(...values)', 'OpenSCAD-style console output with the line number; returns the first value.'),
+  fn('assert', "assert(${condition}, '${message}')", '(condition, message)', 'Stop the build with an error on this line when the condition is falsy.'),
+  fn('deg', 'deg(${radians})', '(radians)', 'Radians to degrees.'),
+  fn('rad', 'rad(${degrees})', '(degrees)', 'Degrees to radians.'),
+];
+
+/** Methods on 3D shapes ('shape'), 2D sketches ('sketch') or both. */
+export const METHODS = [
+  method('translate', 'translate(${x}, ${y}, ${z})', '(x, y, z)', 'Move; sketches take (x, y).', 'both'),
+  method('rotate', 'rotate(${x}, ${y}, ${z})', '(xDeg, yDeg, zDeg)', 'Rotate in degrees; sketches take one angle.', 'both'),
+  method('scale', 'scale(${f})', '(f | x, y, z)', 'Scale uniformly or per axis.', 'both'),
+  method('mirror', "mirror('${x}')", "('x' | 'y' | 'z')", 'Mirror across an axis plane.', 'both'),
+  method('resize', 'resize([${w}, ${h}, ${d}])', '([w, h, d], { auto })', 'Scale to a bounding-box size; 0 keeps an axis.', 'both'),
+  method('color', "color('${#8fb3ff}')", '(css)', 'Display colour: #hex, a CSS name, rgb() or hsl().', 'shape'),
+  method('onPlate', 'onPlate()', '(y = 0)', 'Put the bottom on the build plate.', 'shape'),
+  method('center', 'center()', '()', 'Centre on the origin.', 'both'),
+  method('centerXZ', 'centerXZ()', '()', 'Centre in X and Z, keeping Y.', 'shape'),
+  method('align', "align({ ${y}: '${min}' })", "({ x, y, z: 'min' | 'center' | 'max' }, [tx, ty, tz])", 'Align the bounding box to a point.', 'shape'),
+  method('add', 'add(${other})', '(other, ...)', 'Union.', 'both'),
+  method('union', 'union(${other})', '(other, ...)', 'Union.', 'both'),
+  method('subtract', 'subtract(${other})', '(other, ...)', 'Difference.', 'both'),
+  method('intersect', 'intersect(${other})', '(other, ...)', 'Intersection.', 'both'),
+  method('hull', 'hull(${other})', '(other, ...)', 'Convex hull with other shapes.', 'both'),
+  method('minkowski', 'minkowski(${other})', '(other)', 'Minkowski sum.', 'shape'),
+  method('round', 'round(${r})', '(r, { segments })', 'Round all edges and corners (grows by r).', 'shape'),
+  method('erode', 'erode(${t})', '(t)', 'Shrink inward by t on every face.', 'shape'),
+  method('shell', "shell(${t}, { open: '${top}' })", "(t, { open })", 'Hollow to a wall thickness.', 'shape'),
+  method('projection', 'projection()', '({ cut: true | y })', 'Footprint or cut slice as a 2D sketch.', 'shape'),
+  method('name', "name('${part}')", '(name)', 'Name the part (Parts panel, export file names).', 'shape'),
+  method('ghost', 'ghost()', '(on = true)', 'Render transparent as a reference; never exported.', 'shape'),
+  method('hide', 'hide()', '(on = true)', 'List in the Parts panel but do not draw.', 'shape'),
+  method('bounds', 'bounds()', '()', '{ min, max, size, center }.', 'both'),
+  method('volume', 'volume()', '()', 'Volume in mm³.', 'shape'),
+  method('surfaceArea', 'surfaceArea()', '()', 'Surface area in mm².', 'shape'),
+  method('isEmpty', 'isEmpty()', '()', 'True if the shape has no volume / area.', 'both'),
+  method('area', 'area()', '()', 'Area of a sketch in mm².', 'sketch'),
+  method('offset', "offset(${delta}, { join: '${round}' })", "(delta, { join: 'round' | 'miter' | 'square' })", 'Grow (+) or shrink (−) a 2D region.', 'sketch'),
+  method('fillet', 'fillet(${r})', '(r, { segments })', 'Round every corner of a sketch.', 'sketch'),
+  method('chamfer', 'chamfer(${d})', '(d)', 'Cut every corner of a sketch.', 'sketch'),
+  method('extrude', 'extrude(${h})', '(h, { center, twist, scale })', 'Extrude a sketch up along Y.', 'sketch'),
+  method('revolve', 'revolve()', '({ angle, segments })', 'Revolve a sketch around Y.', 'sketch'),
+  method('roof', 'roof()', '({ angle, segments, tolerance })', 'Roof solid from a sketch.', 'sketch'),
+  method('toPolygons', 'toPolygons()', '()', 'Outline rings of a sketch as [[x, y], ...][].', 'sketch'),
+];
