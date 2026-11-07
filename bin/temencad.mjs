@@ -8,6 +8,7 @@
  *   temencad model.js --parts         -> one STL per part next to the output
  *   temencad model.js --plate prusa-mk4   check the result against a printer's build volume
  *   temencad model.js --png out.png   also render a picture of the result (no browser needed)
+ *   temencad model.js --png out.png --views all --section y=5   a contact sheet of views, cut open at y = 5
  *   temencad api                      print the API reference as plain text (for people and agents)
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -19,7 +20,8 @@ import { whereText } from '../src/trace.js';
 import { buildProject, loadProject } from '../src/headless.js';
 import { readPackage, vendorPackage, addImportLine } from '../src/package.js';
 import { CATALOG_URL } from '../src/config.js';
-import { renderThumbnail } from '../src/render.js';
+import { renderViews, VIEW_NAMES } from '../src/render.js';
+import { polyhedronFromMesh, box } from '../src/cad.js';
 import { colorHex } from '../src/export.js';
 import { referenceFromHtml } from '../src/api-text.js';
 import { fileURLToPath } from 'node:url';
@@ -39,15 +41,21 @@ Options:
       --plate <preset|WxDxH>
                         Check the model fits a build plate, e.g. --plate prusa-mk4 or --plate 220x220x250
       --list-plates     Print the plate presets and exit
-      --png <file>      Also render the result to a PNG (isometric view, like the app)
-      --size <WxH>      Size of that picture in pixels (default 960x720)
+      --png <file>      Also render the result to a PNG, with part labels, sizes, a scale bar and axes
+      --views <list>    Views in that picture: iso (default), top, bottom, front, back, left, right, or all;
+                        comma-separated views are tiled into one sheet, e.g. --views iso,top,front,right
+      --section <axis=value>
+                        Cut the model open for the picture, e.g. --section y=5 removes everything above y = 5
+                        (x and z remove the positive side); cut faces are drawn red
+      --size <WxH>      Size of one view in pixels (default 960x720)
+      --no-labels       Plain render without labels
       --into <file>     For "add": the project to add to (default ./main.js)
   -q, --quiet           Only print errors
   -h, --help            Show this help
 `;
 
 function parseArgs(argv) {
-  const o = { script: null, output: null, parts: false, plate: null, quiet: false, add: null, into: null, png: null, size: [960, 720] };
+  const o = { script: null, output: null, parts: false, plate: null, quiet: false, add: null, into: null, png: null, size: [960, 720], views: ['iso'], section: null, labels: true };
   if (argv[0] === 'api') { process.stdout.write(referenceFromHtml(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'api.html'), 'utf8')) + '\n'); process.exit(0); }
   if (argv[0] === 'add') { o.add = argv[1] ?? fail(USAGE); argv = argv.slice(2); }
   for (let i = 0; i < argv.length; i++) {
@@ -59,6 +67,9 @@ function parseArgs(argv) {
     else if (a === '--plate') o.plate = argv[++i];
     else if (a === '--into') o.into = argv[++i];
     else if (a === '--png') o.png = argv[++i];
+    else if (a === '--views') { const v = (argv[++i] ?? '').toLowerCase(); o.views = v === 'all' ? ['iso', 'top', 'front', 'right', 'bottom', 'back'] : v.split(',').map((s) => s.trim()).filter(Boolean); for (const n of o.views) if (!VIEW_NAMES.includes(n)) fail(`Unknown view "${n}". Use ${VIEW_NAMES.join(', ')} or all.`); }
+    else if (a === '--section') { const m = (argv[++i] ?? '').match(/^([xyz])\s*=\s*(-?\d+(?:\.\d+)?)$/i); if (!m) fail('--section needs axis=value, e.g. --section y=5'); o.section = { axis: m[1].toLowerCase(), value: +m[2] }; }
+    else if (a === '--no-labels') o.labels = false;
     else if (a === '--size') { const m = (argv[++i] ?? '').match(/^(\d+)x(\d+)$/i); if (!m) fail('--size needs WxH in pixels, e.g. 960x720'); o.size = [+m[1], +m[2]]; }
     else if (a === '-q' || a === '--quiet') o.quiet = true;
     else if (a.startsWith('-')) fail(`Unknown option ${a}\n\n${USAGE}`);
@@ -130,8 +141,10 @@ async function main() {
   if (opts.png) {
     const png = resolve(opts.png);
     mkdirSync(dirname(png), { recursive: true });
-    writeFileSync(png, renderThumbnail(all, { width: opts.size[0], height: opts.size[1], colorHex }));
-    log(`Rendered ${png}`);
+    let meshes = all;
+    if (opts.section) meshes = sectionMeshes(all, opts.section);
+    writeFileSync(png, renderViews(meshes, { views: opts.views, width: opts.size[0], height: opts.size[1], colorHex, labels: opts.labels, section: opts.section }));
+    log(`Rendered ${png}${opts.views.length > 1 ? ` (${opts.views.join(', ')})` : ''}${opts.section ? `, cut at ${opts.section.axis} = ${opts.section.value}` : ''}`);
   }
 
   if (opts.parts) {
@@ -144,6 +157,25 @@ async function main() {
     }
   }
   process.exitCode = plate && fitProblems(bounds(parts), plate).length ? 2 : 0;
+}
+
+/** Cut every mesh with a half-space so the picture shows the inside: keeps the side below `value` (y) or the negative side (x, z). */
+function sectionMeshes(meshes, { axis, value }) {
+  const k = 'xyz'.indexOf(axis);
+  const out = [];
+  for (const m of meshes) {
+    const s = polyhedronFromMesh(m.name ?? 'part', m.positions, m.indices);
+    const { min, max } = s.bounds();
+    if (value <= min[k]) continue; // nothing left
+    if (value >= max[k]) { out.push(m); continue; }
+    const big = 2 * Math.max(...max.map(Math.abs), ...min.map(Math.abs), Math.abs(value)) + 10;
+    const keep = box(big, big, big).translate(k === 0 ? value - big / 2 : 0, k === 1 ? value - big / 2 : 0, k === 2 ? value - big / 2 : 0);
+    const cut = s.intersect(keep);
+    if (cut.isEmpty()) continue;
+    const { positions, indices } = cut.toMesh();
+    out.push({ ...m, positions, indices });
+  }
+  return out;
 }
 
 /** temencad add <name>: fetch the package from the catalogue and vendor it into a folder project or a .temen file. */

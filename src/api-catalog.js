@@ -47,6 +47,11 @@ export const GLOBALS = [
   // Images
   fn('heightmap', 'heightmap(${image}, { width: ${60}, height: ${4} })', '(image | (x, z) => 0..1, { width, depth, height, base, invert, smooth, gamma, resolution })', 'Relief solid: brightness (or a function of position) becomes height above a base plate.'),
   fn('lithophane', 'lithophane(${image}, { width: ${80}, upright: true })', '(image, { width, depth, minThickness, maxThickness, border, smooth, gamma, resolution, upright })', 'Plate whose thickness follows the image: dark is thick, light is thin. Light it from behind.'),
+  // Checks
+  fn('clearance', 'clearance(${a}, ${b})', '(a, b)', 'Smallest gap between two shapes in mm; 0 when they touch or overlap.'),
+  fn('interference', 'interference(${a}, ${b})', '(a, b)', 'Volume two shapes share in mm³.'),
+  fn('intersects', 'intersects(${a}, ${b})', '(a, b)', 'True when two shapes share any volume.'),
+  fn('overlap', 'overlap(${a}, ${b})', '(a, b)', 'The volume two shapes share, as a Shape.'),
   // Edges
   fn('fillet', "fillet(${shape}, ${r}, { edges: '${top}' })", '(shape | sketch, r, { edges, segments })', 'Round the sharp edges of a solid (or the corners of a sketch).'),
   fn('chamfer', "chamfer(${shape}, ${d}, { edges: '${top}' })", '(shape | sketch, d, { edges })', 'Bevel the sharp edges of a solid (or cut the corners of a sketch).'),
@@ -106,6 +111,10 @@ export const METHODS = [
   method('hide', 'hide()', '(on = true)', 'List in the Parts panel but do not draw.', 'shape'),
   method('bounds', 'bounds()', '()', '{ min, max, size, center }.', 'both'),
   method('volume', 'volume()', '()', 'Volume in mm³.', 'shape'),
+  method('clearance', 'clearance(${other})', '(other)', 'Smallest gap to another shape in mm; 0 when they touch or overlap.', 'shape'),
+  method('interference', 'interference(${other})', '(other)', 'Volume shared with another shape in mm³.', 'shape'),
+  method('intersects', 'intersects(${other})', '(other)', 'True when the shapes share any volume.', 'shape'),
+  method('overlap', 'overlap(${other})', '(other)', 'The volume shared with another shape, as a Shape.', 'shape'),
   method('surfaceArea', 'surfaceArea()', '()', 'Surface area in mm².', 'shape'),
   method('isEmpty', 'isEmpty()', '()', 'True if the shape has no volume / area.', 'both'),
   method('area', 'area()', '()', 'Area of a sketch in mm².', 'sketch'),

@@ -187,7 +187,12 @@ show(s, { name, color, ghost, hidden })           // display a shape without ret
       <pre>s.bounds()                                        // { min, max, size, center } as [x, y, z] arrays
 s.isEmpty()                                       // true when the shape has no volume
 s.surfaceArea()                                   // surface area in mm²
-s.volume()                                        // volume in mm³</pre>
+s.volume()                                        // volume in mm³
+clearance(a, b) / a.clearance(b)                  // smallest gap between two shapes in mm; 0 when they touch or overlap
+interference(a, b) / a.interference(b)            // shared volume in mm³; 0 when they do not overlap
+intersects(a, b) / a.intersects(b)                // true when they share any volume
+overlap(a, b) / a.overlap(b)                      // the shared volume as a Shape, to show() or subtract
+// Check a design in the script: assert(clearance(lid, body) >= 0.3, 'lid binds'); assert(!intersects(screw, wall)).</pre>
       <h3>Projects and imports</h3>
       <pre>import { lid, WALL } from './lid.js'              // another script; lid.js uses export const / function
 import logo from './Logo.ttf'                     // a font in the project: text3d('Hi', { font: logo })
