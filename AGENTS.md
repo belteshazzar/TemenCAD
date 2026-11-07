@@ -4,7 +4,7 @@ TemenCAD is a code-driven CAD for 3D printing: a JavaScript script is the model.
 
 ## Learn the modelling API first
 
-- `npm run api` (or `npx temencad api`) prints the complete API reference as plain text. It is generated from `api.html`, which is the single source of truth: the in-app assistant, the editor's autocomplete catalogue (`src/api-catalog.js`) and the published `api.txt` all derive from it or must be kept in step with it.
+- `npm run api` (or `npx temencad api`) prints the complete API reference as plain text; `npx temencad api sweep` prints one section (match a heading or a function name; `api --list` shows the headings). `npx temencad eval "screw('M4')"` answers a one-line question with the whole API available. It is generated from `api.html`, which is the single source of truth: the in-app assistant, the editor's autocomplete catalogue (`src/api-catalog.js`) and the published `api.txt` all derive from it or must be kept in step with it.
 - A model skill with the conventions and the build-check loop lives in `.claude/skills/temencad/SKILL.md`. Copy it into any project where you write TemenCAD scripts.
 
 ## Build and check a model without a browser
@@ -14,6 +14,7 @@ node bin/temencad.mjs model.js -o model.stl --png model.png   # build, export, a
 node bin/temencad.mjs model.js --png sheet.png --views all     # iso, top, front, right, bottom, back on one sheet, labelled
 node bin/temencad.mjs model.js --png cut.png --section y=5     # cut open at a plane; cut faces are red
 node bin/temencad.mjs model.js --check --report report.json    # printability warnings (exit 3) and a JSON report to parse
+node bin/temencad.mjs test models/ --check                     # build every main.js/.temen found; failed asserts and check problems fail it (exit 1)
 node bin/temencad.mjs model.js --plate prusa-mk4              # exit code 2 if it does not fit the plate
 node bin/temencad.mjs project.temen -o out.3mf --parts        # a .temen archive; one STL per named part too
 ```
@@ -35,4 +36,4 @@ The build prints `ECHO` lines from `echo()`, warnings with file and line, and er
 3. Add it to `src/api-catalog.js` for autocomplete.
 4. Show it in `src/default-script.js` if it is user-facing, and mention it in `README.md`.
 5. Test it headlessly with a script and `node bin/temencad.mjs script.js --png out.png`; check exact volumes where a closed form exists.
-6. `npm run build` must pass (it regenerates `public/api.txt`).
+6. `npm run build` must pass (it regenerates `public/api.txt`), and `node bin/temencad.mjs test <your test scripts>` should stay green.

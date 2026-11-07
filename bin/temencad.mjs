@@ -10,7 +10,9 @@
  *   temencad model.js --png out.png   also render a picture of the result (no browser needed)
  *   temencad model.js --png out.png --views all --section y=5   a contact sheet of views, cut open at y = 5
  *   temencad model.js --check --report report.json   printability warnings, and everything as JSON for tools and agents
- *   temencad api                      print the API reference as plain text (for people and agents)
+ *   temencad api [section | name]     print the API reference, or one section of it, as plain text
+ *   temencad eval "box(10).volume()"  evaluate an expression with the API and print the result
+ *   temencad test [paths]             build every script and project found and report pass/fail
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
@@ -30,12 +32,16 @@ import { fileURLToPath } from 'node:url';
 
 const USAGE = `Usage: temencad <main.js | project.temen> [options]
        temencad add <package> [--into <main.js | project.temen>]
-       temencad api
+       temencad api [section | function]
+       temencad eval "<expression or statements>"
+       temencad test [files | folders] [--check] [--strict] [--json]
 
 Builds the script or project with the same engine as the app and writes the visible, non-ghost parts.
 A plain script may import sibling files (./lib.js, ./Logo.ttf, ./part.stl); they are read from its folder.
 "add" copies a package from the shared catalogue into the project (catalog/<name>/) and adds its import.
-"api" prints the complete API reference as plain text: read it before writing a script.
+"api" prints the API reference as plain text; "api sweep" or "api edges" prints just the matching section(s); "api --list" the headings.
+"eval" runs a one-line expression (or statements that echo/return) with the whole API available and prints the value.
+"test" builds every main.js, *.temen and *.js given (folders are searched) and reports which fail; exit code 1 on failure.
 
 Options:
   -o, --output <file>   Output file; the extension picks the format: .stl or .3mf (default: <script>.stl)
@@ -62,7 +68,9 @@ Options:
 
 function parseArgs(argv) {
   const o = { script: null, output: null, parts: false, plate: null, quiet: false, add: null, into: null, png: null, size: [960, 720], views: ['iso'], section: null, labels: true, check: false, report: null };
-  if (argv[0] === 'api') { process.stdout.write(referenceFromHtml(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'api.html'), 'utf8')) + '\n'); process.exit(0); }
+  if (argv[0] === 'api') { apiCommand(argv.slice(1)); process.exit(0); }
+  if (argv[0] === 'eval') { o.eval = argv.slice(1).join(' '); if (!o.eval.trim()) fail('eval needs an expression, e.g. temencad eval "screw(\'M4\')"'); return o; }
+  if (argv[0] === 'test') { o.test = []; o.strict = false; o.json = false; for (let i = 1; i < argv.length; i++) { const a = argv[i]; if (a === '--check') o.check = true; else if (a === '--strict') o.strict = true; else if (a === '--json') o.json = true; else if (a.startsWith('-')) fail(`Unknown option ${a}`); else o.test.push(a); } if (!o.test.length) o.test.push('.'); return o; }
   if (argv[0] === 'add') { o.add = argv[1] ?? fail(USAGE); argv = argv.slice(2); }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -86,6 +94,88 @@ function parseArgs(argv) {
   }
   if (!o.script && !o.add) fail(USAGE);
   return o;
+}
+
+const REFERENCE = () => referenceFromHtml(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'api.html'), 'utf8'));
+
+/** temencad api [query]: the whole reference, --list for the headings, or the sections matching a heading or containing a function. */
+function apiCommand(args) {
+  const text = REFERENCE();
+  if (!args.length) { process.stdout.write(text + '\n'); return; }
+  const parts = text.split(/\n(?=## )/);
+  const intro = parts.shift();
+  const sections = parts.map((p) => ({ heading: p.split('\n')[0].replace(/^## /, ''), text: p }));
+  if (args[0] === '--list') { process.stdout.write(sections.map((s) => s.heading).join('\n') + '\n'); return; }
+  const q = args.join(' ').toLowerCase();
+  let hits = sections.filter((s) => s.heading.toLowerCase().includes(q));
+  if (!hits.length) {
+    const name = q.replace(/\(.*$/, '').replace(/^.*\./, '');
+    const re = new RegExp(`(^|[^\\w])${name.replace(/[^\w]/g, '')}\\(`, 'i');
+    hits = sections.filter((s) => s.text.split('\n').some((l) => re.test(l.split('//')[0])));
+  }
+  if (!hits.length) fail(`Nothing in the reference matches "${args.join(' ')}". Sections:\n  ${sections.map((s) => s.heading).join('\n  ')}`);
+  process.stdout.write((hits.length === sections.length ? intro + '\n' : '') + hits.map((s) => s.text).join('\n') + '\n');
+}
+
+/** temencad eval: run an expression (or statements) as a script and print what it evaluates to. */
+async function evalCommand(code, log) {
+  const isExpression = !/[;\n]/.test(code.trim()) && !/^\s*(const|let|var|return|if|for|while)\b/.test(code.trim());
+  const body = isExpression
+    ? `const __v = (${code});\nif (__v instanceof Shape) echo({ volume: __v.volume(), surfaceArea: __v.surfaceArea(), bounds: __v.bounds() }); else echo(__v);\nreturn __v instanceof Shape ? __v : [];`
+    : code;
+  const project = new Project(); project.set(ENTRY, body);
+  try {
+    const result = await buildProject(project, {
+      onLog: (t) => log(t.replace(/^ECHO \(line \d+\): /, '')),
+      onWarn: (m) => console.error(`Warning: ${m.text}`),
+    });
+    for (const m of result.meshes) if (!isExpression) log(`${m.name}: ${m.indices.length / 3} triangles, ${m.volume.toFixed(1)} mm³`);
+  } catch (err) { fail(`Error${err.line ? ` (line ${err.line})` : ''}: ${err.message}`); }
+}
+
+/** temencad test: build each script or project; a build error (including a failed assert) is a failure. */
+async function testCommand(opts, log) {
+  const { readdirSync, statSync, existsSync } = await import('node:fs');
+  const files = [];
+  const add = (p) => {
+    const abs = resolve(p);
+    if (!existsSync(abs)) return fail(`No such file or folder: ${p}`);
+    if (statSync(abs).isDirectory()) {
+      for (const entry of readdirSync(abs)) {
+        if (entry.startsWith('.') || entry === 'node_modules' || entry === 'catalog' || entry === 'dist') continue;
+        const child = join(abs, entry);
+        if (statSync(child).isDirectory()) add(child);
+        else if (entry === ENTRY || entry.endsWith(PROJECT_EXT)) files.push(child);
+      }
+    } else files.push(abs);
+  };
+  opts.test.forEach(add);
+  if (!files.length) fail('test: no main.js, .temen or script files found');
+  const results = [];
+  for (const file of files) {
+    const rel = file.startsWith(process.cwd()) ? file.slice(process.cwd().length + 1) : file;
+    const warnings = [];
+    let r = { file: rel, ok: true, warnings, parts: 0, ms: 0, problems: [] };
+    try {
+      const project = loadProject(file);
+      const result = await buildProject(project, { onWarn: (m) => warnings.push(`${m.text}${m.line ? ` (line ${m.line})` : ''}`) });
+      r.parts = result.meshes.filter((m) => !m.ghost && !m.hidden).length; r.ms = +result.ms.toFixed(0);
+      if (opts.check) for (const m of result.meshes) { if (m.ghost || m.hidden) continue; const p = printability(polyhedronFromMesh(m.name, m.positions, m.indices)); for (const pr of p.problems) r.problems.push(`${m.name}: ${pr}`); }
+      if (!r.parts) r.problems.push('no visible parts');
+      if ((opts.strict && warnings.length) || r.problems.length) r.ok = false;
+    } catch (err) { r.ok = false; r.error = `${err.message}${err.line ? ` (${err.file ?? ENTRY}:${err.line})` : ''}`; }
+    results.push(r);
+    if (!opts.json) {
+      log(`${r.ok ? '✓' : '✗'} ${rel}${r.ok ? `  ${r.parts} part${r.parts === 1 ? '' : 's'}, ${r.ms} ms` : ''}${warnings.length ? `  ${warnings.length} warning${warnings.length === 1 ? '' : 's'}` : ''}`);
+      if (r.error) log(`    ${r.error}`);
+      for (const p of r.problems) log(`    ${p}`);
+      if (opts.strict || !r.ok) for (const w of warnings) log(`    warning: ${w}`);
+    }
+  }
+  const failed = results.filter((r) => !r.ok).length;
+  if (opts.json) process.stdout.write(JSON.stringify({ ok: !failed, passed: results.length - failed, failed, results }, null, 2) + '\n');
+  else log(`${results.length - failed} passed, ${failed} failed`);
+  process.exitCode = failed ? 1 : 0;
 }
 
 function fail(msg, code = 1) { process.stderr.write(msg.endsWith('\n') ? msg : msg + '\n'); process.exit(code); }
@@ -112,6 +202,8 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const log = opts.quiet ? () => {} : (s) => console.log(s);
   if (opts.add) return addPackage(opts.add, opts.into ?? 'main.js', log);
+  if (opts.eval !== undefined) return evalCommand(opts.eval, (s) => console.log(s));
+  if (opts.test) return testCommand(opts, (s) => console.log(s));
   const scriptPath = resolve(opts.script);
   let project;
   try { project = loadProject(scriptPath); }

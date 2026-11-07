@@ -9,7 +9,7 @@ A TemenCAD model is a JavaScript script. Units are millimetres, **Y is up**, the
 
 ## Before writing a script
 
-Run `npx temencad api` (in this repository: `node bin/temencad.mjs api`) and read the reference. Only the functions it lists exist. If you cannot run it, fetch https://belteshazzar.github.io/TemenCAD/api.txt.
+Run `npx temencad api --list` (in this repository: `node bin/temencad.mjs api`) for the headings, then `npx temencad api <section or function>` for the parts you need, e.g. `api sweep`, `api edges`, `api placement`. Only the functions it lists exist. `npx temencad eval "screw('M4')"` answers a quick question (an expression, or statements that `echo`/`return`). If you cannot run it, fetch https://belteshazzar.github.io/TemenCAD/api.txt.
 
 ## The loop
 
@@ -18,7 +18,8 @@ Run `npx temencad api` (in this repository: `node bin/temencad.mjs api`) and rea
    - Model the thing the part must fit as a ghost (`show(ref, { ghost: true })`) and check it in code: `assert(clearance(part, ref) >= 0.5, 'binds')`, `assert(!intersects(cutter, wall))`, `echo(interference(a, b))`. `overlap(a, b)` returns the shared volume as a shape you can show.
 3. Run `--check` (overhangs past 45°, islands and bridges, walls under 0.8 mm, below the plate) and read `--report report.json` instead of parsing the console: it holds every part's bounds, volume, surface area and centre of mass, the warnings with file and line, the echo lines and the plate check. In the script, `assert(printability(part).ok, 'needs supports')` makes the build fail until the design prints cleanly.
 4. Check the plate when the printer is known: `--plate prusa-mk4` (`--list-plates` for presets, or `220x220x250`).
-5. Export STL for single-material prints or `-o model.3mf` for named, coloured parts.
+5. For a folder of models, `npx temencad test folder/ --check` builds them all and fails on any error, failed assert or printability problem; `--json` for tooling.
+6. Export STL for single-material prints or `-o model.3mf` for named, coloured parts.
 
 ## Conventions that avoid most mistakes
 

@@ -16,7 +16,7 @@ writeFileSync('public/llms.txt', `# TemenCAD
 
 ## Working with it from a terminal or an agent
 
-- \`npx temencad api\` prints the API reference. Read it before writing a script.
+- \`npx temencad api\` prints the API reference; \`api <section or function>\` one part of it; \`api --list\` the headings. \`npx temencad eval "<expression>"\` evaluates one line with the API. \`npx temencad test <folder>\` builds every model found and fails on errors or failed asserts.
 - \`npx temencad model.js -o model.stl --png model.png --views all\` builds a script (imports resolved from its folder), writes STL or 3MF, and renders labelled views to check; \`--section y=5\` cuts it open.
 - \`npx temencad model.js --plate prusa-mk4\` checks the model fits a build plate (exit code 2 if not); \`--check\` flags overhangs, unsupported islands and thin walls (exit code 3); \`--report report.json\` writes everything as JSON.
 - \`npx temencad add <package>\` vendors a catalogue shape into a project.
