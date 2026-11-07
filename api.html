@@ -206,6 +206,16 @@ screwHole(size, length, { type, tolerance, bridge })  // type 'clearance' | 'tap
 SCREWS                                            // the table those come from
 // sizes 'M2' 'M2.5' 'M3' 'M4' 'M5' 'M6' 'M8'. Translate a cutter to the part's top face, then subtract it.
 // Horizontal round holes sag when printed; use hole() with its teardrop, or clip the point with flat when the hole is near a surface.</pre>
+      <h3>Printer profile and fits</h3>
+      <pre>printer({ nozzle, layer, holeCompensation, material })  // declare the printer once at the top (defaults 0.4, 0.2, 0.2); returns the profile
+printProfile()                                    // the profile in force
+fit(d, kind)                                      // hole diameter to model so a d mm part fits: 'press' | 'snug' | 'slide' | 'clearance' (default) | 'loose', or an allowance in mm
+layers(h) / layers(0, { count })                  // a height rounded up to whole layers, or a number of layers
+peg(d, kind)                                      // peg diameter to model so it fits a d mm hole the same way
+wall(t) / wall(0, { lines })                      // a wall rounded up to whole extrusion lines, or a number of lines: wall(1) is 1.2 with a 0.4 nozzle
+// Once printer() is declared, hole() oversizes by holeCompensation by itself (pass tolerance to override).
+// fit adds holeCompensation plus the allowance (press −0.1, snug 0, slide 0.15, clearance 0.3, loose 0.6);
+// peg subtracts half the compensation and the allowance. FITS holds those numbers.</pre>
       <h3>Named parts</h3>
       <pre>s.ghost()                                         // draw transparent as a reference; never exported
 s.hide()                                          // listed in the Parts panel but not drawn

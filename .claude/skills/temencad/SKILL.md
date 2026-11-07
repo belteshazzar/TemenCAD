@@ -35,6 +35,8 @@ Run `npx temencad api --list` (in this repository: `node bin/temencad.mjs api`) 
 
 ## Design for printing
 
+- Declare the printer at the top: `printer({ nozzle: 0.4, layer: 0.2, holeCompensation: 0.2 })`. Then `wall(1)` gives a wall of whole extrusion lines (1.2), `layers(3.1)` a height of whole layers (3.2), `fit(6, 'slide')` the hole diameter for a 6 mm peg and `peg(6, 'slide')` the peg for a 6 mm hole; `hole()` compensates itself. Kinds: press, snug, slide, clearance, loose, or an allowance in mm.
+
 - Horizontal holes: `hole(r, length, { axis: 'z' })` gives a teardrop that prints without sagging; `shape: 'bridge'` keeps it round with a flat ceiling; `flat` clips the point near a surface.
 - Counterbores printed head-down: `screwHole('M4', L, { type: 'counterbore', bridge: 0.2 })` leaves a sacrificial layer to drill out.
 - Where a boss or wall meets a plate: `part.fillet(r, { edges: 'concave' })` adds strength. `edges: 'top'` softens outer edges; `chamfer(0.5, { edges: 'bottom' })` counters elephant's foot. Fillets work on solids with flat faces; the facets of cylinders are left alone.

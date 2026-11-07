@@ -10,6 +10,7 @@ import { printApi } from './print.js';
 import { placeApi } from './place.js';
 import { annotateApi } from './annotate.js';
 import { sketchPathApi } from './sketch-path.js';
+import { printProfileApi, printProfile } from './print-profile.js';
 
 export { Shape, Sketch, deg, rad };
 
@@ -443,9 +444,10 @@ export function screwHole(size, length = 10, { type = 'clearance', headDepth, to
  * A printable hole cutter: a cylinder of radius r and the given length, centred on the origin along
  * `axis`. Horizontal holes ('x' or 'z') get a `shape`: 'teardrop' (default, a 45° point on top),
  * 'bridge' (a flat ceiling to bridge) or 'round'. Vertical holes ('y') are always round.
- * opts: { axis = 'z', shape = 'teardrop', angle = 45, flat, tolerance = 0, segments }
+ * opts: { axis = 'z', shape = 'teardrop', angle = 45, flat, tolerance (default: the print profile's holeCompensation once print() is declared, else 0), segments }
  */
-export function hole(r = 1, length = 10, { axis = 'z', shape = 'teardrop', angle = 45, flat, tolerance = 0, segments = 48 } = {}) {
+export function hole(r = 1, length = 10, { axis = 'z', shape = 'teardrop', angle = 45, flat, tolerance, segments = 48 } = {}) {
+  if (tolerance === undefined) { const p = printProfile(); tolerance = p.declared ? p.holeCompensation : 0; } // a declared printer profile compensates holes on its own
   checkPositive('hole', 'radius', r); checkPositive('hole', 'length', length); checkNonNegative('hole', 'tolerance', tolerance);
   if (!['x', 'y', 'z'].includes(axis)) throw new TypeError(`hole: axis must be 'x', 'y' or 'z', got ${describe(axis)}`);
   if (!['teardrop', 'bridge', 'round'].includes(shape)) throw new TypeError(`hole: shape must be 'teardrop', 'bridge' or 'round', got ${describe(shape)}`);
@@ -481,6 +483,7 @@ export const api = {
   ...placeApi,
   ...annotateApi,
   ...sketchPathApi,
+  ...printProfileApi,
   Shape, box, cube, roundedBox, sphere, cylinder, cone, torus, polygon, prism,
   union, difference, intersect, hull, minkowski, shell, polyhedron, loft, resize, roof,
   linearArray, polarArray, grid,

@@ -135,6 +135,8 @@ export async function runScript(files, post, env) {
   hooks.warn = (msg) => warn(msg);
   const annotations = [];
   hooks.annotate = (a) => { annotations.push(a); };
+  const origProfile = hooks.printProfile;
+  hooks.printProfile = null;
   const origWarn = console.warn, origError = console.error;
   const relay = (orig) => (...a) => { if (!posting) warn(a.map(fmt).join(' ')); orig(...a); };
   console.warn = relay(origWarn);
@@ -199,7 +201,7 @@ export async function runScript(files, post, env) {
       tris += indices.length / 3;
       meshes.push({ positions, indices, color: s.colorValue, name, named: s.meta.name !== undefined, ghost: !!s.meta.ghost, hidden: !!s.meta.hidden, volume: s.volume() });
     });
-    return { meshes, tris, ms: performance.now() - t0, annotations };
+    return { meshes, tris, ms: performance.now() - t0, annotations, profile: hooks.printProfile };
   } catch (err) {
     if (err instanceof ModuleError) throw new ScriptError(err.message, err.file ? [{ file: err.file, line: err.line ?? 1 }] : []);
     const t = trace(err);
@@ -207,7 +209,7 @@ export async function runScript(files, post, env) {
     throw new ScriptError(err instanceof AssertionError ? err.message : String(err), t);
   } finally {
     console.warn = origWarn; console.error = origError;
-    hooks.warn = origWarnHook; hooks.annotate = origAnnotate;
+    hooks.warn = origWarnHook; hooks.annotate = origAnnotate; hooks.printProfile = origProfile;
     globalThis.__temen = prev;
     for (const url of modules.urls) env.revokeUrl?.(url);
     releaseAll();

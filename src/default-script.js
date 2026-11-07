@@ -106,6 +106,12 @@ place(trayAssembly, 115, 25, '#7fe0e0', 'tray');
 dimension([100, 12, 36], [130, 12, 36], { label: 'tray 30 mm' });
 mark([115, 13, 25], 'lid');
 
+// 9a. A printer profile: walls and heights in whole lines and layers, holes compensated, fits by name
+printer({ nozzle: 0.4, layer: 0.2, holeCompensation: 0.2 });
+const socket = box(16, layers(8), 16).onPlate().subtract(cylinder(fit(6, 'slide') / 2, 20).translate(0, 8, 0)); // a 6 mm peg slides in
+const pegPart = cylinder(peg(6, 'slide') / 2, 8, { center: false });
+place(socket.add(pegPart.translate(0, 8, 0).alignTo(socket, { x: 'right' }, { gap: 2 })), 135, 25, '#ff8f8f', 'socket + peg');
+
 // 9b. Printable horizontal holes: hole() gives a teardrop (or a bridged flat top) so nothing sags
 const bar = box(30, 12, 10).onPlate();
 place(bar.subtract(hole(3, 12, { axis: 'z' }).translate(-9, 6, 0))

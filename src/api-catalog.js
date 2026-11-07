@@ -52,6 +52,12 @@ export const GLOBALS = [
   fn('distance', 'distance(${a}, ${b})', '(face | point, face | point)', 'Distance between faces (along the normal), a face and a point, or two points.'),
   fn('rectPattern', 'rectPattern(${w}, ${d})', '(w, d)', 'The four corners of a w × d rectangle as [u, v] points, for hole patterns.'),
   fn('gridPattern', 'gridPattern(${nu}, ${nv}, ${pitch})', '(nu, nv, du, dv)', 'A grid of [u, v] points at that pitch, centred.'),
+  // Printer profile
+  fn('printer', 'printer({ nozzle: ${0.4}, layer: ${0.2} })', '({ nozzle, layer, holeCompensation, material })', 'Declare the printer once; hole(), wall(), layers(), fit() and peg() use it.'),
+  fn('wall', 'wall(${t})', '(t, { lines })', 'Wall thickness rounded up to whole extrusion lines.'),
+  fn('layers', 'layers(${h})', '(h, { count })', 'Height rounded up to whole layers.'),
+  fn('fit', "fit(${d}, '${clearance}')", "(d, 'press' | 'snug' | 'slide' | 'clearance' | 'loose' | mm)", 'Hole diameter to model so a d mm part fits.'),
+  fn('peg', "peg(${d}, '${slide}')", '(d, kind)', 'Peg diameter to model so it fits a d mm hole.'),
   // Annotations
   fn('dimension', 'dimension(${a}, ${b})', '(a, b, { label, offset })', 'A measured line between points, faces or shapes, drawn on rendered views; returns the length.'),
   fn('mark', "mark(${point}, '${text}')", '(point | face | shape, text)', 'A labelled dot drawn on rendered views.'),
