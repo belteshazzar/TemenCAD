@@ -20,6 +20,7 @@ text3d('Hi', { size, height, align })</pre>
       <h3>2D sketches → 3D</h3>
       <pre>circle(r)  rect(w, h)  roundedRect(w, h, r)  slot(length, r)  regularPolygon(n, r)  polygon2d(pts)
 sk.translate(x, y)  sk.rotate(deg)  sk.scale(x, y)  sk.mirror('x')  sk.add/subtract/intersect/hull(other)
+sk.resize([w, h], { auto })                                 // scale to a bounding-box size
 sk.offset(delta, { join: 'round' | 'miter' | 'square' })   // grow (+) or shrink (−) a 2D region
 sk.fillet(r)  sk.chamfer(d)                                 // round or cut every corner
 text('Hi', { size, font: 'Inter', align, letterSpacing })  // 2D text, baseline at y = 0
@@ -27,7 +28,8 @@ extrude(sk, h, { center, twist, scale })      // up along Y;  sk.extrude(h, opts
 revolve(sk, { angle, segments })              // around Y, sketch x = radius;  sk.revolve(opts)</pre>
       <h3>Transforms (return a new shape)</h3>
       <pre>s.translate(x, y, z)   s.rotate(xDeg, yDeg, zDeg)   s.scale(f | x, y, z)   s.mirror('x')   s.color('#f80')
-s.onPlate()   s.center()   s.centerXZ()   s.align({ x: 'min' | 'center' | 'max', y, z }, [tx, ty, tz])</pre>
+s.onPlate()   s.center()   s.centerXZ()   s.align({ x: 'min' | 'center' | 'max', y, z }, [tx, ty, tz])
+s.resize([w, h, d], { auto })   // scale to a bounding-box size; 0 keeps an axis, auto scales it proportionally</pre>
       <h3>Booleans, hull, Minkowski</h3>
       <pre>union(a, b, ...)   difference(a, b, ...)   intersect(a, b)   hull(a, b, ... | [x,y,z] points)
 a.add(b)  a.subtract(b)  a.intersect(b)  a.hull(b)      // arrays of shapes are accepted everywhere

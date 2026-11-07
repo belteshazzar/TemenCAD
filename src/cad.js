@@ -80,6 +80,12 @@ export function prism(sides = 6, r = 1, h = 1, { center = true } = {}) {
   return extrude(regularPolygon(sides, r), h, { center });
 }
 
+/** resize(shape, [w, h, d], { auto }) — scale a shape (or sketch) to a target bounding-box size. */
+export function resize(shape, size, opts) {
+  if (!(shape instanceof Shape) && !(shape instanceof Sketch)) throw new TypeError(`resize: first argument must be a Shape or sketch, got ${describe(shape)}`);
+  return shape.resize(size, opts);
+}
+
 // ---------- Booleans ----------
 
 function flatShapes(fn, list) {
@@ -448,7 +454,7 @@ export function heatInsert(size, { depth, tolerance = 0, segments = 32 } = {}) {
 export const api = {
   ...sketchApi,
   Shape, box, cube, roundedBox, sphere, cylinder, cone, torus, polygon, prism,
-  union, difference, intersect, hull, minkowski, shell, polyhedron, loft,
+  union, difference, intersect, hull, minkowski, shell, polyhedron, loft, resize,
   linearArray, polarArray, grid,
   SCREWS, screw, screwHole, nutPocket, heatInsert,
   deg, rad,

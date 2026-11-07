@@ -1,5 +1,5 @@
 import { M, track } from './engine.js';
-import { Shape, Z_TO_Y, describe, checkNumber, checkPositive, checkNonNegative, checkInt } from './shape.js';
+import { Shape, Z_TO_Y, describe, checkNumber, checkPositive, checkNonNegative, checkInt, resizeFactors } from './shape.js';
 import { textOutlines } from './fonts.js';
 
 /*
@@ -40,6 +40,12 @@ export class Sketch {
     checkNumber('scale', 'x', x); checkNumber('scale', 'y', y);
     if (x === 0 || y === 0) throw new RangeError('scale: factors must not be 0');
     return this._wrap(this.cs.scale([x, y]));
+  }
+  /** Scale so the bounding box becomes [w, h]; 0 keeps an axis, or scales it proportionally with { auto: true }. */
+  resize(x, y = 0, opts = {}) {
+    if (Array.isArray(x)) { opts = (y && typeof y === 'object') ? y : {}; [x, y = 0] = x; }
+    const f = resizeFactors('resize', this.bounds().size, [x, y], !!opts.auto);
+    return this.scale(...f);
   }
   mirror(axis = 'x') {
     const n = { x: [1, 0], y: [0, 1] }[axis];

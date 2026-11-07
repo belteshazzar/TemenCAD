@@ -58,6 +58,21 @@ export function isValidColor(c) {
   return COLOR_NAMES.has(v);
 }
 
+/**
+ * Scale factors that take a bounding-box `size` to `target`. A target of 0 (or undefined) leaves
+ * that axis alone, or, with `auto`, scales it by the same factor as the specified axes.
+ */
+export function resizeFactors(fn, size, target, auto) {
+  const n = size.length;
+  if (!Array.isArray(target) || target.length !== n) throw new TypeError(`${fn}: size must be an array of ${n} numbers (0 keeps an axis unchanged), got ${describe(target)}`);
+  target.forEach((t, i) => checkNonNegative(fn, `size[${i}]`, t));
+  const specified = target.map((t, i) => (t > 0 ? t / size[i] : null));
+  if (specified.every((f) => f === null)) throw new RangeError(`${fn}: at least one size must be greater than 0`);
+  if (specified.some((f) => f !== null && !Number.isFinite(f))) throw new RangeError(`${fn}: the shape has zero extent on an axis being resized`);
+  const autoFactor = specified.find((f) => f !== null);
+  return specified.map((f) => f ?? (auto ? autoFactor : 1));
+}
+
 /** Rotation that turns Manifold's native Z-up constructions into our Y-up world. */
 export const Z_TO_Y = [-90, 0, 0];
 
@@ -107,6 +122,16 @@ export class Shape {
     const n = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }[axis];
     if (!n) throw new Error(`mirror: axis must be 'x', 'y' or 'z'`);
     return this._wrap(this.m.mirror(n));
+  }
+
+  /**
+   * Scale so the bounding box becomes `size` ([w, h, d] or w, h, d). A 0 leaves that axis unchanged,
+   * or scales it proportionally when `auto` is true. resize([50, 0, 0], { auto: true }) keeps the aspect ratio.
+   */
+  resize(x, y = 0, z = 0, opts = {}) {
+    if (Array.isArray(x)) { opts = (y && typeof y === 'object') ? y : {}; [x, y = 0, z = 0] = x; }
+    const f = resizeFactors('resize', this.bounds().size, [x, y, z], !!opts.auto);
+    return this.scale(...f);
   }
 
   color(c) {
