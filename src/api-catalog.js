@@ -47,6 +47,10 @@ export const GLOBALS = [
   // Images
   fn('heightmap', 'heightmap(${image}, { width: ${60}, height: ${4} })', '(image | (x, z) => 0..1, { width, depth, height, base, invert, smooth, gamma, resolution })', 'Relief solid: brightness (or a function of position) becomes height above a base plate.'),
   fn('lithophane', 'lithophane(${image}, { width: ${80}, upright: true })', '(image, { width, depth, minThickness, maxThickness, border, smooth, gamma, resolution, upright })', 'Plate whose thickness follows the image: dark is thick, light is thin. Light it from behind.'),
+  // Placement
+  fn('distance', 'distance(${a}, ${b})', '(face | point, face | point)', 'Distance between faces (along the normal), a face and a point, or two points.'),
+  fn('rectPattern', 'rectPattern(${w}, ${d})', '(w, d)', 'The four corners of a w × d rectangle as [u, v] points, for hole patterns.'),
+  fn('gridPattern', 'gridPattern(${nu}, ${nv}, ${pitch})', '(nu, nv, du, dv)', 'A grid of [u, v] points at that pitch, centred.'),
   // Checks
   fn('clearance', 'clearance(${a}, ${b})', '(a, b)', 'Smallest gap between two shapes in mm; 0 when they touch or overlap.'),
   fn('interference', 'interference(${a}, ${b})', '(a, b)', 'Volume two shapes share in mm³.'),
@@ -120,6 +124,10 @@ export const METHODS = [
   method('interference', 'interference(${other})', '(other)', 'Volume shared with another shape in mm³.', 'shape'),
   method('intersects', 'intersects(${other})', '(other)', 'True when the shapes share any volume.', 'shape'),
   method('overlap', 'overlap(${other})', '(other)', 'The volume shared with another shape, as a Shape.', 'shape'),
+  method('face', "face('${top}')", "('top' | 'bottom' | 'front' | 'back' | 'left' | 'right')", 'A face of the bounding box: { center, normal, min, max, size }.', 'shape'),
+  method('at', 'at(${face}, [${u}, ${v}])', '(face, [u, v], { gap, orient })', "Put the shape's origin on a face with +Y along its normal (cutters and bosses land on it).", 'shape'),
+  method('placeOn', "placeOn(${base}, '${top}')", "(base, face, { at: [u, v], gap, align })", 'Put the shape on a face of another, touching and centred.', 'shape'),
+  method('alignTo', "alignTo(${other}, { y: '${above}' })", "(other, { x, y, z }, { gap })", "Align bounding boxes per axis: 'min' | 'center' | 'max', or 'left'/'right', 'below'/'above', 'back'/'front'.", 'shape'),
   method('printability', 'printability()', '({ angle, minWall })', 'Printing verdict: { ok, problems, ... }.', 'shape'),
   method('overhangs', 'overhangs()', '({ angle })', 'Undersides steeper than 45°: { area, worstAngle }.', 'shape'),
   method('unsupported', 'unsupported()', '({ angle })', 'Islands and bridges: overhangs with nothing below.', 'shape'),

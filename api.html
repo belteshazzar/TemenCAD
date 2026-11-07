@@ -146,6 +146,20 @@ sharpEdges(s, minAngle)                           // the edges found: [{ p0, p1,
 // Works on solids with flat faces: boxes, prisms, extrusions, unions of those. Edges between faces that meet at
 // less than minAngle (30°) are left alone, so the facets of cylinders and spheres are not treated as edges.
 // Convex edges lose material, concave edges (where a boss meets a plate) gain a fillet. Corners are mitred.</pre>
+      <h3>Placement by named features</h3>
+      <pre>s.face('top' | 'bottom' | 'front' | 'back' | 'left' | 'right')  // a face of the bounding box: { center, normal, min, max, size, u, v }
+face.point([u, v]) / face.point({ x, y, z })      // a point on the face: [u, v] along its in-plane axes (top: x, z; front: x, y; right: z, y)
+a.alignTo(b, { x, y, z }, { gap })                // per axis: 'min' | 'center' | 'max' match that side of b, or sit against it:
+                                                  //   x: 'left' | 'right', y: 'below' | 'above', z: 'back' | 'front'; axes left out stay put
+s.at(face, [u, v], { gap, orient })               // put s's origin on the face with +Y along the normal: cutters and bosses built on y = 0 land on it
+part.placeOn(base, 'top', { at, gap, align })     // part's opposite face touches base's face, centred on it (align 'keep' only moves along the normal)
+distance(a, b)                                    // between faces (along the first one's normal), a face and a point, or two [x, y, z] points
+gridPattern(nu, nv, du, dv)                       // nu × nv [u, v] points at that pitch, centred
+rectPattern(w, d)                                 // the four corners of a w × d rectangle as [u, v] points
+// const top = plate.face('top');
+// const risers = union(rectPattern(21, 12.5).map((p) => cylinder(2.5, 4, { center: false }).at(top, p)));
+// plate = plate.add(risers).subtract(rectPattern(21, 12.5).map((p) => screwHole('M2', 6, { type: 'tap' }).at(risers.face('top'), p)));
+// const board = box(25, 1.2, 24).placeOn(risers, 'top');   lid.alignTo(body, { x: 'center', z: 'center', y: 'above' }, { gap: 0.3 })</pre>
       <h3>Booleans, hull, Minkowski</h3>
       <pre>a.add(b) / a.union(b)                             // method form of union
 difference(a, b, ...)                             // subtract every following shape from the first

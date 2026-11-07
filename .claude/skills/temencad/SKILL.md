@@ -23,7 +23,8 @@ Run `npx temencad api` (in this repository: `node bin/temencad.mjs api`) and rea
 ## Conventions that avoid most mistakes
 
 - Put parts on the plate with `.onPlate()`. Sketches live on the ground plane: sketch x is world X, sketch y is world −Z, `extrude` goes up Y.
-- Cutters for screws (`screwHole`, `nutPocket`, `heatInsert`) have their top at y = 0: translate them to the top face before subtracting.
+- Cutters for screws (`screwHole`, `nutPocket`, `heatInsert`) have their top at y = 0: put them on a face with `cutter.at(part.face('top'), [x, z])` (works for any face: +Y turns along the normal) rather than translating by hand.
+- Place by named features, not coordinates: `boss.placeOn(plate, 'top', { at: [x, z] })`, `lid.alignTo(body, { x: 'center', z: 'center', y: 'above' }, { gap: 0.3 })`, `rectPattern(21, 12.5)` for a hole pattern, `distance(a.face('top'), b.face('bottom'))` to check. Offsets in `at` and `placeOn` are from the face centre, so do not add the part's own position to them.
 - `union`, `difference`, `intersect` accept arrays; `grid`, `linearArray`, `polarArray` return arrays, so wrap them in `union()`.
 - Name parts with `.name('lid')` or by returning an object; set colours with `.color('#hex')` for multi-material 3MF.
 - Keep segment counts moderate (`segments: 48` for visible cylinders) and fillets small relative to the faces they sit on.

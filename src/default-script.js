@@ -88,6 +88,13 @@ const cutters = [
 ];
 place(block.subtract(cutters), 55, 25, '#ff8f8f', 'mounting block');
 
+// 8b. Placement by named features: bosses on a face at a hole pattern, cutters on the boss tops, a lid above
+const tray = box(30, 4, 22).onPlate();
+const bosses = union(rectPattern(22, 14).map((p) => cylinder(2.5, 6, { center: false }).at(tray.face('top'), p)));
+const trayWithBosses = tray.add(bosses).subtract(rectPattern(22, 14).map((p) => screwHole('M2', 5, { type: 'tap' }).at(bosses.face('top'), p)));
+const trayLid = box(30, 2, 22).alignTo(trayWithBosses, { x: 'center', z: 'center', y: 'above' }, { gap: 1.5 });
+place(trayWithBosses.add(trayLid.name('lid')), 115, 25, '#7fe0e0', 'tray');
+
 // 9b. Printable horizontal holes: hole() gives a teardrop (or a bridged flat top) so nothing sags
 const bar = box(30, 12, 10).onPlate();
 place(bar.subtract(hole(3, 12, { axis: 'z' }).translate(-9, 6, 0))
