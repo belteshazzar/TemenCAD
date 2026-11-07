@@ -4,13 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TemenCAD API reference</title>
-    <link rel="stylesheet" href="/src/style.css" />
+    <meta name="description" content="The TemenCAD scripting API: primitives, sketches, transforms, booleans, arrays, screw helpers, projects and imports." />
     <link rel="stylesheet" href="/src/api.css" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b6fcf'/%3E%3Cpath d='M8 11h16M16 11v12' stroke='%23fff' stroke-width='3.2' stroke-linecap='round'/%3E%3C/svg%3E" />
   </head>
   <body class="api-page">
+    <header class="nav">
+      <a class="brand" href="https://belteshazzar.github.io/TemenCAD-web/">
+        <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0b6fcf"/><path d="M8 11h16M16 11v12" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/></svg>
+        <span>TemenCAD</span><span class="crumb">API reference</span>
+      </a>
+      <nav>
+        <a href="https://belteshazzar.github.io/TemenCAD-catalog/" target="_blank" rel="noopener">Catalogue</a>
+        <a href="https://github.com/belteshazzar/TemenCAD" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+      <a class="btn primary" href="./">Open the app</a>
+    </header>
+    <div class="layout">
+      <aside class="toc" aria-label="Sections"><div class="toc-title">On this page</div><ol id="toc"></ol></aside>
     <main class="api">
 <h2>TemenCAD API</h2>
-      <p>Your script is JavaScript. Return a shape (or an array of shapes), or call <code>show(shape)</code>. Units are millimetres, Y is up, the build plate is y&nbsp;=&nbsp;0.</p>
+      <p class="lead">Your script is JavaScript. Return a shape (or an array of shapes), or call <code>show(shape)</code>. Units are millimetres, Y is up, the build plate is y&nbsp;=&nbsp;0. Every operation returns a new shape; nothing is mutated.</p>
       <h3>3D primitives</h3>
       <pre>box(w, h, d)                 roundedBox(w, h, d, r, { edges: 'all' | 'vertical' })
 sphere(r)                    cylinder(r, h)   cylinder({ r1, r2, h })   cone(r, h)
@@ -63,5 +77,8 @@ assert(cond, 'message')     // stops the build with an error on that line when c
       <p class="muted">Geometry kernel: <a href="https://github.com/elalish/manifold" target="_blank" rel="noopener">Manifold</a> (C++ via WebAssembly). All output is watertight.</p>
       <p class="muted">Units are millimetres, Y is up, the build plate is y = 0. Every operation returns a new shape; nothing is mutated.</p>
     </main>
+    </div>
+    <footer class="foot">TemenCAD is open source under the BSD 2-Clause license. <a href="https://belteshazzar.github.io/TemenCAD-web/">Product page</a> · <a href="https://github.com/belteshazzar/TemenCAD">Source</a></footer>
+    <script type="module" src="/src/api.js"></script>
   </body>
 </html>
