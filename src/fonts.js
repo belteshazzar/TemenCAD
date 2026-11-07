@@ -7,15 +7,27 @@ import opentype from 'opentype.js';
 const fonts = new Map();
 export const DEFAULT_FONT = 'Inter';
 
+/** Bundled fonts (all SIL Open Font License, Latin subsets in src/assets). `name` is what scripts pass as `font`. */
+export const FONTS = [
+  { name: 'Inter', file: 'Inter-Regular-subset.ttf', style: 'sans-serif' },
+  { name: 'Inter Bold', file: 'Inter-Bold-subset.ttf', style: 'sans-serif, heavy' },
+  { name: 'Nunito Bold', file: 'Nunito-Bold-subset.ttf', style: 'rounded, good for raised lettering' },
+  { name: 'Source Serif 4', file: 'SourceSerif4-Regular-subset.ttf', style: 'serif' },
+  { name: 'JetBrains Mono', file: 'JetBrainsMono-Regular-subset.ttf', style: 'monospace' },
+];
+
+/** Names match ignoring case, spaces and hyphens: 'inter-bold' and 'InterBold' both find 'Inter Bold'. */
+const key = (name) => String(name).toLowerCase().replace(/[\s_-]+/g, '');
+
 export function registerFont(name, arrayBuffer) {
-  fonts.set(name, opentype.parse(arrayBuffer));
+  fonts.set(key(name), { name, font: opentype.parse(arrayBuffer) });
 }
-export function fontNames() { return [...fonts.keys()]; }
+export function fontNames() { return [...fonts.values()].map((f) => f.name); }
 
 export function getFont(name = DEFAULT_FONT) {
-  const f = fonts.get(name);
+  const f = fonts.get(key(name));
   if (!f) throw new Error(`Unknown font "${name}". Available: ${fontNames().join(', ') || '(none loaded yet)'}`);
-  return f;
+  return f.font;
 }
 
 /** Flatten a bezier into line segments. */

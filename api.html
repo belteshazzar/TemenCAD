@@ -23,7 +23,8 @@ sk.translate(x, y)  sk.rotate(deg)  sk.scale(x, y)  sk.mirror('x')  sk.add/subtr
 sk.resize([w, h], { auto })                                 // scale to a bounding-box size
 sk.offset(delta, { join: 'round' | 'miter' | 'square' })   // grow (+) or shrink (−) a 2D region
 sk.fillet(r)  sk.chamfer(d)                                 // round or cut every corner
-text('Hi', { size, font: 'Inter', align, letterSpacing })  // 2D text, baseline at y = 0
+text('Hi', { size, font, align, letterSpacing })           // 2D text, baseline at y = 0
+// fonts: 'Inter' (default), 'Inter Bold', 'Nunito Bold' (rounded), 'Source Serif 4', 'JetBrains Mono'
 extrude(sk, h, { center, twist, scale })      // up along Y;  sk.extrude(h, opts)
 revolve(sk, { angle, segments })              // around Y, sketch x = radius;  sk.revolve(opts)
 roof(sk, { angle: 45, tolerance: 0.01 })      // height = distance to the outline: pyramid / hip roof;  sk.roof(opts)

@@ -105,7 +105,7 @@ if (SHOW_TEXT) {
   const tag = roundedBox(34, 3, 12, 2, { edges: 'vertical' })
     .subtract(text3d('TemenCAD', { size: TEXT_SIZE, height: 1.2, align: 'center' }).translate(0, 1.5 - 0.6, -2.5));
   place(tag, 5, 50, '#ffd27f', 'name tag');
-  place(text3d('3D', { size: 12, height: 3, align: 'center' }), 35, 50, '#ff8f8f');
+  place(text3d('3D', { size: 12, height: 3, align: 'center', font: 'Nunito Bold' }), 35, 50, '#ff8f8f');
 }
 
 // 13. Loft between profiles, and a shelled cup (hollow with an open top)

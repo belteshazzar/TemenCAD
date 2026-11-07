@@ -3,21 +3,23 @@
  * { type: 'run', id, code } and posts back mesh buffers (transferred, not copied).
  */
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
-import fontUrl from './assets/Inter-Regular-subset.ttf?url';
 import { init } from './engine.js';
-import { registerFont, DEFAULT_FONT } from './fonts.js';
+import { registerFont, FONTS } from './fonts.js';
 import { runScript } from './runner.js';
 
-const loadFont = fetch(fontUrl).then((r) => { if (!r.ok) throw new Error(`font ${r.status}`); return r.arrayBuffer(); })
-  .then((buf) => registerFont(DEFAULT_FONT, buf))
-  .catch((err) => console.warn(`Default font failed to load; text() will be unavailable: ${err.message}`));
+// Vite resolves every bundled font to a hashed URL at build time.
+const fontUrls = import.meta.glob('./assets/*-subset.ttf', { query: '?url', import: 'default', eager: true });
+const loadFonts = Promise.all(FONTS.map(({ name, file }) =>
+  fetch(fontUrls[`./assets/${file}`]).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); })
+    .then((buf) => registerFont(name, buf))
+    .catch((err) => console.warn(`Font "${name}" failed to load: ${err.message}`))));
 
 const queue = [];
 let ready = false;
 
 self.onmessage = (e) => { if (ready) handle(e.data); else queue.push(e.data); };
 
-Promise.all([init({ locateFile: () => wasmUrl }), loadFont])
+Promise.all([init({ locateFile: () => wasmUrl }), loadFonts])
   .then(() => {
     ready = true;
     self.postMessage({ type: 'ready' });

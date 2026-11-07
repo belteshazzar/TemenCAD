@@ -11,7 +11,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { init } from '../src/engine.js';
-import { registerFont, DEFAULT_FONT } from '../src/fonts.js';
+import { registerFont, FONTS } from '../src/fonts.js';
 import { runScript } from '../src/runner.js';
 import { buildSTL, build3MF } from '../src/export.js';
 import { PLATES, fitProblems } from '../src/plate.js';
@@ -82,7 +82,10 @@ async function main() {
   const plate = opts.plate ? parsePlate(opts.plate) : null;
 
   await init();
-  registerFont(DEFAULT_FONT, readFileSync(join(ROOT, 'src/assets/Inter-Regular-subset.ttf')).buffer);
+  for (const { name, file } of FONTS) {
+    const b = readFileSync(join(ROOT, 'src/assets', file)); // small files share a pooled buffer, so slice to this file's bytes
+    registerFont(name, b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+  }
 
   const where = (m) => (m.trace?.length ? ` (line ${m.trace[0]}${m.trace.length > 1 ? `, called from line ${m.trace.slice(1).join(' ← ')}` : ''})` : m.line ? ` (line ${m.line})` : '');
   let warnings = 0;
