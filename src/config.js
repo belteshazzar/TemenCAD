@@ -3,7 +3,7 @@
 /** Static catalogue site (index.json, packages/*.temen, thumbs/*.png). Trailing slash required. */
 const DEFAULT_CATALOG_URL = 'https://belteshazzar.github.io/TemenCAD-catalog/';
 // Override for development with localStorage.setItem('temencad.catalogUrl', 'http://localhost:4174/').
-export const CATALOG_URL = (() => { try { return globalThis.localStorage?.getItem('temencad.catalogUrl') || DEFAULT_CATALOG_URL; } catch { return DEFAULT_CATALOG_URL; } })();
+export const CATALOG_URL = (() => { try { return (typeof window !== 'undefined' && window.localStorage.getItem('temencad.catalogUrl')) || DEFAULT_CATALOG_URL; } catch { return DEFAULT_CATALOG_URL; } })();
 
 /** Where the catalogue's source lives, for the "open a pull request" fallback and links. */
 export const CATALOG_REPO_URL = 'https://github.com/belteshazzar/TemenCAD-catalog';
