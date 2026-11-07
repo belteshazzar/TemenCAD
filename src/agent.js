@@ -15,17 +15,9 @@ export const MODELS = [
 ];
 export const DEFAULT_MODEL = 'claude-opus-5-5';
 
-/** Plain-text API reference derived from api.html so the two never drift. */
-function referenceText() {
-  const body = apiHtml.slice(apiHtml.indexOf('<main'), apiHtml.indexOf('</main>'));
-  return body
-    .replace(/<h2[^>]*>/g, '\n# ').replace(/<h3[^>]*>/g, '\n## ')
-    .replace(/<pre[^>]*>/g, '\n```\n').replace(/<\/pre>/g, '\n```\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ')
-    .split('\n').map((l) => l.trim()).join('\n')
-    .replace(/\n{3,}/g, '\n\n').trim();
-}
+import { referenceFromHtml } from './api-text.js';
+
+const referenceText = () => referenceFromHtml(apiHtml);
 
 const SYSTEM = `You are the modelling assistant inside TemenCAD, a browser app where a JavaScript script describes a 3D model for 3D printing. The user types plain English; you change the script so the model matches, then build it and check the result.
 

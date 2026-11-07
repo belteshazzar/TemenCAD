@@ -67,3 +67,5 @@ dist/
 .vite/
 *.local
 .DS_Store
+public/api.txt
+public/llms.txt

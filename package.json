@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "cli": "node bin/temencad.mjs"
+    "cli": "node bin/temencad.mjs",
+    "prebuild": "node scripts/api-text.mjs",
+    "api": "node bin/temencad.mjs api"
   },
   "devDependencies": {
     "vite": "^8.3.6"

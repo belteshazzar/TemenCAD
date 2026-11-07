@@ -7,6 +7,8 @@
  *   temencad model.js -o out.3mf      -> 3MF with named, colored parts
  *   temencad model.js --parts         -> one STL per part next to the output
  *   temencad model.js --plate prusa-mk4   check the result against a printer's build volume
+ *   temencad model.js --png out.png   also render a picture of the result (no browser needed)
+ *   temencad api                      print the API reference as plain text (for people and agents)
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
@@ -17,13 +19,19 @@ import { whereText } from '../src/trace.js';
 import { buildProject, loadProject } from '../src/headless.js';
 import { readPackage, vendorPackage, addImportLine } from '../src/package.js';
 import { CATALOG_URL } from '../src/config.js';
+import { renderThumbnail } from '../src/render.js';
+import { colorHex } from '../src/export.js';
+import { referenceFromHtml } from '../src/api-text.js';
+import { fileURLToPath } from 'node:url';
 
 const USAGE = `Usage: temencad <main.js | project.temen> [options]
        temencad add <package> [--into <main.js | project.temen>]
+       temencad api
 
 Builds the script or project with the same engine as the app and writes the visible, non-ghost parts.
 A plain script may import sibling files (./lib.js, ./Logo.ttf, ./part.stl); they are read from its folder.
 "add" copies a package from the shared catalogue into the project (catalog/<name>/) and adds its import.
+"api" prints the complete API reference as plain text: read it before writing a script.
 
 Options:
   -o, --output <file>   Output file; the extension picks the format: .stl or .3mf (default: <script>.stl)
@@ -31,13 +39,16 @@ Options:
       --plate <preset|WxDxH>
                         Check the model fits a build plate, e.g. --plate prusa-mk4 or --plate 220x220x250
       --list-plates     Print the plate presets and exit
+      --png <file>      Also render the result to a PNG (isometric view, like the app)
+      --size <WxH>      Size of that picture in pixels (default 960x720)
       --into <file>     For "add": the project to add to (default ./main.js)
   -q, --quiet           Only print errors
   -h, --help            Show this help
 `;
 
 function parseArgs(argv) {
-  const o = { script: null, output: null, parts: false, plate: null, quiet: false, add: null, into: null };
+  const o = { script: null, output: null, parts: false, plate: null, quiet: false, add: null, into: null, png: null, size: [960, 720] };
+  if (argv[0] === 'api') { process.stdout.write(referenceFromHtml(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'api.html'), 'utf8')) + '\n'); process.exit(0); }
   if (argv[0] === 'add') { o.add = argv[1] ?? fail(USAGE); argv = argv.slice(2); }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -47,6 +58,8 @@ function parseArgs(argv) {
     else if (a === '--parts') o.parts = true;
     else if (a === '--plate') o.plate = argv[++i];
     else if (a === '--into') o.into = argv[++i];
+    else if (a === '--png') o.png = argv[++i];
+    else if (a === '--size') { const m = (argv[++i] ?? '').match(/^(\d+)x(\d+)$/i); if (!m) fail('--size needs WxH in pixels, e.g. 960x720'); o.size = [+m[1], +m[2]]; }
     else if (a === '-q' || a === '--quiet') o.quiet = true;
     else if (a.startsWith('-')) fail(`Unknown option ${a}\n\n${USAGE}`);
     else if (!o.script) o.script = a;
@@ -113,6 +126,13 @@ async function main() {
   mkdirSync(dirname(output), { recursive: true });
   if (format === '.stl') { const { data, triangles } = buildSTL(parts); writeFileSync(output, Buffer.from(data)); log(`Wrote ${output} (${triangles} triangles)`); }
   else { writeFileSync(output, build3MF(parts)); log(`Wrote ${output} (${parts.length} part${parts.length === 1 ? '' : 's'})`); }
+
+  if (opts.png) {
+    const png = resolve(opts.png);
+    mkdirSync(dirname(png), { recursive: true });
+    writeFileSync(png, renderThumbnail(all, { width: opts.size[0], height: opts.size[1], colorHex }));
+    log(`Rendered ${png}`);
+  }
 
   if (opts.parts) {
     const dir = output.replace(/\.[^.]*$/, '') + '-parts';
