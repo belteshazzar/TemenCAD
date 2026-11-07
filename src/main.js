@@ -60,7 +60,13 @@ function loadProject() {
   } catch {}
   return Project.fromScript(DEFAULT_SCRIPT);
 }
-let project = loadProject();
+/** A script in the URL (#script=…, as the product site's "Open in TemenCAD" links use) opens as a new, unsaved project. */
+function projectFromHash() {
+  const m = location.hash.match(/^#script=(.+)$/);
+  if (!m) return null;
+  try { history.replaceState(null, '', location.pathname + location.search); return Project.fromScript(decodeURIComponent(m[1])); } catch { return null; }
+}
+let project = projectFromHash() ?? loadProject();
 const persist = () => store.set(STORAGE_KEY, JSON.stringify(project.toJSON()));
 
 /** Every text file gets its own editor state so undo history and diagnostics stay per file. */
