@@ -114,6 +114,8 @@ export function initCatalog(o) {
   const shareForm = document.getElementById('share-form');
   const shareError = shareForm.querySelector('.dialog-error');
   const shareResult = shareDialog.querySelector('.share-result');
+  const shareBusy = shareDialog.querySelector('.dialog-busy');
+  const setBusy = (text) => { shareBusy.hidden = !text; if (text) shareBusy.querySelector('.dialog-busy-text').textContent = text; };
   for (const [id, label] of LICENSES) shareForm.elements.license.appendChild(Object.assign(document.createElement('option'), { value: id, textContent: label }));
 
   function openShare() {
@@ -122,7 +124,7 @@ export function initCatalog(o) {
     const moduleSel = shareForm.elements.module;
     moduleSel.textContent = '';
     for (const s of scripts) moduleSel.appendChild(Object.assign(document.createElement('option'), { value: s, textContent: s }));
-    shareError.hidden = true; shareResult.hidden = true;
+    shareError.hidden = true; shareResult.hidden = true; setBusy(null);
     shareForm.hidden = false;
     if (!scripts.length) {
       shareError.textContent = 'A shared shape needs a module file next to main.js that exports its functions (for example hinge.js with "export function hinge(...)"). main.js stays the demo.';
@@ -153,8 +155,10 @@ export function initCatalog(o) {
     const bytes = buildPackage(project, manifest, thumb);
     const submit = shareForm.querySelector('.share-submit');
     submit.disabled = true;
+    shareError.hidden = true;
     try {
       if (PUBLISH_URL) {
+        setBusy(`Uploading ${manifest.name}.temen and opening a pull request…`);
         const body = new FormData();
         body.append('manifest', JSON.stringify(manifest));
         body.append('package', new Blob([bytes], { type: 'application/zip' }), `${manifest.name}.temen`);
@@ -168,7 +172,7 @@ export function initCatalog(o) {
       }
     } catch (err) {
       shareError.textContent = err.message; shareError.hidden = false;
-    } finally { submit.disabled = false; }
+    } finally { submit.disabled = false; setBusy(null); }
   });
   function showResult(text, url) {
     shareForm.hidden = true;
