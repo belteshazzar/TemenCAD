@@ -117,8 +117,12 @@ const hookPath = path([[0, 0, 0], [0, 14, 0], [6, 18, 0], [12, 14, 0], [12, 8, 0
 place(sweep(circle(1.5), hookPath), 5, 75, '#c2e86b', 'hook');
 place(sweep(circle(1.2), helix(5, 16, 4)), 30, 75, '#c2e86b', 'spring');
 
-// 14. Minkowski rounding and a hand-built polyhedron (a wedge)
-place(box(10, 6, 8).round(1.5), -45, 75, '#8fb3ff');
+// 14. Edge fillets and chamfers (pick edges: 'all', 'top', 'bottom', 'vertical', 'concave', ...),
+//     Minkowski rounding, and a hand-built polyhedron (a wedge)
+place(box(10, 6, 8).fillet(1.5, { edges: 'top' }), -60, 75, '#8fb3ff');
+place(box(10, 6, 8).chamfer(1.2), -45, 75, '#8fb3ff');
+place(box(14, 2, 14).add(cylinder(3, 6).translate(0, 4, 0)).fillet(1.5, { edges: 'concave' }), -30, 75, '#8fb3ff', 'boss');
+place(box(10, 6, 8).round(1.5), -45, 90, '#8fb3ff');
 const wedge = polyhedron(
   [[0, 0, 0], [12, 0, 0], [12, 0, 8], [0, 0, 8], [0, 6, 0], [0, 6, 8]],
   [[0, 1, 2, 3], [4, 5, 2, 1], [0, 4, 1], [3, 2, 5], [0, 3, 5, 4]],

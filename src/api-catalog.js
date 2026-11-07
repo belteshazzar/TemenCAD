@@ -42,6 +42,10 @@ export const GLOBALS = [
   fn('helix', 'helix(${r}, ${height}, ${turns})', '(r, height, turns, { segments })', 'Helix around Y starting at [r, 0, 0].'),
   fn('bezier', 'bezier([${p0}], [${p1}], [${p2}], [${p3}])', '(p0, p1, p2, p3, { segments })', 'Cubic Bézier curve as a path.'),
   fn('sweep', 'sweep(${sketch}, ${path})', '(sketch | (t) => sketch, path, { frame, up, twist, scale, segments })', 'Sweep a 2D profile along a path; closed paths make rings. frame: \'minimal\' (no twist) or \'upright\'.'),
+  // Edges
+  fn('fillet', "fillet(${shape}, ${r}, { edges: '${top}' })", '(shape | sketch, r, { edges, segments })', 'Round the sharp edges of a solid (or the corners of a sketch).'),
+  fn('chamfer', "chamfer(${shape}, ${d}, { edges: '${top}' })", '(shape | sketch, d, { edges })', 'Bevel the sharp edges of a solid (or cut the corners of a sketch).'),
+  fn('sharpEdges', 'sharpEdges(${shape})', '(shape, minAngle)', 'List the sharp edges of a solid: { p0, p1, t, nA, nB, convex, angle, length }.'),
   // Booleans and friends
   fn('union', 'union(${a}, ${b})', '(a, b, ...)', 'Merge shapes (or 2D sketches). Arrays are accepted.'),
   fn('difference', 'difference(${a}, ${b})', '(a, b, ...)', 'Subtract every following shape from the first.'),
@@ -100,8 +104,8 @@ export const METHODS = [
   method('isEmpty', 'isEmpty()', '()', 'True if the shape has no volume / area.', 'both'),
   method('area', 'area()', '()', 'Area of a sketch in mm².', 'sketch'),
   method('offset', "offset(${delta}, { join: '${round}' })", "(delta, { join: 'round' | 'miter' | 'square' })", 'Grow (+) or shrink (−) a 2D region.', 'sketch'),
-  method('fillet', 'fillet(${r})', '(r, { segments })', 'Round every corner of a sketch.', 'sketch'),
-  method('chamfer', 'chamfer(${d})', '(d)', 'Cut every corner of a sketch.', 'sketch'),
+  method('fillet', 'fillet(${r})', "(r, { edges, segments })", "Round every corner of a sketch, or the sharp edges of a solid; edges: 'all' | 'top' | 'bottom' | 'horizontal' | 'vertical' | 'convex' | 'concave'.", 'both'),
+  method('chamfer', 'chamfer(${d})', "(d, { edges })", "Cut every corner of a sketch, or bevel the sharp edges of a solid; edges as for fillet.", 'both'),
   method('extrude', 'extrude(${h})', '(h, { center, twist, scale })', 'Extrude a sketch up along Y.', 'sketch'),
   method('revolve', 'revolve()', '({ angle, segments })', 'Revolve a sketch around Y.', 'sketch'),
   method('roof', 'roof()', '({ angle, segments, tolerance })', 'Roof solid from a sketch.', 'sketch'),

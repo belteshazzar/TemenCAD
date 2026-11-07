@@ -116,6 +116,16 @@ s.resize([w, h, d], { auto })                     // to a bounding-box size; 0 k
 s.rotate(xDeg, yDeg, zDeg)                        // rotate in degrees about X, then Y, then Z
 s.scale(f) / s.scale(x, y, z)                     // scale uniformly or per axis
 s.translate(x, y, z)                              // move; also accepts [x, y, z]</pre>
+      <h3>Edges: fillets and chamfers</h3>
+      <pre>s.chamfer(d, { edges, minAngle })                 // bevel the sharp edges by d along each face
+s.fillet(r, { edges, segments, minAngle })        // round the sharp edges with radius r
+fillet(s, r, opts) / chamfer(s, d, opts)          // function forms; on a sketch they round or cut its corners
+sharpEdges(s, minAngle)                           // the edges found: [{ p0, p1, t, nA, nB, convex, angle, length }]
+// edges: 'all' (default) | 'top' | 'bottom' | 'horizontal' | 'vertical' | 'convex' | 'concave',
+//        a list that must all hold (['top', 'convex']), or (edge) => boolean over the sharpEdges() records.
+// Works on solids with flat faces: boxes, prisms, extrusions, unions of those. Edges between faces that meet at
+// less than minAngle (30°) are left alone, so the facets of cylinders and spheres are not treated as edges.
+// Convex edges lose material, concave edges (where a boss meets a plate) gain a fillet. Corners are mitred.</pre>
       <h3>Booleans, hull, Minkowski</h3>
       <pre>a.add(b) / a.union(b)                             // method form of union
 difference(a, b, ...)                             // subtract every following shape from the first

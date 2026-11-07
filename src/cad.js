@@ -3,6 +3,7 @@ import { Shape, Z_TO_Y, deg, rad, describe, checkNumber, checkPositive, checkNon
 import { Sketch, sketchApi, circle, roundedRect, regularPolygon, polygon2d, extrude, revolve } from './sketch.js';
 import { manifoldFromTriangles } from './mesh.js';
 import { pathApi, resampleRing } from './path.js';
+import { filletApi } from './fillet.js';
 
 export { Shape, Sketch, deg, rad };
 
@@ -439,6 +440,7 @@ export function heatInsert(size, { depth, tolerance = 0, segments = 32 } = {}) {
 export const api = {
   ...sketchApi,
   ...pathApi,
+  ...filletApi,
   Shape, box, cube, roundedBox, sphere, cylinder, cone, torus, polygon, prism,
   union, difference, intersect, hull, minkowski, shell, polyhedron, loft, resize, roof,
   linearArray, polarArray, grid,
