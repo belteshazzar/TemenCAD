@@ -60,13 +60,15 @@ function rayDistance(o, d, tris, skip = 1e-4) {
   return best;
 }
 
-/** Faces whose underside slopes more than `angle` degrees from vertical, ignoring faces on the plate. */
+const FIRST_LAYER = 0.3; // faces this close to the plate are the first layer: the plate supports them
+
+/** Faces whose underside slopes more than `angle` degrees from vertical, ignoring faces on or within a first layer of the plate. */
 export function overhangFaces(positions, indices, angle = 45, plateY = 0) {
   const limit = Math.sin((angle * Math.PI) / 180) + 1e-6;
   const out = [];
   for (const t of triangles(positions, indices)) {
     if (t.n[1] >= 0 || -t.n[1] < limit) continue; // facing up, or within the allowed slope
-    if (t.a[1] <= plateY + 1e-4 && t.b[1] <= plateY + 1e-4 && t.c[1] <= plateY + 1e-4) continue; // sitting on the plate
+    if (t.a[1] <= plateY + FIRST_LAYER && t.b[1] <= plateY + FIRST_LAYER && t.c[1] <= plateY + FIRST_LAYER) continue; // sitting on the plate
     out.push({ ...t, angle: (Math.asin(Math.min(1, -t.n[1])) * 180) / Math.PI });
   }
   return out;
@@ -91,7 +93,7 @@ export function unsupported(s, { angle = 45 } = {}) {
   checkNumber('unsupported', 'angle', angle);
   const { positions, indices } = meshOf('unsupported', s);
   const all = triangles(positions, indices);
-  const faces = overhangFaces(positions, indices, angle).filter((f) => !Number.isFinite(rayDistance(f.centroid, [0, -1, 0], all)) && f.centroid[1] > 1e-4);
+  const faces = overhangFaces(positions, indices, angle).filter((f) => !Number.isFinite(rayDistance(f.centroid, [0, -1, 0], all)) && f.centroid[1] > FIRST_LAYER);
   return summarise(faces);
 }
 
