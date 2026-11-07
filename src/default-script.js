@@ -117,6 +117,9 @@ const hookPath = path([[0, 0, 0], [0, 14, 0], [6, 18, 0], [12, 14, 0], [12, 8, 0
 place(sweep(circle(1.5), hookPath), 5, 75, '#c2e86b', 'hook');
 place(sweep(circle(1.2), helix(5, 16, 4)), 30, 75, '#c2e86b', 'spring');
 
+// 13c. Heightmap from a function (import a .png or .jpg into the project to use a picture; see lithophane())
+place(heightmap((x, z) => 0.5 + 0.5 * Math.sin(x / 2) * Math.cos(z / 2), { width: 24, height: 3, base: 1, resolution: 48 }), 125, 50, '#ffd27f', 'relief');
+
 // 14. Edge fillets and chamfers (pick edges: 'all', 'top', 'bottom', 'vertical', 'concave', ...),
 //     Minkowski rounding, and a hand-built polyhedron (a wedge)
 place(box(10, 6, 8).fillet(1.5, { edges: 'top' }), -60, 75, '#8fb3ff');

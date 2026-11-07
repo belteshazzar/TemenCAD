@@ -42,6 +42,9 @@ export const GLOBALS = [
   fn('helix', 'helix(${r}, ${height}, ${turns})', '(r, height, turns, { segments })', 'Helix around Y starting at [r, 0, 0].'),
   fn('bezier', 'bezier([${p0}], [${p1}], [${p2}], [${p3}])', '(p0, p1, p2, p3, { segments })', 'Cubic Bézier curve as a path.'),
   fn('sweep', 'sweep(${sketch}, ${path})', '(sketch | (t) => sketch, path, { frame, up, twist, scale, segments })', 'Sweep a 2D profile along a path; closed paths make rings. frame: \'minimal\' (no twist) or \'upright\'.'),
+  // Images
+  fn('heightmap', 'heightmap(${image}, { width: ${60}, height: ${4} })', '(image | (x, z) => 0..1, { width, depth, height, base, invert, smooth, gamma, resolution })', 'Relief solid: brightness (or a function of position) becomes height above a base plate.'),
+  fn('lithophane', 'lithophane(${image}, { width: ${80}, upright: true })', '(image, { width, depth, minThickness, maxThickness, border, smooth, gamma, resolution, upright })', 'Plate whose thickness follows the image: dark is thick, light is thin. Light it from behind.'),
   // Edges
   fn('fillet', "fillet(${shape}, ${r}, { edges: '${top}' })", '(shape | sketch, r, { edges, segments })', 'Round the sharp edges of a solid (or the corners of a sketch).'),
   fn('chamfer', "chamfer(${shape}, ${d}, { edges: '${top}' })", '(shape | sketch, d, { edges })', 'Bevel the sharp edges of a solid (or cut the corners of a sketch).'),
@@ -111,6 +114,13 @@ export const METHODS = [
   method('roof', 'roof()', '({ angle, segments, tolerance })', 'Roof solid from a sketch.', 'sketch'),
   method('toPolygons', 'toPolygons()', '()', 'Outline rings of a sketch as [[x, y], ...][].', 'sketch'),
   method('sweep', 'sweep(${path})', '(path, { frame, up, twist, scale, segments })', 'Sweep a sketch along a path.', 'sketch'),
+  // Images
+  method('blur', 'blur(${radius})', '(radius)', 'Soften an image by a radius in pixels.', 'image'),
+  method('crop', 'crop(${x}, ${y}, ${w}, ${h})', '(x, y, w, h)', 'Cut a rectangle out of an image (pixels).', 'image'),
+  method('gamma', 'gamma(${g})', '(g)', 'Lighten (< 1) or darken (> 1) the mid-tones of an image.', 'image'),
+  method('invert', 'invert()', '()', 'Swap light and dark in an image.', 'image'),
+  method('normalize', 'normalize()', '()', 'Stretch an image to the full 0..1 range.', 'image'),
+  method('flip', "flip('${y}')", "('x' | 'y')", 'Mirror an image.', 'image'),
   // Paths
   method('append', 'append(${path})', '(path)', 'Continue with another path, moved to start where this one ends.', 'path'),
   method('close', 'close()', '()', 'Join the ends of a path so the sweep is a ring.', 'path'),

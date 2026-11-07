@@ -28,7 +28,15 @@ export function initEngine() {
 }
 
 /** Scripts become data: module URLs, which Node can import without touching the filesystem. */
-export const nodeEnv = { makeUrl: (source) => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}` };
+export const nodeEnv = {
+  makeUrl: (source) => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`,
+  async decodeImage(bytes, name) {
+    if (!/\.jpe?g$/i.test(name)) throw new Error('only PNG and JPEG images are supported on the command line');
+    const { decode } = await import('jpeg-js');
+    const { width, height, data } = decode(new Uint8Array(bytes), { useTArray: true, formatAsRGBA: true, maxMemoryUsageInMB: 512 });
+    return { width, height, rgba: data };
+  },
+};
 
 /** Build a Project. Rejects with a ScriptError ({ message, file, line, trace }) on failure. */
 export async function buildProject(project, { onLog = () => {}, onWarn = () => {} } = {}) {
@@ -74,7 +82,8 @@ export function projectFromFolder(dir, { readdirSync, statSync } = {}) {
       if (entry.startsWith('.') || entry === 'node_modules') continue;
       const relPath = rel ? `${rel}/${entry}` : entry;
       if (fs.statSync(join(dir, relPath)).isDirectory()) { walk(relPath); continue; }
-      if (!ACCEPTED_EXT.includes(extOf(relPath))) continue; // manifest.json is accepted; preview.png and the like are not
+      if (!ACCEPTED_EXT.includes(extOf(relPath))) continue; // manifest.json is accepted
+      if (['thumb.png', 'preview.png'].includes(entry)) continue; // renders of the package, not part of it
       try {
         const b = readFileSync(join(dir, relPath));
         project.set(relPath, isTextFile(relPath) ? b.toString('utf8') : b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));

@@ -11,6 +11,8 @@ import { registerFont } from './fonts.js';
 import { buildModules, ModuleError } from './modules.js';
 import { isFontFile, isMeshFile, ENTRY } from './project.js';
 import { parseSTL } from './stl.js';
+import { GrayImage, decodePNG } from './image.js';
+import { isImageFile } from './project.js';
 import { locText } from './trace.js';
 
 /** Thrown by a script's assert(); reported without the "Error:" class prefix. */
@@ -86,7 +88,19 @@ function collect(items, nameHint) {
   return out;
 }
 
-// Parsed fonts and meshes are cached across runs by name, size and a sparse checksum of the bytes.
+/** Decode an image file to a GrayImage: PNG here, anything else through the host (`env.decodeImage`). */
+async function decodeImage(bytes, name, env) {
+  try {
+    if (/\.png$/i.test(name)) { const { width, height, rgba } = decodePNG(bytes); return GrayImage.fromRGBA(width, height, rgba); }
+    if (!env.decodeImage) throw new Error('only PNG images can be decoded here');
+    const { width, height, rgba } = await env.decodeImage(bytes, name);
+    return GrayImage.fromRGBA(width, height, rgba);
+  } catch (err) {
+    throw new Error(`Cannot read image ${name}: ${err.message}`);
+  }
+}
+
+// Parsed fonts, meshes and images are cached across runs by name, size and a sparse checksum of the bytes.
 const assetCache = new Map();
 function checksum(buffer) {
   const b = new Uint8Array(buffer);
@@ -154,13 +168,17 @@ export async function runScript(files, post, env) {
     const { positions, tris } = cached(name, files[name], () => parseSTL(files[name]));
     return polyhedronFromMesh(name, positions, tris);
   };
+  /** `import photo from './photo.png'` evaluates to this: the image decoded before the run. */
+  const images = new Map();
+  const loadImage = (name) => images.get(name);
   const sandbox = { ...api, show, log, print: log, echo, assert };
   const t0 = performance.now();
   const prev = globalThis.__temen;
-  globalThis.__temen = { api: sandbox, loadMesh };
+  globalThis.__temen = { api: sandbox, loadMesh, loadImage };
   try {
     for (const [name, content] of Object.entries(files)) {
       if (isFontFile(name)) cached(name, content, () => { registerFont(name, content); return true; });
+      else if (isImageFile(name)) images.set(name, await cached(name, content, () => decodeImage(content, name, env)));
     }
     modules = buildModules(files, Object.keys(sandbox), env.makeUrl);
     const mod = await import(/* @vite-ignore */ modules.entryUrl);

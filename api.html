@@ -105,6 +105,24 @@ sk.sweep(p, opts)                                 // method form of sweep
 // frame 'minimal' (default) never twists the profile; 'upright' keeps sketch y pointing to `up` (default +Y).
 // twist in degrees over the whole path; scale a factor or [sx, sy] reached at the end.
 // Corners are mitred; a bend tighter than the profile is wide warns, because the surface folds into itself.</pre>
+      <h3>Images: heightmaps and lithophanes</h3>
+      <pre>heightmap(img, { width, depth, height, base, invert, smooth, gamma, resolution })  // relief: brightness becomes height
+heightmap((x, z) => 0..1, opts)                   // the same from a function of position in mm
+lithophane(img, { width, depth, minThickness, maxThickness, border, smooth, gamma, resolution, upright })
+img.at(x, y) / img.sample(x, y)                   // brightness 0..1 at a pixel (sample: bilinear, fractional)
+img.blur(radius)                                  // soften by a radius in pixels
+img.crop(x, y, w, h)                              // cut out a rectangle in pixels
+img.flip('x' | 'y')                               // mirror
+img.gamma(g)                                      // < 1 lightens the mid-tones, > 1 darkens them
+img.invert()                                      // light ↔ dark
+img.normalize()                                   // stretch so the darkest pixel is 0 and the lightest 1
+img.resize(w, h)                                  // resample in pixels; h follows the aspect ratio when omitted
+img.width / img.height                            // size in pixels
+// import photo from './photo.png' (or .jpg) gives an image: brightness 0 (black) .. 1 (white), transparency on white.
+// heightmap: a plate width × depth (depth from the aspect ratio) rising from base (black) to base + height (white),
+//   seen from above like a drawing, centred on the origin. resolution = samples across the width (default 200).
+// lithophane: dark is thick (maxThickness, default 3), light is thin (minThickness, 0.8); border adds a rim;
+//   upright stands it on its edge facing the front, ready to print. Light it from behind.</pre>
       <h3>Transforms (return a new shape)</h3>
       <pre>s.align({ x, y, z }, [tx, ty, tz])                // each axis 'min' | 'center' | 'max' to the point
 s.center()                                        // centre on the origin

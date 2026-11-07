@@ -4,6 +4,7 @@ import { Sketch, sketchApi, circle, roundedRect, regularPolygon, polygon2d, extr
 import { manifoldFromTriangles } from './mesh.js';
 import { pathApi, resampleRing } from './path.js';
 import { filletApi } from './fillet.js';
+import { imageApi } from './image.js';
 
 export { Shape, Sketch, deg, rad };
 
@@ -441,6 +442,7 @@ export const api = {
   ...sketchApi,
   ...pathApi,
   ...filletApi,
+  ...imageApi,
   Shape, box, cube, roundedBox, sphere, cylinder, cone, torus, polygon, prism,
   union, difference, intersect, hull, minkowski, shell, polyhedron, loft, resize, roof,
   linearArray, polarArray, grid,

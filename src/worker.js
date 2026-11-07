@@ -17,6 +17,13 @@ const loadFonts = Promise.all(FONTS.map(({ name, file }) =>
 // Project scripts become blob: module URLs, importable from a module worker.
 const env = {
   makeUrl: (source) => URL.createObjectURL(new Blob([source], { type: 'text/javascript' })),
+  async decodeImage(bytes) {
+    const bmp = await createImageBitmap(new Blob([bytes]));
+    const c = new OffscreenCanvas(bmp.width, bmp.height), ctx = c.getContext('2d');
+    ctx.drawImage(bmp, 0, 0);
+    const { data } = ctx.getImageData(0, 0, bmp.width, bmp.height);
+    return { width: bmp.width, height: bmp.height, rgba: data };
+  },
   revokeUrl: (url) => URL.revokeObjectURL(url),
 };
 

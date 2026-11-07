@@ -1,10 +1,10 @@
 /**
  * File tabs above the editor. Each text file keeps its own CodeMirror state (undo history,
- * diagnostics); binary files (fonts, meshes) show an info panel with the import line to use.
+ * diagnostics); binary files (fonts, meshes, images) show an info panel with the import line to use.
  * The "+" menu adds, renames and removes files.
  */
 import { setDiagnostics } from '@codemirror/lint';
-import { ENTRY, ACCEPTED_EXT, isTextFile, isFontFile, isMeshFile, extOf, normalizePath } from './project.js';
+import { ENTRY, ACCEPTED_EXT, isTextFile, isFontFile, isMeshFile, isImageFile, extOf, normalizePath } from './project.js';
 
 /**
  * Name / confirm dialog (same <dialog> styling as the custom plate dialog). Resolves to the entered
@@ -179,16 +179,23 @@ export class Tabs {
   }
 
   renderAsset(file) {
-    const kind = isFontFile(file) ? 'Font' : isMeshFile(file) ? 'Mesh (STL)' : 'File';
+    const kind = isFontFile(file) ? 'Font' : isMeshFile(file) ? 'Mesh (STL)' : isImageFile(file) ? 'Image' : 'File';
     const ident = file.replace(/\.[^.]*$/, '').replace(/[^\w$]+/g, '_').replace(/^(\d)/, '_$1');
     const usage = isFontFile(file) ? `import ${ident} from './${file}';\ntext3d('Hi', { font: ${ident} })`
       : isMeshFile(file) ? `import ${ident} from './${file}';\nreturn ${ident}.onPlate();`
+      : isImageFile(file) ? `import ${ident} from './${file}';\nreturn lithophane(${ident}, { width: 80, upright: true });\n// or a relief: heightmap(${ident}, { width: 60, height: 4 })`
       : `import ${ident} from './${file}';`;
     this.o.assetEl.innerHTML = '';
     const h = document.createElement('div'); h.className = 'asset-kind'; h.textContent = `${kind} · ${fmtSize(this.project.get(file).byteLength)}`;
     const p = document.createElement('p'); p.textContent = 'Binary files cannot be edited here. Import it from a script:';
     const pre = document.createElement('pre'); pre.textContent = usage;
     this.o.assetEl.append(h, p, pre);
+    if (isImageFile(file)) {
+      const img = document.createElement('img'); img.className = 'asset-preview'; img.alt = file;
+      const url = URL.createObjectURL(new Blob([this.project.get(file)]));
+      img.src = url; img.onload = () => URL.revokeObjectURL(url);
+      this.o.assetEl.append(img);
+    }
   }
 
   render() {

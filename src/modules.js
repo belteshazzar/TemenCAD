@@ -5,10 +5,11 @@
  *   - other scripts keep their exports; only the import specifiers are rewritten in place
  *   - a font file becomes `export default "<its path>"` (a name text() accepts)
  *   - a mesh file becomes `export default __temen.loadMesh("<its path>")`
+ *   - an image file becomes `export default __temen.loadImage("<its path>")` (decoded before the run)
  * `makeUrl(code)` turns module source into an importable URL (blob: in a browser worker, data: in Node).
  * Returns { entryUrl, locate(url) -> { file, offset } } for mapping stack traces back to files.
  */
-import { ENTRY, findImports, resolveImport, isScript, isFontFile, isMeshFile } from './project.js';
+import { ENTRY, findImports, resolveImport, isScript, isFontFile, isMeshFile, isImageFile } from './project.js';
 
 export class ModuleError extends Error {
   constructor(message, file, line) { super(message); this.name = 'ModuleError'; this.file = file; this.line = line; }
@@ -34,7 +35,7 @@ export function buildModules(files, apiNames, makeUrl) {
       const deps = imports.map((im) => {
         const target = resolveImport(im.spec, file);
         if (!target || !(target in files)) throw new ModuleError(`Cannot find '${im.spec}' imported from ${file}`, file, im.line);
-        if (!isScript(target) && !isFontFile(target) && !isMeshFile(target)) throw new ModuleError(`'${im.spec}' is not a script, font or mesh file`, file, im.line);
+        if (!isScript(target) && !isFontFile(target) && !isMeshFile(target) && !isImageFile(target)) throw new ModuleError(`'${im.spec}' is not a script, font, mesh or image file`, file, im.line);
         return { ...im, url: build(target, [...chain, file]) };
       });
       if (file === ENTRY) {
@@ -60,6 +61,8 @@ export function buildModules(files, apiNames, makeUrl) {
       source = `export default ${JSON.stringify(file)};`;
     } else if (isMeshFile(file)) {
       source = `export default globalThis.__temen.loadMesh(${JSON.stringify(file)});`;
+    } else if (isImageFile(file)) {
+      source = `export default globalThis.__temen.loadImage(${JSON.stringify(file)});`;
     } else {
       throw new ModuleError(`Cannot import ${file}`, chain[chain.length - 1] ?? null, null);
     }
