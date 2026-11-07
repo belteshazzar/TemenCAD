@@ -25,7 +25,7 @@ How to work:
 - The project's files and the last build report are included with every user message. Read them before deciding what to change. main.js is the entry script; other .js files are ES modules it imports (\`import { lid } from './lid.js'\`, \`export const lid = ...\`). Fonts (.ttf/.otf), meshes (.stl) and images (.png/.jpg) in the project are imported the same way: \`import logo from './Logo.ttf'\` gives a font name for text(), \`import part from './part.stl'\` gives a Shape, \`import photo from './photo.png'\` gives an image for heightmap() and lithophane().
 - Make the smallest edit that does the job with edit_script (exact-match replacement; pass \`file\` for anything other than main.js). Use write_script only for new models, new files or large rewrites. To split a model into modules, write_script a new .js file name (it is created) and import it from main.js; remove_file and rename_file manage script files. Fonts, meshes and images can only be added by the user.
 - After every change call run_model and read the report. Fix any error or warning it reports (they include line numbers) before replying. If the report says the model does not fit the plate, tell the user rather than silently shrinking their design.
-- Use take_screenshot when the shape of the result matters and the build report can't confirm it (first version of a new model, visual arrangement, anything you are unsure of).
+- Use render_views when the shape of the result matters and the build report can't confirm it (first version of a new model, visual arrangement, fit against a ghost reference, anything you are unsure of): it returns labelled views (part names, sizes, scale bar, axes) with ghosts translucent, and can cut the model open with a section. take_screenshot gives the live 3D view instead.
 - Keep designs parametric: declare dimensions as named constants at the top of the script. Return parts as an object so they are named: \`return { body, lid }\`.
 - Units are millimetres, Y is up, the build plate is y = 0, +Z is the front. Put parts on the plate with .onPlate(). Screw cutters have their top at y = 0; translate them to the top face of the part before subtracting.
 - Design for printing. Horizontal holes should be hole() cutters (teardrop by default) rather than plain cylinders; use { flat } when the hole is close to a surface. Counterbored or countersunk holes printed head-down can take { bridge: 0.2 }. Where a boss or wall meets a plate, a concave fillet (s.fillet(r, { edges: 'concave' })) adds strength; top-edge fillets or chamfers (edges: 'top') soften parts; bottom chamfers avoid elephant's foot. Use sweep() along a path for handles, hooks, channels and springs rather than many unions; heightmap() and lithophane() for pictures the user adds as .png/.jpg files.
@@ -44,13 +44,14 @@ const TOOL_DESCRIPTIONS = {
   remove_file: 'Delete a script file from the project. main.js, fonts and meshes cannot be removed. Update any imports of it first.',
   rename_file: 'Rename a script file in the project (e.g. to move it into a folder). main.js, fonts and meshes cannot be renamed. Update any imports of it afterwards.',
   take_screenshot: 'Render the current 3D view and return it as an image, with the camera framing the model. Optional view: iso, top, front, right, left, back.',
+  render_views: 'Render the last build as a sheet of labelled views (part names, sizes in each view, scale bar, axes; ghost parts translucent). views: a list from iso, top, bottom, front, back, left, right (default iso, top, front, right). section: { axis, value } cuts the model open at that plane (y keeps what is below; x and z keep the negative side) and paints cut faces red. Build with run_model first.',
 };
 
 export class Agent {
   /**
    * @param {object} host  callbacks into the app:
    *   listFiles(), getScript(file), setScript(file, text), removeFile(file), renameFile(file, to) -> name,
-   *   runAndWait() -> report object, screenshot(view) -> { dataUrl, mediaType, data },
+   *   runAndWait() -> report object, screenshot(view) -> { dataUrl, mediaType, data }, renderViews(opts) -> Uint8Array (PNG),
    *   lastReport() -> report object | null
    */
   constructor(host) {
@@ -147,6 +148,22 @@ export class Agent {
           return [
             { type: 'image', source: { type: 'base64', media_type: shot.mediaType, data: shot.data } },
             { type: 'text', text: `Screenshot from the ${view || 'iso'} view. Y is up; the blue plate edge is the front.` },
+          ];
+        },
+      }),
+      betaTool({
+        name: 'render_views', description: TOOL_DESCRIPTIONS.render_views,
+        inputSchema: { type: 'object', properties: {
+          views: { type: 'array', items: { type: 'string', enum: ['iso', 'top', 'bottom', 'front', 'back', 'left', 'right'] } },
+          section: { type: 'object', properties: { axis: { type: 'string', enum: ['x', 'y', 'z'] }, value: { type: 'number' } }, required: ['axis', 'value'], additionalProperties: false },
+        }, additionalProperties: false },
+        run: async ({ views, section }) => {
+          const list = views?.length ? views : ['iso', 'top', 'front', 'right'];
+          const png = await host.renderViews({ views: list, section: section ?? null, width: 640, height: 480, labels: true });
+          let bin = ''; for (let i = 0; i < png.length; i += 0x8000) bin += String.fromCharCode.apply(null, png.subarray(i, i + 0x8000));
+          return [
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: btoa(bin) } },
+            { type: 'text', text: `Views: ${list.join(', ')}${section ? `, cut at ${section.axis} = ${section.value}` : ''}. Each view is titled with its axes and the model size; ghosts are translucent reference parts.` },
           ];
         },
       }),

@@ -16,6 +16,8 @@ export class Builder {
     this.current = null;
     this.pending = false;
     this.waiters = [];
+    this.renders = new Map();
+    this.renderId = 0;
     this.spawn();
   }
 
@@ -42,14 +44,32 @@ export class Builder {
   cancel() {
     if (!this.current) return;
     this.worker.terminate();
+    for (const r of this.renders.values()) r.reject(new Error('Build cancelled'));
+    this.renders.clear();
     this.current = null;
     this.pending = false;
     this.spawn();
     this.h.onCancel?.();
   }
 
+  /** Render the given meshes to a PNG (Uint8Array) in the worker: { views, width, height, labels, section }. */
+  render(meshes, options) {
+    return new Promise((resolve, reject) => {
+      const id = `r${++this.renderId}`;
+      this.renders.set(id, { resolve, reject });
+      // Copies, not transfers: the viewer keeps using these buffers.
+      this.worker.postMessage({ type: 'render', id, meshes: meshes.map((m) => ({ ...m, positions: m.positions.slice(), indices: m.indices.slice() })), options });
+    });
+  }
+
   onMessage(msg) {
     if (msg.type === 'ready') return;
+    if (msg.type === 'rendered' || msg.type === 'render-error') {
+      const r = this.renders.get(msg.id); this.renders.delete(msg.id);
+      if (!r) return;
+      if (msg.type === 'rendered') r.resolve(msg.png); else r.reject(new Error(msg.message));
+      return;
+    }
     if (msg.id !== this.current?.id) return; // stale message from a superseded run
     if (msg.type === 'log') { this.h.onLog?.(msg.text); return; }
     if (msg.type === 'warn') { this.h.onWarn?.(msg); return; }

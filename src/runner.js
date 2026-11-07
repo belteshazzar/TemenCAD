@@ -195,7 +195,7 @@ export async function runScript(files, post, env) {
       if (s.isEmpty()) { warn(`"${name}" is empty (no volume) and was skipped.`, []); return; }
       const { positions, indices } = s.toMesh();
       tris += indices.length / 3;
-      meshes.push({ positions, indices, color: s.colorValue, name, ghost: !!s.meta.ghost, hidden: !!s.meta.hidden, volume: s.volume() });
+      meshes.push({ positions, indices, color: s.colorValue, name, named: s.meta.name !== undefined, ghost: !!s.meta.ghost, hidden: !!s.meta.hidden, volume: s.volume() });
     });
     return { meshes, tris, ms: performance.now() - t0 };
   } catch (err) {

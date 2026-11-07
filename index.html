@@ -37,6 +37,7 @@
                     <button data-action="save-as">Save As… <kbd>⇧⌘S</kbd></button>
                     <button data-action="export-stl">Export STL…</button>
                     <button data-action="export-3mf">Export 3MF…</button>
+                    <button data-action="render-sheet">Render views…</button>
                     <button data-action="share">Share…</button>
                   </div>
                   <hr />
@@ -142,6 +143,36 @@
         <div class="dialog-actions">
           <button type="button" class="secondary" value="cancel" data-cancel>Cancel</button>
           <button type="submit" value="ok">Apply</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="render-dialog">
+      <form method="dialog" id="render-form">
+        <h2>Render views</h2>
+        <p class="muted">A PNG of the model with part names, sizes, a scale bar and axes. Ghost parts are drawn translucent.</p>
+        <div class="check-row" role="group" aria-label="Views">
+          <label><input type="checkbox" name="view" value="iso" checked /> Isometric</label>
+          <label><input type="checkbox" name="view" value="top" checked /> Top</label>
+          <label><input type="checkbox" name="view" value="front" checked /> Front</label>
+          <label><input type="checkbox" name="view" value="right" checked /> Right</label>
+          <label><input type="checkbox" name="view" value="left" /> Left</label>
+          <label><input type="checkbox" name="view" value="back" /> Back</label>
+          <label><input type="checkbox" name="view" value="bottom" /> Bottom</label>
+        </div>
+        <div class="dialog-grid">
+          <label>Section
+            <select name="axis"><option value="">None</option><option value="y">Cut above y =</option><option value="x">Cut beyond x =</option><option value="z">Cut beyond z =</option></select>
+          </label>
+          <label>At (mm)<input type="number" name="value" step="any" value="0" inputmode="decimal" /></label>
+          <label>Size per view
+            <select name="size"><option value="720x540">720 × 540</option><option value="960x720" selected>960 × 720</option><option value="1280x960">1280 × 960</option></select>
+          </label>
+        </div>
+        <label class="check-inline"><input type="checkbox" name="labels" checked /> Labels, scale bar and axes</label>
+        <p class="dialog-error" id="render-error"></p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" value="cancel" data-cancel>Cancel</button>
+          <button type="submit" value="ok">Render PNG</button>
         </div>
       </form>
     </dialog>

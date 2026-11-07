@@ -144,6 +144,7 @@ function setBusy(on) {
 }
 
 let lastReport = null;      // structured result of the last build, for the assistant
+let lastMeshes = null;
 let runDiagnostics = [];    // warnings collected during the current build
 let framedOnce = false;
 
@@ -174,6 +175,7 @@ const builder = new Builder({
     const origWarn = console.warn;
     console.warn = (...a) => { logLine(`Warning: ${a.join(' ')}`, 'warn'); origWarn(...a); };
     try { viewer.setMeshes(msg.meshes); } finally { console.warn = origWarn; }
+    lastMeshes = msg.meshes;
     parts.setParts(msg.meshes.map((m) => ({ name: m.name, color: m.color, ghost: m.ghost, hidden: m.hidden, volume: m.volume, tris: m.indices.length / 3 })));
     if (!framedOnce) { framedOnce = true; if (!plate) viewer.resetView(); }
     const n = msg.meshes.length;
@@ -333,6 +335,7 @@ const chat = initChat({
     renameFile: (file, to) => { const n = tabs.renameFile(file, to); projectChanged(); clearTimeout(timer); return n; },
     runAndWait: () => builder.runAndWait(),
     lastReport: () => lastReport,
+    renderViews: (opts) => renderSheet(opts),
     screenshot: async (view) => {
       if (view && view !== 'iso') viewer.setView(view); else viewer.resetView();
       await new Promise((r) => requestAnimationFrame(r));
@@ -384,9 +387,47 @@ document.getElementById('file-menu').addEventListener('click', async (e) => {
         logLine(`Exported ${n} part${n === 1 ? '' : 's'} with names and colors to ${base}.3mf`);
         break;
       }
+      case 'render-sheet': {
+        const opts = await askRenderOptions();
+        if (!opts) break;
+        const png = await renderSheet(opts);
+        const url = URL.createObjectURL(new Blob([png], { type: 'image/png' }));
+        const a = document.createElement('a'); a.href = url; a.download = `${base}-views.png`; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        logLine(`Rendered ${opts.views.join(', ')} to ${base}-views.png`);
+        break;
+      }
     }
   } catch (err) { reportErr(err); }
 });
+
+/** Render the last build's meshes in the worker: { views, section, width, height, labels }. */
+async function renderSheet(opts) {
+  if (!lastMeshes?.length) throw new Error('Build the model first');
+  return builder.render(lastMeshes, opts);
+}
+
+/** The Render views dialog; resolves with options or null. */
+function askRenderOptions() {
+  const dlg = document.getElementById('render-dialog'), form = document.getElementById('render-form'), err = document.getElementById('render-error');
+  err.textContent = '';
+  return new Promise((resolve) => {
+    let result = null;
+    const onSubmit = (e) => {
+      const views = [...form.querySelectorAll('input[name=view]:checked')].map((i) => i.value);
+      if (!views.length) { e.preventDefault(); err.textContent = 'Pick at least one view.'; return; }
+      const axis = form.axis.value, value = parseFloat(form.value.value);
+      if (axis && !Number.isFinite(value)) { e.preventDefault(); err.textContent = 'Enter the section position in mm.'; return; }
+      const [width, height] = form.size.value.split('x').map(Number);
+      result = { views, width, height, labels: form.labels.checked, section: axis ? { axis, value } : null };
+    };
+    const onClose = () => { form.removeEventListener('submit', onSubmit); dlg.removeEventListener('close', onClose); resolve(result); };
+    form.addEventListener('submit', onSubmit);
+    dlg.addEventListener('close', onClose);
+    dlg.querySelector('[data-cancel]').onclick = () => dlg.close();
+    dlg.showModal();
+  });
+}
 
 // ---- Draggable divider: viewer | editor ----
 function makeDivider(el, onMove) {

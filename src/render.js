@@ -1,14 +1,17 @@
 /**
  * Renderer with no browser (used by the command line and the catalogue): a small z-buffer rasteriser
  * over the meshes a build produces, written out as PNG.
- *   renderThumbnail(meshes, { width, height, colorHex })            -> Buffer (PNG), one isometric view, no labels
- *   renderViews(meshes, { views, width, height, colorHex, labels, section, ghosts }) -> Buffer (PNG), a contact sheet
+ *   renderThumbnail(meshes, { width, height, colorHex })            -> Uint8Array (PNG), one isometric view, no labels
+ *   renderViews(meshes, { views, width, height, colorHex, labels, section, ghosts }) -> Uint8Array (PNG), a contact sheet
+ *   sectionMeshes(meshes, { axis, value })                           -> meshes cut open at that plane (needs the engine)
  * views: any of 'iso' 'top' 'bottom' 'front' 'back' 'left' 'right' (width × height is the size of ONE view).
  * Ghost meshes are drawn translucent; `section: { axis, value }` tints faces lying on that plane as cut faces.
  * Labels (part names, view title with the size, a scale bar, an axis triad) need a registered font; without one they are skipped.
  */
 import { zlibSync } from 'fflate';
 import { textOutlines } from './fonts.js';
+import { polyhedronFromMesh, box } from './cad.js';
+import { colorHex as cssToHex } from './export.js';
 
 const norm = (v) => { const l = Math.hypot(...v) || 1; return v.map((x) => x / l); };
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -192,11 +195,11 @@ function drawView(cv, region, meshes, viewName, { colorHex, labels, section, gho
     cv.line2d(ox, oy, ex, ey, AXIS[name], 1, 2 * S);
     cv.text(name.toUpperCase(), ex + (vx >= 0 ? 3 * S : -9 * S), ey + (vy >= 0 ? -2 * S : 10 * S), small, AXIS[name], { weight: 'Inter Bold' });
   }
-  // Part labels at the top of each part's bounding box, with a short leader.
-  if (solid.length > 1 || (solid.length === 1 && solid[0].name)) {
+  // Labels for the parts the script named (auto names like "Part 12" are left out), at the top of each bounding box.
+  const labelled = solid.filter((m) => m.name && m.named !== false).slice(0, 40);
+  {
     const used = [];
-    for (const m of solid) {
-      if (!m.name) continue;
+    for (const m of labelled) {
       const b = meshBounds([m]);
       const c = [(b.min[0] + b.max[0]) / 2, b.max[1], (b.min[2] + b.max[2]) / 2];
       let [lx, ly] = toScreen(project(...c));
@@ -212,8 +215,27 @@ function drawView(cv, region, meshes, viewName, { colorHex, labels, section, gho
   }
 }
 
+/** Cut every mesh with a half-space so a picture shows the inside: keeps the side below `value` (y) or the negative side (x, z). */
+export function sectionMeshes(meshes, { axis, value }) {
+  const k = 'xyz'.indexOf(axis);
+  const out = [];
+  for (const m of meshes) {
+    const s = polyhedronFromMesh(m.name ?? 'part', m.positions, m.indices);
+    const { min, max } = s.bounds();
+    if (value <= min[k]) continue;
+    if (value >= max[k]) { out.push(m); continue; }
+    const big = 2 * Math.max(...max.map(Math.abs), ...min.map(Math.abs), Math.abs(value)) + 10;
+    const keep = box(big, big, big).translate(k === 0 ? value - big / 2 : 0, k === 1 ? value - big / 2 : 0, k === 2 ? value - big / 2 : 0);
+    const cut = s.intersect(keep);
+    if (cut.isEmpty()) continue;
+    const { positions, indices } = cut.toMesh();
+    out.push({ ...m, positions, indices });
+  }
+  return out;
+}
+
 /** Several views tiled into one picture; width × height is the size of one view. */
-export function renderViews(meshes, { views = ['iso'], width = 480, height = 360, colorHex = () => '#8fb3ff', supersample = 2, labels = true, section = null, ghosts = true } = {}) {
+export function renderViews(meshes, { views = ['iso'], width = 480, height = 360, colorHex = cssToHex, supersample = 2, labels = true, section = null, ghosts = true } = {}) {
   const names = views.filter((v) => VIEWS[v]);
   if (!names.length) throw new Error(`renderViews: views must be some of ${VIEW_NAMES.join(', ')}`);
   const cols = names.length === 1 ? 1 : names.length <= 4 ? 2 : 3, rows = Math.ceil(names.length / cols);
@@ -231,12 +253,12 @@ export function renderViews(meshes, { views = ['iso'], width = 480, height = 360
 }
 
 /** One isometric view without labels (catalogue thumbnails). */
-export function renderThumbnail(meshes, { width = 480, height = 360, colorHex = () => '#8fb3ff', supersample = 2 } = {}) {
+export function renderThumbnail(meshes, { width = 480, height = 360, colorHex = cssToHex, supersample = 2 } = {}) {
   return renderViews(meshes, { views: ['iso'], width, height, colorHex, supersample, labels: false, ghosts: false });
 }
 
 function downsample(cv, width, height, s) {
-  const out = Buffer.alloc(height * (width * 3 + 1));
+  const out = new Uint8Array(height * (width * 3 + 1));
   const s2 = s * s;
   for (let y = 0; y < height; y++) {
     out[y * (width * 3 + 1)] = 0;
@@ -253,20 +275,19 @@ function downsample(cv, width, height, s) {
 // ---- Minimal PNG encoder (8-bit RGB, no alpha) ----
 const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 const crc32 = (buf) => { let c = 0xffffffff; for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+const u32 = (v) => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, v); return b; };
+const concat = (parts) => { const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0)); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; } return out; };
 function chunk(type, data) {
-  const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
-  const td = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td));
-  return Buffer.concat([len, td, crc]);
+  const td = concat([new TextEncoder().encode(type), data]);
+  return concat([u32(data.length), td, u32(crc32(td))]);
 }
+/** PNG bytes (Uint8Array) from 8-bit RGB rows, each prefixed with its filter byte. */
 export function encodePNG(width, height, filteredRows) {
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  const ihdr = concat([u32(width), u32(height), new Uint8Array([8, 2, 0, 0, 0])]);
+  return concat([
+    new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', ihdr),
     chunk('IDAT', zlibSync(filteredRows, { level: 9 })),
-    chunk('IEND', Buffer.alloc(0)),
+    chunk('IEND', new Uint8Array(0)),
   ]);
 }

@@ -20,8 +20,7 @@ import { whereText } from '../src/trace.js';
 import { buildProject, loadProject } from '../src/headless.js';
 import { readPackage, vendorPackage, addImportLine } from '../src/package.js';
 import { CATALOG_URL } from '../src/config.js';
-import { renderViews, VIEW_NAMES } from '../src/render.js';
-import { polyhedronFromMesh, box } from '../src/cad.js';
+import { renderViews, sectionMeshes, VIEW_NAMES } from '../src/render.js';
 import { colorHex } from '../src/export.js';
 import { referenceFromHtml } from '../src/api-text.js';
 import { fileURLToPath } from 'node:url';
@@ -157,25 +156,6 @@ async function main() {
     }
   }
   process.exitCode = plate && fitProblems(bounds(parts), plate).length ? 2 : 0;
-}
-
-/** Cut every mesh with a half-space so the picture shows the inside: keeps the side below `value` (y) or the negative side (x, z). */
-function sectionMeshes(meshes, { axis, value }) {
-  const k = 'xyz'.indexOf(axis);
-  const out = [];
-  for (const m of meshes) {
-    const s = polyhedronFromMesh(m.name ?? 'part', m.positions, m.indices);
-    const { min, max } = s.bounds();
-    if (value <= min[k]) continue; // nothing left
-    if (value >= max[k]) { out.push(m); continue; }
-    const big = 2 * Math.max(...max.map(Math.abs), ...min.map(Math.abs), Math.abs(value)) + 10;
-    const keep = box(big, big, big).translate(k === 0 ? value - big / 2 : 0, k === 1 ? value - big / 2 : 0, k === 2 ? value - big / 2 : 0);
-    const cut = s.intersect(keep);
-    if (cut.isEmpty()) continue;
-    const { positions, indices } = cut.toMesh();
-    out.push({ ...m, positions, indices });
-  }
-  return out;
 }
 
 /** temencad add <name>: fetch the package from the catalogue and vendor it into a folder project or a .temen file. */

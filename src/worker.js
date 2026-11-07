@@ -6,6 +6,7 @@ import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { init } from './engine.js';
 import { registerFont, FONTS } from './fonts.js';
 import { runScript } from './runner.js';
+import { renderViews, sectionMeshes } from './render.js';
 
 // Vite resolves every bundled font to a hashed URL at build time.
 const fontUrls = import.meta.glob('./assets/*-subset.ttf', { query: '?url', import: 'default', eager: true });
@@ -43,7 +44,17 @@ Promise.all([init({ locateFile: () => wasmUrl }), loadFonts])
     self.onmessage = (e) => self.postMessage({ type: 'error', id: e.data.id, message: `Geometry engine failed to load: ${err?.message ?? err}` });
   });
 
-async function handle({ type, id, files }) {
+async function handle({ type, id, files, meshes, options }) {
+  if (type === 'render') {
+    try {
+      const list = options.section ? sectionMeshes(meshes, options.section) : meshes;
+      const png = renderViews(list, { views: options.views, width: options.width, height: options.height, labels: options.labels !== false, section: options.section ?? null });
+      self.postMessage({ type: 'rendered', id, png }, [png.buffer]);
+    } catch (err) {
+      self.postMessage({ type: 'render-error', id, message: err.message ?? String(err) });
+    }
+    return;
+  }
   if (type !== 'run') return;
   try {
     const { meshes, tris, ms } = await runScript(files, (m) => self.postMessage({ ...m, id }), env);

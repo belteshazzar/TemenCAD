@@ -164,6 +164,10 @@ dialog .dialog-error { color: var(--error); margin: -4px 0 0; font-size: 12px; }
 dialog .dialog-error[hidden] { display: none; }
 dialog .field input[type=text] { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .dialog-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.dialog-grid select { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
+.check-row { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 12px; font-size: 13px; }
+.check-row label, .check-inline { display: inline-flex; align-items: center; gap: 6px; }
+.check-inline { margin: 12px 0 0; font-size: 13px; }
 .dialog-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 .dialog-grid input { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
 .dialog-grid input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
