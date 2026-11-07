@@ -2,11 +2,14 @@
  * Runs a user script against the CAD API and turns the result into mesh buffers.
  * Pure module (no bundler-specific imports) so it can be tested in Node.
  */
-import { api, Shape } from './cad.js';
+import { api, Shape, Sketch } from './cad.js';
 import { hooks } from './shape.js';
 import { releaseAll } from './engine.js';
 
 const PRELUDE = '"use strict";\n';
+
+/** Thrown by a script's assert(); reported without the "Error:" class prefix. */
+class AssertionError extends Error { constructor(message) { super(message); this.name = 'AssertionError'; } }
 
 /** A script failure with the user-script line(s) it came from. */
 export class ScriptError extends Error {
@@ -15,7 +18,26 @@ export class ScriptError extends Error {
 
 export function fmt(v) {
   if (v instanceof Shape) { const b = v.bounds(); return `Shape(${v.meta.name ? `"${v.meta.name}", ` : ''}size ${b.size.map((n) => +n.toFixed(3)).join('×')})`; }
+  if (v instanceof Sketch) { const b = v.bounds(); return `Sketch(size ${b.size.map((n) => +n.toFixed(3)).join('×')})`; }
   if (typeof v === 'object') { try { return JSON.stringify(v); } catch { return String(v); } }
+  return String(v);
+}
+
+/**
+ * OpenSCAD-style value formatting for echo(): strings quoted, arrays bracketed, objects as
+ * `key = value` lists, shapes and sketches by name and size, numbers rounded to 6 decimals.
+ */
+export function fmtEcho(v, depth = 0) {
+  if (v === null || v === undefined || typeof v === 'boolean') return String(v);
+  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : String(+v.toFixed(6));
+  if (typeof v === 'string') return JSON.stringify(v);
+  if (typeof v === 'function') return `function ${v.name || '(anonymous)'}`;
+  if (v instanceof Shape || v instanceof Sketch) return fmt(v);
+  if (Array.isArray(v)) return `[${v.map((x) => fmtEcho(x, depth + 1)).join(', ')}]`;
+  if (typeof v === 'object') {
+    const entries = Object.entries(v).map(([k, x]) => `${k} = ${fmtEcho(x, depth + 1)}`);
+    return depth === 0 ? entries.join(', ') : `{ ${entries.join(', ')} }`;
+  }
   return String(v);
 }
 
@@ -80,6 +102,17 @@ export function runScript(code, post) {
   console.warn = (...a) => { warn(a.map(fmt).join(' ')); origWarn(...a); };
   console.error = (...a) => { warn(a.map(fmt).join(' ')); origError(...a); };
 
+  /** echo(...values) — OpenSCAD-style console output: ECHO: 1, "a", [1, 2], w = 10. Returns the first value, so it works inline. */
+  const echo = (...args) => {
+    const trace = userTrace(new Error());
+    post({ type: 'log', text: `ECHO${trace[0] ? ` (line ${trace[0]})` : ''}: ${args.map((a) => fmtEcho(a)).join(', ')}` });
+    return args[0];
+  };
+  /** assert(condition, message?) — stops the build with an error at the call site when the condition is falsy. Returns the condition. */
+  const assert = (condition, message) => {
+    if (!condition) throw new AssertionError(message === undefined ? 'Assertion failed' : `Assertion failed: ${typeof message === 'string' ? message : fmtEcho(message)}`);
+    return condition;
+  };
   const shown = [];
   /** show(shape | [shapes], { name, color, ghost, hidden }) */
   const show = (...args) => {
@@ -94,7 +127,7 @@ export function runScript(code, post) {
       shown.push(s);
     }
   };
-  const sandbox = { ...api, show, log, print: log };
+  const sandbox = { ...api, show, log, print: log, echo, assert };
   const names = Object.keys(sandbox);
   const t0 = performance.now();
   try {
@@ -116,7 +149,7 @@ export function runScript(code, post) {
     });
     return { meshes, tris, ms: performance.now() - t0 };
   } catch (err) {
-    throw new ScriptError(String(err), userTrace(err));
+    throw new ScriptError(err instanceof AssertionError ? err.message : String(err), userTrace(err));
   } finally {
     console.warn = origWarn; console.error = origError;
     hooks.warn = origWarnHook;

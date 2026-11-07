@@ -50,7 +50,9 @@ s.ghost()            // transparent reference, never exported
 s.hide()             // listed in the Parts panel but not drawn until you switch it on
 // The Parts panel (top right of the viewport) toggles visibility, ghosts, solos (double-click) and exports each part.</pre>
       <h3>Helpers</h3>
-      <pre>show(shape)  log(...)  s.bounds()  s.volume()  s.surfaceArea()  deg(rad)  rad(deg)  Math.*</pre>
+      <pre>show(shape)  log(...)  s.bounds()  s.volume()  s.surfaceArea()  deg(rad)  rad(deg)  Math.*
+echo(a, b, { w, h })        // console: ECHO (line 12): 1, "x", w = 10, h = 2 — returns a, so echo() works inline
+assert(cond, 'message')     // stops the build with an error on that line when cond is falsy; returns cond</pre>
       <p class="muted">Geometry kernel: <a href="https://github.com/elalish/manifold" target="_blank" rel="noopener">Manifold</a> (C++ via WebAssembly). All output is watertight.</p>
       <p class="muted">Units are millimetres, Y is up, the build plate is y = 0. Every operation returns a new shape; nothing is mutated.</p>
     </main>
