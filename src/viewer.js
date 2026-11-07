@@ -51,6 +51,9 @@ export class Viewer {
     if (!w || !h) return;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
+    // Put the look-at point (the origin, where printable parts sit) a third of the way up the view rather
+    // than in the middle: render a frame whose centre is shifted down by a sixth of the height.
+    this.camera.setViewOffset(w, h, 0, -h / 6, w, h);
     this.camera.updateProjectionMatrix();
   }
 
