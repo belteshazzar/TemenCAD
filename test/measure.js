@@ -1,0 +1,12 @@
+const close = (a, b, tol, what) => assert(Math.abs(a - b) <= tol * Math.max(1, Math.abs(b)), `${what}: ${a} vs ${b}`);
+const a = box(10), b = box(10).translate(15, 0, 0), c = box(10).translate(5, 0, 0), d = sphere(2, { segments: 64 }).translate(0, 20, 0);
+close(clearance(a, b), 5, 1e-6, 'gap');
+close(a.clearance(b), 5, 1e-6, 'gap method');
+close(clearance(a, c), 0, 1e-9, 'overlapping');
+close(interference(a, c), 500, 1e-6, 'interference');
+assert(intersects(a, c) && !intersects(a, b), 'intersects');
+close(overlap(a, c).volume(), 500, 1e-6, 'overlap shape');
+close(clearance(a, d), 20 - 5 - 2, 0.01, 'box to sphere');
+close(clearance(a, box(10).translate(10, 0, 0)), 0, 1e-9, 'touching');
+echo('far', clearance(a, box(1).translate(1000, 0, 0), { searchLength: 50 }));
+return [a, b, d.name('ball'), c.ghost()];

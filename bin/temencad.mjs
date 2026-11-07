@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { buildSTL, build3MF } from '../src/export.js';
 import { PLATES, fitProblems } from '../src/plate.js';
-import { Project, ENTRY, PROJECT_EXT } from '../src/project.js';
+import { Project, ENTRY, PROJECT_EXT, findImports, resolveImport } from '../src/project.js';
 import { whereText } from '../src/trace.js';
 import { buildProject, loadProject } from '../src/headless.js';
 import { readPackage, vendorPackage, addImportLine } from '../src/package.js';
@@ -41,7 +41,7 @@ A plain script may import sibling files (./lib.js, ./Logo.ttf, ./part.stl); they
 "add" copies a package from the shared catalogue into the project (catalog/<name>/) and adds its import.
 "api" prints the API reference as plain text; "api sweep" or "api edges" prints just the matching section(s); "api --list" the headings.
 "eval" runs a one-line expression (or statements that echo/return) with the whole API available and prints the value.
-"test" builds every main.js, *.temen and *.js given (folders are searched) and reports which fail; exit code 1 on failure.
+"test" builds every main.js, *.temen and script given; in a folder without main.js every script no sibling imports counts. Exit code 1 on failure.
 
 Options:
   -o, --output <file>   Output file; the extension picks the format: .stl or .3mf (default: <script>.stl)
@@ -141,11 +141,16 @@ async function testCommand(opts, log) {
     const abs = resolve(p);
     if (!existsSync(abs)) return fail(`No such file or folder: ${p}`);
     if (statSync(abs).isDirectory()) {
-      for (const entry of readdirSync(abs)) {
-        if (entry.startsWith('.') || entry === 'node_modules' || entry === 'catalog' || entry === 'dist') continue;
+      const entries = readdirSync(abs).filter((e) => !e.startsWith('.') && e !== 'node_modules' && e !== 'catalog' && e !== 'dist');
+      const scripts = entries.filter((e) => /\.m?js$/i.test(e));
+      // A folder with main.js is one project; otherwise every script that no sibling imports is a test of its own.
+      const imported = new Set();
+      if (!entries.includes(ENTRY)) for (const e of scripts) for (const im of findImports(readFileSync(join(abs, e), 'utf8'))) { const t = resolveImport(im.spec, e); if (t) imported.add(t); }
+      for (const entry of entries) {
         const child = join(abs, entry);
         if (statSync(child).isDirectory()) add(child);
         else if (entry === ENTRY || entry.endsWith(PROJECT_EXT)) files.push(child);
+        else if (!entries.includes(ENTRY) && scripts.includes(entry) && !imported.has(entry)) files.push(child);
       }
     } else files.push(abs);
   };

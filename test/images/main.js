@@ -1,0 +1,24 @@
+import blob from './blob.png';
+import pal from './blob-pal.png';
+import gray from './blob-gray.png';
+import one from './one.png';
+import jpg from './blob.jpg';
+echo('sizes', [blob.width, blob.height], [pal.width, pal.height], [gray.width, gray.height], [one.width, one.height], [jpg.width, jpg.height]);
+// decoders agree: centre is white (1), the square at (10,10) is black (0), transparent corner composites to white
+echo('centre', blob.at(80, 60), pal.at(80, 60), gray.at(80, 60), jpg.at(80, 60).toFixed(2));
+echo('black square', blob.at(10, 10), pal.at(10, 10), gray.at(10, 10), jpg.at(10, 10).toFixed(2));
+echo('corner', blob.at(150, 110), one.at(3, 3));
+assert(Math.abs(blob.at(80, 60) - 1) < 0.02 && blob.at(10, 10) < 0.02 && Math.abs(blob.at(150, 110) - 1) < 0.01, 'png values');
+assert(Math.abs(pal.at(80, 60) - gray.at(80, 60)) < 0.02 && Math.abs(jpg.at(10, 10)) < 0.05, 'palette/gray/jpeg agree');
+const relief = heightmap(blob, { width: 60, height: 6, base: 1, smooth: 1 });
+echo('relief', relief.bounds().size, relief.volume());
+assert(relief.bounds().size[0] === 60 && Math.abs(relief.bounds().size[2] - 45) < 1e-6 && relief.bounds().size[1] <= 7.0001 && relief.bounds().size[1] > 6.5, 'relief bounds');
+const litho = lithophane(blob, { width: 60, border: 3, upright: true });
+echo('litho', litho.bounds().min, litho.bounds().max, litho.volume());
+assert(Math.abs(litho.bounds().min[1]) < 1e-6 && Math.abs(litho.bounds().size[0] - 66) < 1e-6 && Math.abs(litho.bounds().size[2] - 3) < 1e-6, 'litho upright on plate, border, thickness');
+const fn = heightmap((x, z) => 0.5 + 0.5 * Math.sin(x / 3) * Math.cos(z / 3), { width: 40, height: 3, base: 1, resolution: 60 });
+assert(fn.volume() > 40 * 40 * 1 && fn.volume() < 40 * 40 * 4, 'function heightmap');
+const ops = blob.invert().blur(2).gamma(0.5).normalize().crop(10, 10, 100, 80).resize(50).flip('y');
+echo('ops', [ops.width, ops.height]);
+assert(ops.width === 50 && ops.height === 40, 'ops');
+return { relief: relief.translate(-50, 0, 0), litho: litho.translate(40, 0, 0), fn: fn.translate(0, 0, 60) };
