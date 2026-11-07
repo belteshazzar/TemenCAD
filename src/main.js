@@ -9,7 +9,7 @@ import { VariablesPanel } from './variables.js';
 import { PLATES, fitProblems } from './plate.js';
 import { Agent, MODELS, DEFAULT_MODEL, describeAgentError } from './agent.js';
 
-const DEFAULT_SCRIPT = `// TextCAD kitchen-sink demo — write JavaScript, see the model.
+const DEFAULT_SCRIPT = `// TemenCAD kitchen-sink demo — write JavaScript, see the model.
 // Units are mm, Y is up, the build plate is y = 0. Click "API" for the full list.
 // Each block below shows one capability; they are spread out on the plate.
 // variable(label, value, min, max, step) declares a slider in the Variables panel:
@@ -113,7 +113,7 @@ place(extrude(rect(14, 10).chamfer(3).subtract(circle(2)), 4), -25, 50, '#8fe3a8
 // 12. Text: 2D text() for engraving, text3d() for raised letters
 if (SHOW_TEXT) {
   const tag = roundedBox(34, 3, 12, 2, { edges: 'vertical' })
-    .subtract(text3d('TextCAD', { size: TEXT_SIZE, height: 1.2, align: 'center' }).translate(0, 1.5 - 0.6, -2.5));
+    .subtract(text3d('TemenCAD', { size: TEXT_SIZE, height: 1.2, align: 'center' }).translate(0, 1.5 - 0.6, -2.5));
   place(tag, 5, 50, '#ffd27f', 'name tag');
   place(text3d('3D', { size: 12, height: 3, align: 'center' }), 35, 50, '#ff8f8f');
 }
@@ -134,10 +134,10 @@ log('parts:', parts.length, '· block volume:', Math.round(parts[parts.length - 
 return parts;
 `;
 
-const STORAGE_KEY = 'textcad.script';
+const STORAGE_KEY = 'temencad.script';
 const viewer = new Viewer(document.getElementById('viewport'));
 const consoleEl = document.getElementById('console');
-let autorun = (() => { try { return localStorage.getItem('textcad.autorun') !== '0'; } catch { return true; } })();
+let autorun = (() => { try { return localStorage.getItem('temencad.autorun') !== '0'; } catch { return true; } })();
 
 let timer = null;
 function scheduleRun(delay = 400) {
@@ -178,7 +178,7 @@ const files = new FileManager({
     run();
   },
   fileInput: document.getElementById('file-input'),
-  onChange: (f) => { document.title = `${f.dirty ? '• ' : ''}${f.name} — TextCAD`; },
+  onChange: (f) => { document.title = `${f.dirty ? '• ' : ''}${f.name} — TemenCAD`; },
 });
 const reportErr = (err) => logLine(String(err.message ?? err), 'err');
 // Sliders rewrite the source; rebuild quickly since the kernel is fast.
@@ -392,7 +392,7 @@ function finish(msg) {
 const plateMenu = document.getElementById('plate-menu');
 const plateItems = plateMenu.querySelector('.plate-items');
 let plate = null;
-const loadCustom = () => { try { return JSON.parse(localStorage.getItem('textcad.plate.custom')); } catch { return null; } };
+const loadCustom = () => { try { return JSON.parse(localStorage.getItem('temencad.plate.custom')); } catch { return null; } };
 
 function renderPlateMenu() {
   plateItems.textContent = '';
@@ -437,11 +437,11 @@ async function applyPlate(id, ask = false) {
       const entered = await askPlateSize(dims ?? undefined);
       if (!entered) { renderPlateMenu(); return; }
       dims = entered;
-      try { localStorage.setItem('textcad.plate.custom', JSON.stringify(dims)); } catch {}
+      try { localStorage.setItem('temencad.plate.custom', JSON.stringify(dims)); } catch {}
     }
   }
   plate = dims ? { id, w: dims[0], d: dims[1], h: dims[2] } : null;
-  try { localStorage.setItem('textcad.plate', id); } catch {}
+  try { localStorage.setItem('temencad.plate', id); } catch {}
   renderPlateMenu();
   viewer.setPlate(plate);
   checkFit();
@@ -458,7 +458,7 @@ function checkFit() {
   if (over.length) logLine(`Does not fit ${plate.w}×${plate.d}×${plate.h} plate: ${over.join(', ')}.`, 'warn');
   return over.length ? ', does not fit the plate' : ', fits the plate';
 }
-applyPlate((() => { try { return localStorage.getItem('textcad.plate') || 'none'; } catch { return 'none'; } })());
+applyPlate((() => { try { return localStorage.getItem('temencad.plate') || 'none'; } catch { return 'none'; } })());
 // Choosing a plate closes the menu like any other menu action.
 
 // Toolbar
@@ -494,7 +494,7 @@ viewMenu.addEventListener('click', (e) => {
   }
   if (action === 'autorun') {
     autorun = !autorun;
-    try { localStorage.setItem('textcad.autorun', autorun ? '1' : '0'); } catch {}
+    try { localStorage.setItem('temencad.autorun', autorun ? '1' : '0'); } catch {}
     reflectAutorun();
     if (autorun) scheduleRun(0);
   }
@@ -526,8 +526,8 @@ const chatSend = chatEl.querySelector('.chat-send');
 const chatStop = chatEl.querySelector('.chat-stop');
 const chatModelEl = chatEl.querySelector('.chat-model');
 const assistantItem = document.querySelector('[data-action="assistant"]');
-const settings = (() => { try { return JSON.parse(localStorage.getItem('textcad.assistant') || '{}'); } catch { return {}; } })();
-const saveSettings = () => { try { localStorage.setItem('textcad.assistant', JSON.stringify(settings)); } catch {} };
+const settings = (() => { try { return JSON.parse(localStorage.getItem('temencad.assistant') || '{}'); } catch { return {}; } })();
+const saveSettings = () => { try { localStorage.setItem('temencad.assistant', JSON.stringify(settings)); } catch {} };
 
 const agent = new Agent({
   getScript: () => editor.state.doc.toString(),

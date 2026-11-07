@@ -27,7 +27,7 @@ function referenceText() {
     .replace(/\n{3,}/g, '\n\n').trim();
 }
 
-const SYSTEM = `You are the modelling assistant inside TextCAD, a browser app where a JavaScript script describes a 3D model for 3D printing. The user types plain English; you change the script so the model matches, then build it and check the result.
+const SYSTEM = `You are the modelling assistant inside TemenCAD, a browser app where a JavaScript script describes a 3D model for 3D printing. The user types plain English; you change the script so the model matches, then build it and check the result.
 
 How to work:
 - The current script and the last build report are included with every user message. Read them before deciding what to change.

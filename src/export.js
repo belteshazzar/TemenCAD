@@ -85,7 +85,7 @@ ${tris.join('\n')}
 
   const model = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
-<metadata name="Application">TextCAD</metadata>
+<metadata name="Application">TemenCAD</metadata>
 <resources>
 <basematerials id="1">
 ${materials.join('\n')}

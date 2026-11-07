@@ -1,6 +1,12 @@
-# TextCAD
+# TemenCAD
 
-A text-driven 3D modelling playground. Write JavaScript on the left, see the model on the right.
+A code-driven 3D modelling playground for 3D printing. Write JavaScript on the left, see the model on the right.
+
+## Why "Temen"?
+
+*Temen* (Sumerian **temen**, Akkadian *temennu*, written 𒋼) is the ancient Mesopotamian word for the foundation of a building: the levelled platform and the pegs that fixed its outline on the ground before the first brick was laid. In Babylonian and earlier Sumerian practice, founding a temple began with the king or priest driving the *temen* pegs and burying foundation deposits (inscribed cones, tablets and figurines) at the corners. The *temen* was the geometric plan made physical: a set of fixed points from which every wall was measured out. The word later passed into Greek as *temenos*, a sacred precinct marked out from the land around it.
+
+That is a good description of what this app does. You lay down a few measured points and rules in code, and the model is built up from them, so the name fits.
 
 ```sh
 npm install

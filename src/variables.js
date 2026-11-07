@@ -71,9 +71,9 @@ export class VariablesPanel {
     this.signature = '';
     root.querySelector('.vars-header').addEventListener('click', () => {
       root.classList.toggle('collapsed');
-      try { localStorage.setItem('textcad.vars.collapsed', root.classList.contains('collapsed') ? '1' : '0'); } catch {}
+      try { localStorage.setItem('temencad.vars.collapsed', root.classList.contains('collapsed') ? '1' : '0'); } catch {}
     });
-    try { if (localStorage.getItem('textcad.vars.collapsed') === '1') root.classList.add('collapsed'); } catch {}
+    try { if (localStorage.getItem('temencad.vars.collapsed') === '1') root.classList.add('collapsed'); } catch {}
   }
 
   refresh() {
