@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cli": "node bin/temencad.mjs"
   },
   "devDependencies": {
     "vite": "^8.3.6"
@@ -20,5 +21,8 @@
     "manifold-3d": "^3.5.4",
     "opentype.js": "^2.0.0",
     "three": "^0.187.0"
+  },
+  "bin": {
+    "temencad": "bin/temencad.mjs"
   }
 }

@@ -25,6 +25,20 @@ Then open the URL Vite prints (usually http://localhost:5173).
 - Units are millimetres, Y is up, the build plate is y = 0. 2D sketches also support `offset()` and `hull()`.
 - Your script is saved to `localStorage` between reloads.
 
+## Command line
+
+The same engine runs headless in Node, so scripts can be built in CI or batch-exported without a browser:
+
+```sh
+npx temencad model.js                      # writes model.stl next to the script
+npx temencad model.js -o out/model.3mf     # 3MF with named, coloured parts
+npx temencad model.js --parts              # plus one STL per part in model-parts/
+npx temencad model.js --plate prusa-mk4    # check the build volume (exit code 2 if it doesn't fit)
+npx temencad --list-plates
+```
+
+`log()` and `echo()` go to stdout, warnings and errors to stderr with line numbers, and a failed build exits with code 1. Ghost and hidden parts are not exported, as in the app.
+
 Stack: Vite, Three.js (viewer), opentype.js (font outlines), [Manifold](https://github.com/elalish/manifold) (C++ geometry kernel via WebAssembly: booleans, hull, 2D ops, extrude, revolve), CodeMirror 6.
 
 Architecture: the script and all geometry work run in a module Web Worker (`src/worker.js` → `src/runner.js`), so the editor and camera stay responsive during long builds. The worker loads the Manifold wasm once, posts back indexed vertex buffers as transferables, and the viewer (`src/viewer.js`) builds flat-shaded Three.js meshes from them. Cancel terminates and respawns the worker. Every wasm object created during a run is tracked (`src/engine.js`) and freed when the run ends.
