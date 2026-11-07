@@ -318,6 +318,8 @@ const chat = initChat({
     listFiles: () => project.names(),
     getScript: (file = ENTRY) => tabs.text(file),
     setScript: (file, text) => { tabs.setText(file, text); clearTimeout(timer); }, // the assistant builds explicitly via run_model, so no auto-run
+    removeFile: (file) => { tabs.removeFile(file); projectChanged(); clearTimeout(timer); },
+    renameFile: (file, to) => { const n = tabs.renameFile(file, to); projectChanged(); clearTimeout(timer); return n; },
     runAndWait: () => builder.runAndWait(),
     lastReport: () => lastReport,
     screenshot: async (view) => {

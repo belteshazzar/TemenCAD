@@ -57,6 +57,24 @@ export class Tabs {
     if (!this.project.has(this.active)) this.select(ENTRY); else this.render();
   }
 
+  /** Remove / rename from outside the UI (assistant). Both return normally or throw a readable error. */
+  removeFile(file) {
+    if (!this.project.has(file)) throw new Error(`no file named ${file}`);
+    this.project.remove(file);
+    this.states.delete(file);
+    this.diags.delete(file);
+    if (this.active === file) { this.active = null; this.select(ENTRY); } else this.render();
+  }
+  renameFile(file, to) {
+    if (!this.project.has(file)) throw new Error(`no file named ${file}`);
+    const n = this.project.rename(file, to);
+    const state = this.states.get(file); this.states.delete(file); if (state) this.states.set(n, state);
+    const d = this.diags.get(file); this.diags.delete(file); if (d) this.diags.set(n, d);
+    if (this.active === file) this.active = n;
+    this.render();
+    return n;
+  }
+
   select(file) {
     if (!this.project.has(file)) return;
     if (this.active && isTextFile(this.active)) this.states.set(this.active, this.o.editor.state);
@@ -156,22 +174,14 @@ export class Tabs {
     const to = prompt('Rename to:', from);
     if (!to || to === from) return;
     let n;
-    try { n = this.project.rename(from, to); } catch (e) { return alert(e.message); }
-    const state = this.states.get(from); this.states.delete(from); if (state) this.states.set(n, state);
-    const d = this.diags.get(from); this.diags.delete(from); if (d) this.diags.set(n, d);
-    this.active = n;
+    try { n = this.renameFile(from, to); } catch (e) { return alert(e.message); }
     this.changed(n);
-    this.render();
   }
 
   remove() {
     const file = this.active;
     if (file === ENTRY || !confirm(`Remove "${file}" from the project?`)) return;
-    this.project.remove(file);
-    this.states.delete(file);
-    this.diags.delete(file);
-    this.active = null;
+    this.removeFile(file);
     this.changed(file);
-    this.select(ENTRY);
   }
 }

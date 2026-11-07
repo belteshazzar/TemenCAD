@@ -5,7 +5,7 @@
 import { Agent, MODELS, DEFAULT_MODEL, describeAgentError } from './agent.js';
 
 const SETTINGS_KEY = 'temencad.assistant';
-const TOOL_LABELS = { read_script: 'Reading the script', edit_script: 'Editing the script', write_script: 'Writing the script', run_model: 'Building the model', take_screenshot: 'Taking a screenshot' };
+const TOOL_LABELS = { read_script: 'Reading the script', edit_script: 'Editing the script', write_script: 'Writing the script', remove_file: 'Removing a file', rename_file: 'Renaming a file', run_model: 'Building the model', take_screenshot: 'Taking a screenshot' };
 
 /** Minimal markdown: fenced code blocks and inline code. */
 function renderMarkdown(el, text) {

@@ -31,7 +31,7 @@ const SYSTEM = `You are the modelling assistant inside TemenCAD, a browser app w
 
 How to work:
 - The project's files and the last build report are included with every user message. Read them before deciding what to change. main.js is the entry script; other .js files are ES modules it imports (\`import { lid } from './lid.js'\`, \`export const lid = ...\`). Fonts (.ttf/.otf) and meshes (.stl) in the project are imported the same way: \`import logo from './Logo.ttf'\` gives a font name for text(), \`import part from './part.stl'\` gives a Shape.
-- Make the smallest edit that does the job with edit_script (exact-match replacement; pass \`file\` for anything other than main.js). Use write_script only for new models, new files or large rewrites.
+- Make the smallest edit that does the job with edit_script (exact-match replacement; pass \`file\` for anything other than main.js). Use write_script only for new models, new files or large rewrites. To split a model into modules, write_script a new .js file name (it is created) and import it from main.js; remove_file and rename_file manage script files. Fonts and meshes can only be added by the user.
 - After every change call run_model and read the report. Fix any error or warning it reports (they include line numbers) before replying. If the report says the model does not fit the plate, tell the user rather than silently shrinking their design.
 - Use take_screenshot when the shape of the result matters and the build report can't confirm it (first version of a new model, visual arrangement, anything you are unsure of).
 - Keep designs parametric: declare dimensions as named constants at the top of the script. Return parts as an object so they are named: \`return { body, lid }\`.
@@ -48,13 +48,16 @@ const TOOL_DESCRIPTIONS = {
   edit_script: 'Replace one exact occurrence of old_text with new_text in a script file (default main.js). old_text must match exactly once (include enough surrounding lines to be unique). Preferred for all changes.',
   write_script: 'Replace the entire text of a script file, creating it if it does not exist (default main.js). Use for a brand-new model, a new module file, or a complete rewrite only.',
   run_model: 'Build the current script and return the report: parts (name, size, volume), warnings and errors with line numbers, and whether it fits the selected build plate.',
+  remove_file: 'Delete a script file from the project. main.js, fonts and meshes cannot be removed. Update any imports of it first.',
+  rename_file: 'Rename a script file in the project (e.g. to move it into a folder). main.js, fonts and meshes cannot be renamed. Update any imports of it afterwards.',
   take_screenshot: 'Render the current 3D view and return it as an image, with the camera framing the model. Optional view: iso, top, front, right, left, back.',
 };
 
 export class Agent {
   /**
    * @param {object} host  callbacks into the app:
-   *   getScript(), setScript(text), runAndWait() -> report object, screenshot(view) -> { dataUrl, mediaType, data },
+   *   listFiles(), getScript(file), setScript(file, text), removeFile(file), renameFile(file, to) -> name,
+   *   runAndWait() -> report object, screenshot(view) -> { dataUrl, mediaType, data },
    *   lastReport() -> report object | null
    */
   constructor(host) {
@@ -115,6 +118,27 @@ export class Agent {
           if (!/\.(js|mjs)$/i.test(name)) return 'Error: write_script can only write .js files.';
           host.setScript(name, script);
           return `Wrote ${name}. Call run_model to build and check.`;
+        },
+      }),
+      betaTool({
+        name: 'remove_file', description: TOOL_DESCRIPTIONS.remove_file,
+        inputSchema: { type: 'object', properties: { file: { type: 'string' } }, required: ['file'], additionalProperties: false },
+        run: async ({ file }) => {
+          str(file, 'file');
+          if (!/\.(js|mjs)$/i.test(file)) return 'Error: only script files can be removed.';
+          try { host.removeFile(file); } catch (e) { return `Error: ${e.message}`; }
+          return `Removed ${file}. Files: ${host.listFiles().join(', ')}`;
+        },
+      }),
+      betaTool({
+        name: 'rename_file', description: TOOL_DESCRIPTIONS.rename_file,
+        inputSchema: { type: 'object', properties: { file: { type: 'string' }, new_name: { type: 'string' } }, required: ['file', 'new_name'], additionalProperties: false },
+        run: async ({ file, new_name }) => {
+          str(file, 'file'); str(new_name, 'new_name');
+          if (!/\.(js|mjs)$/i.test(file) || !/\.(js|mjs)$/i.test(new_name)) return 'Error: only script files can be renamed, and the new name must end in .js.';
+          let name;
+          try { name = host.renameFile(file, new_name); } catch (e) { return `Error: ${e.message}`; }
+          return `Renamed ${file} to ${name}. Update imports that referred to it. Files: ${host.listFiles().join(', ')}`;
         },
       }),
       betaTool({
