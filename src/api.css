@@ -2,7 +2,7 @@
 :root {
   --bg: #f7f6f2; --bg-2: #ffffff; --panel: #fbfaf7; --sunken: #f1efea; --border: #e3e0d8;
   --text: #1f1f1f; --muted: #6b6b6b; --accent: #0b6fcf; --accent-2: #0a5fb2;
-  --code-bg: #15181d; --code-text: #e6e9ef; --radius: 12px; --max: 1120px;
+  --code-bg: #15181d; --code-text: #e6e9ef; --radius: 12px; --max: 1200px;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #101214; --bg-2: #15181d; --panel: #181b20; --sunken: #1d2126; --border: #2a2f36;
@@ -29,7 +29,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .btn.primary:hover { background: var(--accent-2); text-decoration: none; }
 @media (max-width: 760px) { .nav nav { display: none; } .nav .btn { margin-left: auto; } .brand .crumb { display: none; } }
 
-.layout { max-width: var(--max); margin: 0 auto; padding: 16px 24px 48px; display: grid; grid-template-columns: 220px 1fr; gap: 40px; align-items: start; }
+.layout { max-width: var(--max); margin: 0 auto; padding: 16px 24px 48px; display: grid; grid-template-columns: 200px 1fr; gap: 32px; align-items: start; }
 .toc { position: sticky; top: 72px; font-size: .9rem; }
 .toc-title { font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-size: .72rem; margin-bottom: 8px; }
 .toc ol { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--border); }
@@ -45,7 +45,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .api h3 .anchor { color: var(--border); font-weight: 400; opacity: 0; transition: opacity .15s; }
 .api h3:hover .anchor { opacity: 1; }
 .api pre { margin: 0; background: var(--code-bg); color: var(--code-text); border: 1px solid var(--border); padding: 16px 18px; border-radius: var(--radius);
-  overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.6; white-space: pre; tab-size: 2; }
+  overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.6; white-space: pre; tab-size: 2; }
 .api pre .c { color: #7f8893; }
 .api pre .k { color: #c792ea; }
 .api pre .s { color: #c3e88d; }
