@@ -1,6 +1,6 @@
 import { M, track } from './engine.js';
 import { Shape, Z_TO_Y, deg, rad, describe, checkNumber, checkPositive, checkNonNegative, checkInt, checkShape, checkVec } from './shape.js';
-import { Sketch, sketchApi, circle, roundedRect, regularPolygon, polygon2d, extrude, revolve } from './sketch.js';
+import { Sketch, sketchApi, circle, roundedRect, regularPolygon, polygon2d, extrude, revolve, teardrop, bridgedCircle } from './sketch.js';
 import { manifoldFromTriangles } from './mesh.js';
 import { pathApi, resampleRing } from './path.js';
 import { filletApi } from './fillet.js';
@@ -401,9 +401,10 @@ const OVERSHOOT = 1; // cutters poke this far above y=0 so subtractions cut clea
  * A cutter to subtract for a screw hole. Axis is Y, the top surface is y = 0, the shank goes down `length`.
  * opts: { type: 'clearance' | 'tap' | 'countersunk' | 'counterbore', headDepth, tolerance=0.2, segments=32 }
  */
-export function screwHole(size, length = 10, { type = 'clearance', headDepth, tolerance = 0.2, segments = 32 } = {}) {
+export function screwHole(size, length = 10, { type = 'clearance', headDepth, tolerance = 0.2, segments = 32, bridge = 0 } = {}) {
   const s = screw(size);
   checkPositive('screwHole', 'length', length); checkNonNegative('screwHole', 'tolerance', tolerance); checkInt('screwHole', 'segments', segments, 3);
+  checkNonNegative('screwHole', 'bridge', bridge);
   const shank = ((type === 'tap' ? s.tap : s.clearance) + tolerance) / 2;
   const L = length, O = OVERSHOOT;
   let profile;
@@ -412,15 +413,35 @@ export function screwHole(size, length = 10, { type = 'clearance', headDepth, to
   } else if (type === 'counterbore') {
     const [hd, hh] = s.head;
     const head = (hd + tolerance) / 2, depth = headDepth ?? hh;
+    // bridge: leave a membrane between the head recess and the shank, for printing head-down; drill it out.
+    if (bridge > 0) return union(revolve(polygon2d([[0, -L], [shank, -L], [shank, -depth - bridge], [0, -depth - bridge]]), { segments }), revolve(polygon2d([[0, -depth], [head, -depth], [head, O], [0, O]]), { segments }));
     profile = [[0, -L], [shank, -L], [shank, -depth], [head, -depth], [head, O], [0, O]];
   } else if (type === 'countersunk') {
     const top = (s.csk + tolerance) / 2;
     const depth = top - shank; // 90° countersink
+    if (bridge > 0) return union(revolve(polygon2d([[0, -L], [shank, -L], [shank, -depth - bridge], [0, -depth - bridge]]), { segments }), revolve(polygon2d([[0, -depth], [shank, -depth], [top, 0], [top, O], [0, O]]), { segments }));
     profile = [[0, -L], [shank, -L], [shank, -depth], [top, 0], [top, O], [0, O]];
   } else {
     throw new Error(`screwHole: unknown type "${type}"`);
   }
   return revolve(polygon2d(profile), { segments });
+}
+
+/**
+ * A printable hole cutter: a cylinder of radius r and the given length, centred on the origin along
+ * `axis`. Horizontal holes ('x' or 'z') get a `shape`: 'teardrop' (default, a 45° point on top),
+ * 'bridge' (a flat ceiling to bridge) or 'round'. Vertical holes ('y') are always round.
+ * opts: { axis = 'z', shape = 'teardrop', angle = 45, flat, tolerance = 0, segments }
+ */
+export function hole(r = 1, length = 10, { axis = 'z', shape = 'teardrop', angle = 45, flat, tolerance = 0, segments = 48 } = {}) {
+  checkPositive('hole', 'radius', r); checkPositive('hole', 'length', length); checkNonNegative('hole', 'tolerance', tolerance);
+  if (!['x', 'y', 'z'].includes(axis)) throw new TypeError(`hole: axis must be 'x', 'y' or 'z', got ${describe(axis)}`);
+  if (!['teardrop', 'bridge', 'round'].includes(shape)) throw new TypeError(`hole: shape must be 'teardrop', 'bridge' or 'round', got ${describe(shape)}`);
+  const R = r + tolerance / 2;
+  if (axis === 'y') return cylinder(R, length, { segments });
+  const section = shape === 'teardrop' ? teardrop(R, { angle, flat, segments }) : shape === 'bridge' ? bridgedCircle(R, { angle, segments }) : circle(R, { segments });
+  const s = extrude(section, length, { center: true }).rotate(90, 0, 0); // along Z, point up
+  return axis === 'x' ? s.rotate(0, 90, 0) : s;
 }
 
 /** Hexagonal nut pocket cutter: axis Y, top at y = 0. opts: { depth, tolerance=0.2 } */
@@ -446,6 +467,6 @@ export const api = {
   Shape, box, cube, roundedBox, sphere, cylinder, cone, torus, polygon, prism,
   union, difference, intersect, hull, minkowski, shell, polyhedron, loft, resize, roof,
   linearArray, polarArray, grid,
-  SCREWS, screw, screwHole, nutPocket, heatInsert,
+  SCREWS, screw, screwHole, nutPocket, heatInsert, hole,
   deg, rad,
 };

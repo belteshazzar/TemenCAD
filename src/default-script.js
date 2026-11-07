@@ -88,6 +88,12 @@ const cutters = [
 ];
 place(block.subtract(cutters), 55, 25, '#ff8f8f', 'mounting block');
 
+// 9b. Printable horizontal holes: hole() gives a teardrop (or a bridged flat top) so nothing sags
+const bar = box(30, 12, 10).onPlate();
+place(bar.subtract(hole(3, 12, { axis: 'z' }).translate(-9, 6, 0))
+  .subtract(hole(3, 12, { axis: 'z', shape: 'bridge' }).translate(0, 6, 0))
+  .subtract(hole(3, 12, { axis: 'z', shape: 'round' }).translate(9, 6, 0)), 95, 25, '#ff8f8f', 'holes');
+
 // 15. Named parts, ghosts and hidden parts. Ghosts render transparent and are never exported.
 show(box(180, 30, 180).onPlate().translate(0, 0, 5), { name: 'print envelope', ghost: true });
 show(sphere(4).translate(0, 4, 75), { name: 'hidden marble', hidden: true, color: '#ff4d4d' });

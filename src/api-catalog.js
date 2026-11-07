@@ -28,6 +28,8 @@ export const GLOBALS = [
   fn('square', 'square(${size})', '(size)', 'Alias of rect().'),
   fn('roundedRect', 'roundedRect(${w}, ${h}, ${r})', '(w, h, r, { center, segments })', '2D rectangle with rounded corners.'),
   fn('slot', 'slot(${length}, ${r})', '(length, r)', 'Capsule: two semicircles length apart (centre to centre).'),
+  fn('teardrop', 'teardrop(${r})', '(r, { angle, flat, segments })', 'Circle with a 45° point at +y: a horizontal hole that prints without sagging.'),
+  fn('bridgedCircle', 'bridgedCircle(${r})', '(r, { angle, segments })', 'Circle with a flat ceiling for the slicer to bridge.'),
   fn('regularPolygon', 'regularPolygon(${sides}, ${r})', '(sides, r)', 'Regular polygon with circumradius r.'),
   fn('polygon2d', 'polygon2d([${points}])', '(points, { holes })', 'Arbitrary 2D polygon from [[x, y], ...]; pass { holes: [[...]] } for holes.'),
   fn('text', "text('${text}', { size: ${10} })", "(str, { size, font, align, letterSpacing })", "2D text outline, baseline at y = 0. Fonts: 'Inter', 'Inter Bold', 'Nunito Bold', 'Source Serif 4', 'JetBrains Mono'."),
@@ -62,7 +64,8 @@ export const GLOBALS = [
   fn('polarArray', 'polarArray(${shape}, ${count}, { radius: ${r} })', '(shape, count, { radius, axis, start, sweep })', 'count copies around an axis (returns an array).'),
   fn('grid', 'grid(${shape}, [${nx}, ${nz}], [${dx}, ${dz}])', '(shape, [nx, nz], [dx, dz])', 'nx × nz grid on the ground plane (returns an array).'),
   // Screws
-  fn('screwHole', "screwHole('${M3}', ${length})", "(size, length, { type: 'clearance' | 'tap' | 'countersunk' | 'counterbore', tolerance })", 'Cutter for a screw hole: axis Y, top surface at y = 0. Sizes M2 M2.5 M3 M4 M5 M6 M8.'),
+  fn('hole', "hole(${r}, ${length}, { axis: '${z}' })", "(r, length, { axis: 'x' | 'y' | 'z', shape: 'teardrop' | 'bridge' | 'round', angle, flat, tolerance })", 'Printable hole cutter centred on the origin; horizontal holes get a teardrop top by default.'),
+  fn('screwHole', "screwHole('${M3}', ${length})", "(size, length, { type: 'clearance' | 'tap' | 'countersunk' | 'counterbore', tolerance, bridge })", 'Cutter for a screw hole: axis Y, top surface at y = 0. Sizes M2 M2.5 M3 M4 M5 M6 M8.'),
   fn('nutPocket', "nutPocket('${M3}')", '(size, { depth, tolerance })', 'Hexagonal nut pocket cutter: axis Y, top at y = 0.'),
   fn('heatInsert', "heatInsert('${M3}')", '(size, { depth, tolerance })', 'Heat-set insert hole cutter: axis Y, top at y = 0.'),
   fn('screw', "screw('${M3}')", '(size)', 'Screw dimensions: { d, clearance, head, csk, nut, insert, tap }.'),

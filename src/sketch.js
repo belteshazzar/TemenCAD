@@ -220,6 +220,38 @@ export function polygon2d(points, { holes = [] } = {}) {
   return new Sketch(new (CS())(rings, 'EvenOdd'));
 }
 
+/**
+ * Teardrop: a circle with a point at +y, so a horizontal hole prints without sagging. `angle` is the
+ * slope of the point from vertical (45° prints unsupported); `flat` clips the point at that height.
+ */
+export function teardrop(r = 1, { angle = 45, flat, segments = 48 } = {}) {
+  checkPositive('teardrop', 'radius', r); checkNumber('teardrop', 'angle', angle); checkInt('teardrop', 'segments', segments, 8);
+  if (angle <= 0 || angle >= 90) throw new RangeError('teardrop: angle must be between 0 and 90 degrees');
+  const a = (angle * Math.PI) / 180, apex = r / Math.cos(a);
+  const pts = [];
+  const from = Math.PI / 2 + a, to = Math.PI / 2 - a + 2 * Math.PI; // around the bottom, from the left tangent to the right
+  const n = Math.max(4, Math.round((segments * (to - from)) / (2 * Math.PI)));
+  for (let i = 0; i <= n; i++) { const t = from + ((to - from) * i) / n; pts.push([r * Math.cos(t), r * Math.sin(t)]); }
+  if (flat !== undefined && flat < apex) {
+    checkPositive('teardrop', 'flat', flat);
+    const h = Math.max(flat, r * Math.sin(Math.PI / 2 - a) + 1e-6), x = (apex - h) * Math.tan(a);
+    pts.push([x, h], [-x, h]);
+  } else pts.push([0, apex]);
+  return Sketch.fromPoints(pts, 'teardrop');
+}
+
+/**
+ * Circle with a flat top for bridging: the overhang above `angle` from vertical is replaced by a
+ * ceiling the slicer bridges across. A step down from the teardrop when the hole must stay round.
+ */
+export function bridgedCircle(r = 1, { angle = 45, segments = 48 } = {}) {
+  checkPositive('bridgedCircle', 'radius', r); checkNumber('bridgedCircle', 'angle', angle); checkInt('bridgedCircle', 'segments', segments, 8);
+  if (angle <= 0 || angle >= 90) throw new RangeError('bridgedCircle: angle must be between 0 and 90 degrees');
+  const a = (angle * Math.PI) / 180;
+  const half = r * Math.sin(a), y = r * Math.cos(a);
+  return circle(r, { segments }).add(rect(2 * half, r - y + 1e-3, { center: false }).translate(-half, y));
+}
+
 /** Capsule / slot: two semicircles `length` apart (center to center) with radius r. */
 export function slot(length = 2, r = 0.5, { segments = 32 } = {}) {
   checkNonNegative('slot', 'length', length); checkPositive('slot', 'radius', r);
@@ -276,6 +308,6 @@ export function revolve(sketch, { angle = 360, segments = 64 } = {}) {
 }
 
 export const sketchApi = {
-  Sketch, circle, ellipse, rect, square, roundedRect, regularPolygon, polygon2d, slot, text, text3d,
+  Sketch, circle, ellipse, rect, square, roundedRect, regularPolygon, polygon2d, slot, teardrop, bridgedCircle, text, text3d,
   union2d, difference2d, intersect2d, hull2d, extrude, revolve, projection,
 };

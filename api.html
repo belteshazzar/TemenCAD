@@ -63,6 +63,8 @@ sk.rotate(deg)                                    // rotate about the origin
 roundedRect(w, h, r, { center, segments })        // rectangle with rounded corners
 sk.scale(x, y)                                    // scale; one factor scales both
 slot(length, r, { segments })                     // capsule: semicircles length apart, centre to centre
+teardrop(r, { angle, flat, segments })            // circle with a point at +y: a horizontal hole that prints without sagging
+bridgedCircle(r, { angle, segments })             // circle with a flat ceiling above `angle` from vertical, for the slicer to bridge
 square(size)                                      // alias of rect
 sk.subtract(other)                                // 2D difference
 text(str, { size, font, align, letterSpacing })   // outline, baseline y = 0; align 'left' | 'center' | 'right'
@@ -162,13 +164,17 @@ union(a, b, ...)                                  // merge; arrays of shapes are
       <pre>grid(s, [nx, nz], [dx, dz], { center })           // nx × nz copies on the ground plane
 linearArray(s, count, [dx, dy, dz])               // count copies stepped by a vector (a number = X step)
 polarArray(s, count, { radius, axis, start, sweep }) // count copies around an axis; sweep in degrees</pre>
-      <h3>Screw helpers (cutters to subtract; axis Y, top surface at y = 0)</h3>
-      <pre>heatInsert(size, { depth, tolerance })            // hole for a heat-set insert
+      <h3>Holes and screw helpers (cutters to subtract)</h3>
+      <pre>hole(r, length, { axis, shape, angle, flat, tolerance })  // centred on the origin along axis 'x' | 'y' | 'z'; horizontal holes get shape
+                                                  //   'teardrop' (default: a 45° point on top) | 'bridge' (flat ceiling) | 'round'
+heatInsert(size, { depth, tolerance })            // hole for a heat-set insert (axis Y, top surface at y = 0)
 nutPocket(size, { depth, tolerance })             // hexagonal nut pocket
 screw(size)                                       // dimensions: { d, clearance, head, csk, nut, insert, tap }
-screwHole(size, length, { type, tolerance })      // type 'clearance' | 'tap' | 'countersunk' | 'counterbore'
+screwHole(size, length, { type, tolerance, bridge })  // type 'clearance' | 'tap' | 'countersunk' | 'counterbore' (axis Y, top at y = 0);
+                                                  //   bridge: 0.2 leaves one layer between head recess and shank to print head-down, then drill out
 SCREWS                                            // the table those come from
-// sizes 'M2' 'M2.5' 'M3' 'M4' 'M5' 'M6' 'M8'. Translate a cutter to the part's top face, then subtract it.</pre>
+// sizes 'M2' 'M2.5' 'M3' 'M4' 'M5' 'M6' 'M8'. Translate a cutter to the part's top face, then subtract it.
+// Horizontal round holes sag when printed; use hole() with its teardrop, or clip the point with flat when the hole is near a surface.</pre>
       <h3>Named parts</h3>
       <pre>s.ghost()                                         // draw transparent as a reference; never exported
 s.hide()                                          // listed in the Parts panel but not drawn
