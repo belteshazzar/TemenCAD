@@ -82,6 +82,7 @@ const makeState = (doc) => EditorState.create({
 });
 const editor = new EditorView({ state: makeState(''), parent: document.getElementById('editor') });
 
+const chatEl = document.getElementById('chat');
 const tabs = new Tabs(document.getElementById('tabs'), {
   editor,
   makeState,
@@ -89,6 +90,7 @@ const tabs = new Tabs(document.getElementById('tabs'), {
   assetEl: document.getElementById('asset-info'),
   fileInput: document.getElementById('add-file-input'),
   onChange: () => projectChanged(),
+  panels: [{ id: 'assistant', label: 'Assistant', el: chatEl, onShow: () => chat?.focus() }],
 });
 function projectChanged() {
   persist();
@@ -103,7 +105,6 @@ const files = new FileManager({
   onChange: (f) => { document.title = `${f.dirty ? '• ' : ''}${f.name} — TemenCAD`; },
 });
 window.addEventListener('beforeunload', (e) => { if (files.dirty) e.preventDefault(); });
-tabs.select(ENTRY);
 
 // ---- Diagnostics (editor squiggles, per file) ----
 const traceOf = (msg) => (msg.trace?.length ? msg.trace : msg.line ? [{ file: msg.file ?? ENTRY, line: msg.line }] : []);
@@ -307,13 +308,9 @@ viewMenu.addEventListener('click', (e) => {
   menus.closeMenus();
 });
 
-// ---- Assistant ----
-const chatEl = document.getElementById('chat');
-const divider2 = document.getElementById('divider2');
+// ---- Assistant (first tab of the editor pane) ----
 const chat = initChat({
   root: chatEl,
-  divider: divider2,
-  menuItem: document.querySelector('[data-action="assistant"]'),
   host: {
     listFiles: () => project.names(),
     getScript: (file = ENTRY) => tabs.text(file),
@@ -331,9 +328,9 @@ const chat = initChat({
 });
 document.querySelector('#menu-root > .menu-items').addEventListener('click', (e) => {
   const action = e.target.closest('button')?.dataset.action;
-  if (action === 'assistant') { chat.toggle(); menus.closeMenus(); }
   if (action === 'assistant-settings') { chat.openSettings(); menus.closeMenus(); }
 });
+tabs.select('assistant');
 
 // ---- File menu ----
 document.getElementById('file-menu').addEventListener('click', async (e) => {
@@ -361,7 +358,7 @@ document.getElementById('file-menu').addEventListener('click', async (e) => {
   } catch (err) { reportErr(err); }
 });
 
-// ---- Draggable dividers: editor | viewer | chat ----
+// ---- Draggable divider: viewer | editor ----
 function makeDivider(el, onMove) {
   el.addEventListener('pointerdown', (e) => {
     el.setPointerCapture(e.pointerId);
@@ -372,7 +369,6 @@ function makeDivider(el, onMove) {
   });
 }
 const editorPane = document.getElementById('editor-pane');
-makeDivider(document.getElementById('divider'), (x) => { editorPane.style.width = `${Math.max(200, x)}px`; });
-makeDivider(divider2, (x) => { chatEl.style.width = `${Math.max(260, window.innerWidth - x)}px`; });
+makeDivider(document.getElementById('divider'), (x) => { editorPane.style.width = `${Math.max(200, window.innerWidth - x)}px`; });
 
 run();

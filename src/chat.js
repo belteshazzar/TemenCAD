@@ -22,10 +22,10 @@ function renderMarkdown(el, text) {
 
 /**
  * @param {object} o
- *   root: #chat element, divider: the resizer next to it, menuItem: the menu button with a .check span,
- *   host: Agent host callbacks (getScript, setScript, runAndWait, lastReport, screenshot)
+ *   root: #chat element, host: Agent host callbacks (listFiles, getScript, setScript, removeFile, renameFile,
+ *   runAndWait, lastReport, screenshot)
  */
-export function initChat({ root, divider, menuItem, host }) {
+export function initChat({ root, host }) {
   const log = root.querySelector('.chat-log');
   const form = root.querySelector('.chat-form');
   const input = root.querySelector('.chat-input');
@@ -58,13 +58,6 @@ export function initChat({ root, divider, menuItem, host }) {
       ? 'Describe what you want to build or change. The assistant edits the script, builds it, and checks the result.'
       : 'Set your Anthropic API key in Assistant settings to start.');
   }
-  function setOpen(open) {
-    root.hidden = !open;
-    divider.hidden = !open;
-    settings.open = open; saveSettings();
-    menuItem.querySelector('.check').textContent = open ? '✓' : '';
-    if (open) { showEmpty(); input.focus(); }
-  }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -95,7 +88,6 @@ export function initChat({ root, divider, menuItem, host }) {
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
   stop.addEventListener('click', () => agent.stop());
   root.querySelector('.chat-new').addEventListener('click', () => { if (agent.busy) agent.stop(); agent.reset(); log.textContent = ''; showEmpty(); });
-  root.querySelector('.chat-close').addEventListener('click', () => setOpen(false));
 
   // Settings dialog
   for (const [id, label] of MODELS) dialogForm.elements.model.appendChild(Object.assign(document.createElement('option'), { value: id, textContent: label }));
@@ -115,7 +107,9 @@ export function initChat({ root, divider, menuItem, host }) {
     log.querySelector('.msg.empty')?.remove();
     if (!root.hidden) showEmpty();
   });
-  if (settings.open) setOpen(true);
+  showEmpty();
 
-  return { setOpen, toggle: () => setOpen(root.hidden), openSettings };
+  /** Called by the tab bar when the Assistant tab is shown. */
+  const focus = () => { showEmpty(); input.focus(); };
+  return { openSettings, focus };
 }

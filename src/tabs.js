@@ -49,7 +49,8 @@ export class Tabs {
   /**
    * @param {HTMLElement} root  the #tabs element (.tab-list, .tab-add, .tab-menu)
    * @param {object} o  editor (EditorView), makeState(doc) -> EditorState, project, assetEl (info panel),
-   *                    fileInput (multiple), onChange(file) after any project edit, onSelect(file)
+   *                    fileInput (multiple), onChange(file) after any project edit, onSelect(id),
+   *                    panels: [{ id, label, el, onShow? }] shown as tabs before the files (e.g. the assistant)
    */
   constructor(root, o) {
     this.root = root;
@@ -59,7 +60,9 @@ export class Tabs {
     this.fileMenu = root.querySelector('.file-menu');
     this.states = new Map();
     this.diags = new Map();
-    this.active = null;
+    this.panels = o.panels ?? [];
+    this.active = null;     // the active *file*, or null while a panel tab is shown
+    this.activeTab = null;  // file name or panel id
     const closeMenus = () => { this.menu.classList.remove('open'); this.fileMenu.classList.remove('open'); this.list.querySelector('.tab-caret.open')?.classList.remove('open'); };
     this.closeMenus = closeMenus;
     root.querySelector('.tab-add').addEventListener('click', (e) => { e.stopPropagation(); const open = this.menu.classList.contains('open'); closeMenus(); if (!open) this.menu.classList.add('open'); });
@@ -100,7 +103,15 @@ export class Tabs {
     this.states.clear();
     this.diags.clear();
     this.active = null;
+    this.activeTab = null;
     this.select(ENTRY);
+  }
+
+  /** Hide every content area (editor, asset info, panels); select() shows the right one. */
+  hideAll() {
+    this.o.editor.dom.parentElement.hidden = true;
+    this.o.assetEl.hidden = true;
+    for (const p of this.panels) p.el.hidden = true;
   }
 
   text(file) { return file === this.active ? this.o.editor.state.doc.toString() : this.project.get(file); }
@@ -110,7 +121,7 @@ export class Tabs {
     this.project.set(file, text);
     if (file === this.active) this.o.editor.dispatch({ changes: { from: 0, to: this.o.editor.state.doc.length, insert: text } });
     else this.states.delete(file);
-    if (!this.project.has(this.active)) this.select(ENTRY); else this.render();
+    if (this.active && !this.project.has(this.active)) this.select(ENTRY); else this.render();
   }
 
   /** Remove / rename from outside the UI (assistant). Both return normally or throw a readable error. */
@@ -126,29 +137,38 @@ export class Tabs {
     const n = this.project.rename(file, to);
     const state = this.states.get(file); this.states.delete(file); if (state) this.states.set(n, state);
     const d = this.diags.get(file); this.diags.delete(file); if (d) this.diags.set(n, d);
-    if (this.active === file) this.active = n;
+    if (this.active === file) { this.active = n; this.activeTab = n; }
     this.render();
     return n;
   }
 
-  select(file) {
-    if (!this.project.has(file)) return;
+  /** Show a file tab or a panel tab (by id). */
+  select(id) {
+    const panel = this.panels.find((p) => p.id === id);
+    if (!panel && !this.project.has(id)) return;
     if (this.active && isTextFile(this.active)) this.states.set(this.active, this.o.editor.state);
-    this.active = file;
-    if (isTextFile(file)) {
-      let state = this.states.get(file);
-      if (!state) { state = this.o.makeState(this.project.get(file)); this.states.set(file, state); }
-      this.o.editor.setState(state);
-      this.o.editor.dispatch(setDiagnostics(this.o.editor.state, this.diags.get(file) ?? []));
-      this.o.editor.dom.parentElement.hidden = false;
-      this.o.assetEl.hidden = true;
+    this.closeMenus();
+    this.hideAll();
+    this.activeTab = id;
+    if (panel) {
+      this.active = null;
+      panel.el.hidden = false;
+      panel.onShow?.();
     } else {
-      this.o.editor.dom.parentElement.hidden = true;
-      this.o.assetEl.hidden = false;
-      this.renderAsset(file);
+      this.active = id;
+      if (isTextFile(id)) {
+        let state = this.states.get(id);
+        if (!state) { state = this.o.makeState(this.project.get(id)); this.states.set(id, state); }
+        this.o.editor.setState(state);
+        this.o.editor.dispatch(setDiagnostics(this.o.editor.state, this.diags.get(id) ?? []));
+        this.o.editor.dom.parentElement.hidden = false;
+      } else {
+        this.o.assetEl.hidden = false;
+        this.renderAsset(id);
+      }
     }
     this.render();
-    this.o.onSelect?.(file);
+    this.o.onSelect?.(id);
   }
 
   renderAsset(file) {
@@ -166,10 +186,18 @@ export class Tabs {
 
   render() {
     this.list.textContent = '';
+    for (const p of this.panels) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `tab panel${p.id === this.activeTab ? ' active' : ''}`;
+      b.textContent = p.label;
+      b.addEventListener('click', () => this.select(p.id));
+      this.list.appendChild(b);
+    }
     for (const name of this.project.names()) {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = `tab${name === this.active ? ' active' : ''}${isTextFile(name) ? '' : ' asset'}${name === ENTRY ? '' : ' has-menu'}`;
+      b.className = `tab${name === this.activeTab ? ' active' : ''}${isTextFile(name) ? '' : ' asset'}${name === ENTRY ? '' : ' has-menu'}`;
       b.textContent = name;
       b.title = name === ENTRY ? 'Entry script' : name;
       b.addEventListener('click', () => this.select(name));
@@ -186,7 +214,7 @@ export class Tabs {
   // ---- Diagnostics per file ----
   clearDiagnostics() {
     this.diags.clear();
-    if (isTextFile(this.active)) this.o.editor.dispatch(setDiagnostics(this.o.editor.state, []));
+    if (this.active && isTextFile(this.active)) this.o.editor.dispatch(setDiagnostics(this.o.editor.state, []));
   }
   /** Mark a line in `file` (squiggle + gutter icon + hover message), whether or not it is the visible tab. */
   addDiagnostic(file, line, message, severity) {

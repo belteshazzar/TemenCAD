@@ -170,12 +170,9 @@ dialog .field input[type=text] { font-family: ui-monospace, SFMono-Regular, Menl
 button.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
 button.secondary:hover { background: var(--hover); }
 
-/* Assistant chat column */
-#chat { width: 360px; min-width: 260px; flex: none; background: var(--panel); display: flex; flex-direction: column; }
+/* Assistant chat: a tab panel in the editor pane */
+#chat { flex: 1; min-height: 0; background: var(--panel); display: flex; flex-direction: column; }
 #chat[hidden] { display: none; }
-#divider2 { width: 5px; cursor: col-resize; background: var(--border); flex: none; }
-#divider2:hover { background: var(--accent); }
-#divider2[hidden] { display: none; }
 .chat-head { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--border); }
 .chat-title { font-weight: 600; }
 .chat-model { color: var(--muted); font-size: 11px; flex: 1; }
