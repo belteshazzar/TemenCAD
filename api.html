@@ -27,106 +27,106 @@
       <p class="lead">Your script is JavaScript. Return a shape (or an array of shapes), or call <code>show(shape)</code>. Units are millimetres, Y is up, the build plate is y&nbsp;=&nbsp;0. Every operation returns a new shape; nothing is mutated.</p>
       <h3>3D primitives</h3>
       <pre>box(w, h, d)                                      // box centred on the origin; box(10) is a cube
+cone(r, h)                                        // cone along Y with base radius r
 cube(size)                                        // alias of box
-roundedBox(w, h, d, r, { edges, segments })       // edges: 'all' | 'vertical' (vertical edges only, prints flat)
-sphere(r, { segments })                           // sphere centred on the origin
 cylinder(r, h, { segments, center })              // along Y, centred; center: false puts the base on y = 0
 cylinder({ r1, r2, h })                           // tapered: bottom radius r1, top radius r2
-cone(r, h)                                        // cone along Y with base radius r
-torus(r, tube, { segments, tubeSegments })        // ring in the XZ plane, ring radius r, tube radius tube
-prism(sides, r, h, { center })                    // regular n-sided prism with circumradius r
+loft([sk1, sk2, ...], height | [y1, y2, ...])     // skin between profiles stacked along Y (no holes)
 polygon([[x, y], ...], h)                         // 2D point list extruded up along Y by h
 polyhedron(points, faces)                         // raw vertices and faces, like OpenSCAD; winding is fixed
-loft([sk1, sk2, ...], height | [y1, y2, ...])     // skin between profiles stacked along Y (no holes)
-text3d(str, { size, height, font, align })        // extruded text, baseline on the plate</pre>
+prism(sides, r, h, { center })                    // regular n-sided prism with circumradius r
+roundedBox(w, h, d, r, { edges, segments })       // edges: 'all' | 'vertical' (vertical edges only, prints flat)
+sphere(r, { segments })                           // sphere centred on the origin
+text3d(str, { size, height, font, align })        // extruded text, baseline on the plate
+torus(r, tube, { segments, tubeSegments })        // ring in the XZ plane, ring radius r, tube radius tube</pre>
       <h3>2D sketches</h3>
-      <pre>circle(r, { segments })                           // circle
-ellipse(rx, ry, { segments })                     // ellipse
-rect(w, h, { center })                            // rectangle, centred by default
-square(size)                                      // alias of rect
-roundedRect(w, h, r, { center, segments })        // rectangle with rounded corners
-slot(length, r, { segments })                     // capsule: semicircles length apart, centre to centre
-regularPolygon(sides, r)                          // circumradius r, first vertex on +x
-polygon2d([[x, y], ...], { holes })               // any polygon; holes: [[[x, y], ...], ...]
-text(str, { size, font, align, letterSpacing })   // outline, baseline y = 0; align 'left' | 'center' | 'right'
-// fonts: 'Inter' (default), 'Inter Bold', 'Nunito Bold', 'Source Serif 4', 'JetBrains Mono', or an imported .ttf
-sk.translate(x, y)                                // move
-sk.rotate(deg)                                    // rotate about the origin
-sk.scale(x, y)                                    // scale; one factor scales both
-sk.mirror('x' | 'y')                              // mirror across an axis
-sk.resize([w, h], { auto })                       // to a bounding-box size; 0 keeps an axis, auto keeps proportions
-sk.offset(delta, { join, segments })              // grow (+) / shrink (−); join 'round' | 'miter' | 'square'
-sk.fillet(r, { segments })                        // round every corner (clamped so corners never overlap)
-sk.chamfer(d)                                     // cut every corner back by d along both edges
-sk.add(other) / sk.union(other)                   // 2D union
-sk.subtract(other)                                // 2D difference
-sk.intersect(other)                               // 2D intersection
-sk.hull(other)                                    // 2D convex hull
-sk.center()                                       // centre the sketch on the origin
-sk.bounds()                                       // { min, max, size, center } in sketch units
+      <pre>sk.add(other) / sk.union(other)                   // 2D union
 sk.area()                                         // area in mm²
+sk.bounds()                                       // { min, max, size, center } in sketch units
+sk.center()                                       // centre the sketch on the origin
+sk.chamfer(d)                                     // cut every corner back by d along both edges
+circle(r, { segments })                           // circle
+ellipse(rx, ry, { segments })                     // ellipse
+sk.fillet(r, { segments })                        // round every corner (clamped so corners never overlap)
+sk.hull(other)                                    // 2D convex hull
+sk.intersect(other)                               // 2D intersection
 sk.isEmpty()                                      // true when the sketch has no area
-sk.toPolygons()                                   // outline rings as [[x, y], ...][]</pre>
+sk.mirror('x' | 'y')                              // mirror across an axis
+sk.offset(delta, { join, segments })              // grow (+) / shrink (−); join 'round' | 'miter' | 'square'
+polygon2d([[x, y], ...], { holes })               // any polygon; holes: [[[x, y], ...], ...]
+rect(w, h, { center })                            // rectangle, centred by default
+regularPolygon(sides, r)                          // circumradius r, first vertex on +x
+sk.resize([w, h], { auto })                       // to a bounding-box size; 0 keeps an axis, auto keeps proportions
+sk.rotate(deg)                                    // rotate about the origin
+roundedRect(w, h, r, { center, segments })        // rectangle with rounded corners
+sk.scale(x, y)                                    // scale; one factor scales both
+slot(length, r, { segments })                     // capsule: semicircles length apart, centre to centre
+square(size)                                      // alias of rect
+sk.subtract(other)                                // 2D difference
+text(str, { size, font, align, letterSpacing })   // outline, baseline y = 0; align 'left' | 'center' | 'right'
+sk.toPolygons()                                   // outline rings as [[x, y], ...][]
+sk.translate(x, y)                                // move
+// fonts: 'Inter' (default), 'Inter Bold', 'Nunito Bold', 'Source Serif 4', 'JetBrains Mono', or an imported .ttf</pre>
       <h3>2D → 3D and back</h3>
       <pre>extrude(sk, h, { center, twist, scale, slices })  // up along Y; twist in degrees, scale at the top
 sk.extrude(h, opts)                               // method form of extrude
+projection(s)                                     // 3D → 2D: the solid's footprint seen from above
+projection(s, { cut: true | y })                  // 3D → 2D: the slice where the plane y cuts the solid
+s.projection(opts)                                // method form of projection
 revolve(sk, { angle, segments })                  // around Y; sketch x is the radius (≥ 0), y the height
 sk.revolve(opts)                                  // method form of revolve
 roof(sk, { angle, segments, tolerance })          // height = distance to the outline: pyramid, hip roof
 sk.roof(opts)                                     // method form of roof
-projection(s)                                     // 3D → 2D: the solid's footprint seen from above
-projection(s, { cut: true | y })                  // 3D → 2D: the slice where the plane y cuts the solid
-s.projection(opts)                                // method form of projection
 // Sketch x is world X, sketch y is world −Z: seen from above, a sketch reads like a drawing.</pre>
       <h3>Transforms (return a new shape)</h3>
-      <pre>s.translate(x, y, z)                              // move; also accepts [x, y, z]
-s.rotate(xDeg, yDeg, zDeg)                        // rotate in degrees about X, then Y, then Z
-s.scale(f) / s.scale(x, y, z)                     // scale uniformly or per axis
-s.mirror('x' | 'y' | 'z')                         // mirror across the axis plane through the origin
-s.resize([w, h, d], { auto })                     // to a bounding-box size; 0 keeps an axis, auto keeps proportions
-s.onPlate(y = 0)                                  // put the bottom on the build plate
+      <pre>s.align({ x, y, z }, [tx, ty, tz])                // each axis 'min' | 'center' | 'max' to the point
 s.center()                                        // centre on the origin
 s.centerXZ()                                      // centre in X and Z, keeping Y
-s.align({ x, y, z }, [tx, ty, tz])                // each axis 'min' | 'center' | 'max' to the point
-s.color(css)                                      // '#f80', a CSS name, rgb() or hsl()</pre>
+s.color(css)                                      // '#f80', a CSS name, rgb() or hsl()
+s.mirror('x' | 'y' | 'z')                         // mirror across the axis plane through the origin
+s.onPlate(y = 0)                                  // put the bottom on the build plate
+s.resize([w, h, d], { auto })                     // to a bounding-box size; 0 keeps an axis, auto keeps proportions
+s.rotate(xDeg, yDeg, zDeg)                        // rotate in degrees about X, then Y, then Z
+s.scale(f) / s.scale(x, y, z)                     // scale uniformly or per axis
+s.translate(x, y, z)                              // move; also accepts [x, y, z]</pre>
       <h3>Booleans, hull, Minkowski</h3>
-      <pre>union(a, b, ...)                                  // merge; arrays of shapes are accepted everywhere
+      <pre>a.add(b) / a.union(b)                             // method form of union
 difference(a, b, ...)                             // subtract every following shape from the first
-intersect(a, b, ...)                              // keep only the common volume
+a.erode(t, { segments })                          // shrink inward by t on every face
 hull(a, b, ...)                                   // convex hull of shapes or raw [x, y, z] points
-a.add(b) / a.union(b)                             // method form of union
-a.subtract(b)                                     // method form of difference
-a.intersect(b)                                    // method form of intersect
 a.hull(b)                                         // method form of hull
+intersect(a, b, ...)                              // keep only the common volume
+a.intersect(b)                                    // method form of intersect
 minkowski(a, b) / a.minkowski(b)                  // Minkowski sum: sweep b over every point of a
 a.round(r, { segments })                          // round all edges (Minkowski with a sphere; grows by r)
-a.erode(t, { segments })                          // shrink inward by t on every face
 shell(a, t, { open, segments })                   // hollow to wall t; open: 'top' | ['top', 'front', ...]
-a.shell(t, opts)                                  // method form of shell</pre>
+a.shell(t, opts)                                  // method form of shell
+a.subtract(b)                                     // method form of difference
+union(a, b, ...)                                  // merge; arrays of shapes are accepted everywhere</pre>
       <h3>Arrays (return arrays; wrap in union() to merge)</h3>
-      <pre>linearArray(s, count, [dx, dy, dz])               // count copies stepped by a vector (a number = X step)
-polarArray(s, count, { radius, axis, start, sweep }) // count copies around an axis; sweep in degrees
-grid(s, [nx, nz], [dx, dz], { center })           // nx × nz copies on the ground plane</pre>
+      <pre>grid(s, [nx, nz], [dx, dz], { center })           // nx × nz copies on the ground plane
+linearArray(s, count, [dx, dy, dz])               // count copies stepped by a vector (a number = X step)
+polarArray(s, count, { radius, axis, start, sweep }) // count copies around an axis; sweep in degrees</pre>
       <h3>Screw helpers (cutters to subtract; axis Y, top surface at y = 0)</h3>
-      <pre>screwHole(size, length, { type, tolerance })      // type 'clearance' | 'tap' | 'countersunk' | 'counterbore'
+      <pre>heatInsert(size, { depth, tolerance })            // hole for a heat-set insert
 nutPocket(size, { depth, tolerance })             // hexagonal nut pocket
-heatInsert(size, { depth, tolerance })            // hole for a heat-set insert
 screw(size)                                       // dimensions: { d, clearance, head, csk, nut, insert, tap }
+screwHole(size, length, { type, tolerance })      // type 'clearance' | 'tap' | 'countersunk' | 'counterbore'
 SCREWS                                            // the table those come from
 // sizes 'M2' 'M2.5' 'M3' 'M4' 'M5' 'M6' 'M8'. Translate a cutter to the part's top face, then subtract it.</pre>
       <h3>Named parts</h3>
-      <pre>s.name('lid')                                     // Parts panel, 3MF object name, STL file name
-show(s, { name, color, ghost, hidden })           // display a shape without returning it
+      <pre>s.ghost()                                         // draw transparent as a reference; never exported
+s.hide()                                          // listed in the Parts panel but not drawn
+s.name('lid')                                     // Parts panel, 3MF object name, STL file name
 return { body, lid }                              // returned object: keys become part names
 return [a, b]                                     // returned array: parts named Part 1, Part 2, ...
-s.ghost()                                         // draw transparent as a reference; never exported
-s.hide()                                          // listed in the Parts panel but not drawn
+show(s, { name, color, ghost, hidden })           // display a shape without returning it
 // The Parts panel toggles visibility and ghosts, solos on double-click, and exports each part.</pre>
       <h3>Measurements</h3>
       <pre>s.bounds()                                        // { min, max, size, center } as [x, y, z] arrays
-s.volume()                                        // volume in mm³
+s.isEmpty()                                       // true when the shape has no volume
 s.surfaceArea()                                   // surface area in mm²
-s.isEmpty()                                       // true when the shape has no volume</pre>
+s.volume()                                        // volume in mm³</pre>
       <h3>Projects and imports</h3>
       <pre>import { lid, WALL } from './lid.js'              // another script; lid.js uses export const / function
 import logo from './Logo.ttf'                     // a font in the project: text3d('Hi', { font: logo })
@@ -134,12 +134,12 @@ import part from './part.stl'                     // a mesh in the project, as a
 import { hinge } from './catalog/parametric-hinge/hinge.js'  // a shape added from the catalogue
 // A project is a .temen zip. main.js is the entry and the only file that may use a top-level return.</pre>
       <h3>Helpers</h3>
-      <pre>log(...values)                                    // print to the console
-echo(...values)                                   // OpenSCAD-style output with line number; returns the first value
-assert(cond, message)                             // error on this line when cond is falsy
+      <pre>assert(cond, message)                             // error on this line when cond is falsy
 deg(radians)                                      // radians to degrees
-rad(degrees)                                      // degrees to radians
-Math.*                                            // the usual JavaScript maths</pre>
+echo(...values)                                   // OpenSCAD-style output with line number; returns the first value
+log(...values)                                    // print to the console
+Math.*                                            // the usual JavaScript maths
+rad(degrees)                                      // degrees to radians</pre>
       <p class="muted">Geometry kernel: <a href="https://github.com/elalish/manifold" target="_blank" rel="noopener">Manifold</a> (C++ via WebAssembly). All output is watertight.</p>
       <p class="muted">Units are millimetres, Y is up, the build plate is y = 0. Every operation returns a new shape; nothing is mutated.</p>
     </main>
