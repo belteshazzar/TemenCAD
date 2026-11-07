@@ -73,24 +73,34 @@ export function initCatalog(o) {
       usage, el('div', 'catalog-actions'));
     detail.querySelector('.catalog-actions').append(add, src);
   }
+  /** Fetch a package archive and vendor it into the open project. */
+  async function vendorFromCatalog(packagePath) {
+    const res = await fetch(CATALOG_URL + packagePath);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { manifest, project: pkg } = readPackage(new Uint8Array(await res.arrayBuffer()));
+    const project = o.getProject();
+    const { importLine, added } = vendorPackage(project, pkg, manifest);
+    o.tabs.filesChanged(added);
+    o.tabs.setText(ENTRY, addImportLine(o.tabs.text(ENTRY), importLine));
+    o.onChange();
+    o.log(`Added ${manifest.name}@${manifest.version} from the catalogue: ${importLine}`, 'info');
+    o.tabs.select(ENTRY);
+    return manifest;
+  }
   async function addPackage(p, button) {
     button.disabled = true; button.textContent = 'Adding…';
     try {
-      const res = await fetch(CATALOG_URL + p.package);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const { manifest, project: pkg } = readPackage(new Uint8Array(await res.arrayBuffer()));
-      const project = o.getProject();
-      const { importLine, added } = vendorPackage(project, pkg, manifest);
-      o.tabs.filesChanged(added);
-      o.tabs.setText(ENTRY, addImportLine(o.tabs.text(ENTRY), importLine));
-      o.onChange();
-      o.log(`Added ${manifest.name}@${manifest.version} from the catalogue: ${importLine}`, 'info');
+      await vendorFromCatalog(p.package);
       dialog.close();
-      o.tabs.select(ENTRY);
     } catch (err) {
       status.textContent = `Could not add ${p.name}: ${err.message}`;
       button.disabled = false; button.textContent = 'Add to project';
     }
+  }
+  /** `#add=<name>` links from the catalogue site: add that package to the current project. */
+  async function addByName(name) {
+    try { await vendorFromCatalog(`packages/${encodeURIComponent(name)}.temen`); }
+    catch (err) { o.log(`Could not add "${name}" from the catalogue: ${err.message}`, 'err'); }
   }
   async function openBrowser() {
     status.textContent = 'Loading catalogue…';
@@ -190,5 +200,5 @@ export function initCatalog(o) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  return { openBrowser, openShare };
+  return { openBrowser, openShare, addByName };
 }

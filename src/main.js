@@ -355,6 +355,12 @@ const catalog = initCatalog({
   log: logLine,
 });
 
+// A catalogue "Add in TemenCAD" link (#add=<name>) adds that package to the open project.
+{
+  const m = location.hash.match(/^#add=(.+)$/);
+  if (m) { history.replaceState(null, '', location.pathname + location.search); catalog.addByName(decodeURIComponent(m[1])); }
+}
+
 // ---- File menu ----
 document.getElementById('file-menu').addEventListener('click', async (e) => {
   const action = e.target.closest('button')?.dataset.action;
