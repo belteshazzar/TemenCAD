@@ -34,6 +34,7 @@
                     <button data-action="save-as">Save As… <kbd>⇧⌘S</kbd></button>
                     <button data-action="export-stl">Export STL…</button>
                     <button data-action="export-3mf">Export 3MF…</button>
+                    <button data-action="share">Share…</button>
                   </div>
                   <hr />
                   <div id="view-menu">
@@ -98,6 +99,8 @@
             <div class="tab-menu">
               <button type="button" data-action="new">New script…</button>
               <button type="button" data-action="add">Add files… <span class="hint">.js .ttf .stl</span></button>
+              <hr />
+              <button type="button" data-action="catalog">Add from catalogue…</button>
             </div>
           </div>
           <!-- Per-file menu, anchored under the active tab's ▾ -->
@@ -152,6 +155,46 @@
           <button type="submit" value="ok" class="name-ok">OK</button>
         </div>
       </form>
+    </dialog>
+    <dialog id="catalog-dialog" class="wide">
+      <div class="catalog-head">
+        <h2>Add from catalogue</h2>
+        <input type="search" class="catalog-search" placeholder="Search shapes…" autocomplete="off" />
+        <span class="catalog-status muted"></span>
+        <button type="button" class="secondary" data-cancel>Close</button>
+      </div>
+      <div class="catalog-tags"></div>
+      <div class="catalog-body">
+        <div class="catalog-grid"></div>
+        <div class="catalog-detail"></div>
+      </div>
+    </dialog>
+    <dialog id="share-dialog">
+      <form method="dialog" id="share-form">
+        <h2>Share this shape</h2>
+        <p class="muted">Packages are reviewed before they appear in the catalogue. main.js is the demo; the module file holds the functions others will import.</p>
+        <label class="field">Title<input type="text" name="title" required maxlength="80" /></label>
+        <div class="share-row">
+          <label class="field">Package name<input type="text" name="name" required pattern="[a-z0-9][a-z0-9-]*" spellcheck="false" /></label>
+          <label class="field">Version<input type="text" name="version" value="1.0.0" pattern="\d+\.\d+\.\d+" /></label>
+        </div>
+        <label class="field">Description<textarea name="description" rows="3" required maxlength="500"></textarea></label>
+        <div class="share-row">
+          <label class="field">Author<input type="text" name="author" required maxlength="80" /></label>
+          <label class="field">License<select name="license"></select></label>
+        </div>
+        <label class="field">Tags <span class="muted">(comma separated)</span><input type="text" name="tags" placeholder="hinge, mechanism" /></label>
+        <div class="share-row">
+          <label class="field">Module<select name="module"></select></label>
+          <label class="field">Exports<input type="text" name="exports" spellcheck="false" /></label>
+        </div>
+        <p class="dialog-error" hidden></p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" data-cancel>Cancel</button>
+          <button type="submit" class="share-submit">Share</button>
+        </div>
+      </form>
+      <div class="share-result" hidden></div>
     </dialog>
     <dialog id="assistant-dialog">
       <form method="dialog" id="assistant-form">

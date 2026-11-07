@@ -16,7 +16,9 @@ export class ModuleError extends Error {
 
 export function buildModules(files, apiNames, makeUrl) {
   if (!(ENTRY in files)) throw new ModuleError(`The project has no ${ENTRY}`, null, null);
-  const prelude = `const { ${apiNames.join(', ')} } = globalThis.__temen.api;`;
+  // Scripts get the API as module-scope bindings. Network and nested-worker globals are shadowed so shared
+  // catalogue code cannot phone home from inside the geometry worker (the kernel has no need for them).
+  const prelude = `const { ${apiNames.join(', ')} } = globalThis.__temen.api; const fetch = undefined, XMLHttpRequest = undefined, WebSocket = undefined, importScripts = undefined, EventSource = undefined;`;
   const urls = new Map();     // file -> url
   const byUrl = new Map();    // url -> { file, offset }
   const visiting = new Set();

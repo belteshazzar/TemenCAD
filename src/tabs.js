@@ -74,6 +74,7 @@ export class Tabs {
       closeMenus();
       if (action === 'new') this.newScript();
       if (action === 'add') { o.fileInput.value = ''; o.fileInput.click(); }
+      if (action === 'catalog') o.onCatalog?.();
     });
     this.fileMenu.addEventListener('click', (e) => {
       const action = e.target.closest('button')?.dataset.action;
@@ -122,6 +123,12 @@ export class Tabs {
     if (file === this.active) this.o.editor.dispatch({ changes: { from: 0, to: this.o.editor.state.doc.length, insert: text } });
     else this.states.delete(file);
     if (this.active && !this.project.has(this.active)) this.select(ENTRY); else this.render();
+  }
+
+  /** Files were added or replaced outside the editor (catalogue, assistant): drop stale editor state and re-render. */
+  filesChanged(names) {
+    for (const n of names) { this.states.delete(n); this.diags.delete(n); }
+    if (this.active && names.includes(this.active)) { const a = this.active; this.active = null; this.select(a); } else this.render();
   }
 
   /** Remove / rename from outside the UI (assistant). Both return normally or throw a readable error. */

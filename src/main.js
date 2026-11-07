@@ -18,6 +18,7 @@ import { DEFAULT_SCRIPT } from './default-script.js';
 import { Project, ENTRY } from './project.js';
 import { Tabs } from './tabs.js';
 import { whereText } from './trace.js';
+import { initCatalog } from './catalog.js';
 
 const STORAGE_KEY = 'temencad.project';
 const LEGACY_SCRIPT_KEY = 'temencad.script';
@@ -97,6 +98,7 @@ const tabs = new Tabs(document.getElementById('tabs'), {
   fileInput: document.getElementById('add-file-input'),
   onChange: () => projectChanged(),
   panels: [{ id: 'assistant', label: 'Assistant', el: chatEl, onShow: () => chat?.focus() }],
+  onCatalog: () => catalog.openBrowser(),
 });
 function projectChanged() {
   persist();
@@ -338,6 +340,15 @@ document.querySelector('#menu-root > .menu-items').addEventListener('click', (e)
 });
 tabs.select('assistant');
 
+// ---- Catalogue: add shared shapes, share this one ----
+const catalog = initCatalog({
+  getProject: () => project,
+  tabs,
+  onChange: () => projectChanged(),
+  snapshot: () => { viewer.resetView(); return viewer.snapshot(480); },
+  log: logLine,
+});
+
 // ---- File menu ----
 document.getElementById('file-menu').addEventListener('click', async (e) => {
   const action = e.target.closest('button')?.dataset.action;
@@ -355,6 +366,7 @@ document.getElementById('file-menu').addEventListener('click', async (e) => {
         logLine(`Exported ${n} triangles to ${base}.stl`);
         break;
       }
+      case 'share': catalog.openShare(); break;
       case 'export-3mf': {
         const n = export3MF(viewer.modelGroup, `${base}.3mf`);
         logLine(`Exported ${n} part${n === 1 ? '' : 's'} with names and colors to ${base}.3mf`);

@@ -8,23 +8,22 @@
  *   temencad model.js --parts         -> one STL per part next to the output
  *   temencad model.js --plate prusa-mk4   check the result against a printer's build volume
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { init } from '../src/engine.js';
-import { registerFont, FONTS } from '../src/fonts.js';
-import { runScript } from '../src/runner.js';
 import { buildSTL, build3MF } from '../src/export.js';
 import { PLATES, fitProblems } from '../src/plate.js';
-import { Project, ENTRY, PROJECT_EXT, findImports, resolveImport, isScript, isTextFile, normalizePath } from '../src/project.js';
+import { Project, ENTRY, PROJECT_EXT } from '../src/project.js';
 import { whereText } from '../src/trace.js';
-
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+import { buildProject, loadProject } from '../src/headless.js';
+import { readPackage, vendorPackage, addImportLine } from '../src/package.js';
+import { CATALOG_URL } from '../src/config.js';
 
 const USAGE = `Usage: temencad <main.js | project.temen> [options]
+       temencad add <package> [--into <main.js | project.temen>]
 
 Builds the script or project with the same engine as the app and writes the visible, non-ghost parts.
 A plain script may import sibling files (./lib.js, ./Logo.ttf, ./part.stl); they are read from its folder.
+"add" copies a package from the shared catalogue into the project (catalog/<name>/) and adds its import.
 
 Options:
   -o, --output <file>   Output file; the extension picks the format: .stl or .3mf (default: <script>.stl)
@@ -32,12 +31,14 @@ Options:
       --plate <preset|WxDxH>
                         Check the model fits a build plate, e.g. --plate prusa-mk4 or --plate 220x220x250
       --list-plates     Print the plate presets and exit
+      --into <file>     For "add": the project to add to (default ./main.js)
   -q, --quiet           Only print errors
   -h, --help            Show this help
 `;
 
 function parseArgs(argv) {
-  const o = { script: null, output: null, parts: false, plate: null, quiet: false };
+  const o = { script: null, output: null, parts: false, plate: null, quiet: false, add: null, into: null };
+  if (argv[0] === 'add') { o.add = argv[1] ?? fail(USAGE); argv = argv.slice(2); }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '-h' || a === '--help') { process.stdout.write(USAGE); process.exit(0); }
@@ -45,12 +46,13 @@ function parseArgs(argv) {
     else if (a === '-o' || a === '--output') o.output = argv[++i];
     else if (a === '--parts') o.parts = true;
     else if (a === '--plate') o.plate = argv[++i];
+    else if (a === '--into') o.into = argv[++i];
     else if (a === '-q' || a === '--quiet') o.quiet = true;
     else if (a.startsWith('-')) fail(`Unknown option ${a}\n\n${USAGE}`);
     else if (!o.script) o.script = a;
     else fail(`Unexpected argument ${a}\n\n${USAGE}`);
   }
-  if (!o.script) fail(USAGE);
+  if (!o.script && !o.add) fail(USAGE);
   return o;
 }
 
@@ -74,53 +76,23 @@ function bounds(parts) {
 
 const safeName = (s) => s.replace(/[^\w.-]+/g, '_');
 
-/** A project from a script on disk: the script becomes main.js and its imports are read relative to it, recursively. */
-function projectFromDisk(entryPath) {
-  const root = dirname(entryPath);
-  const project = new Project();
-  const visit = (name, diskPath) => {
-    if (project.has(name)) return;
-    if (!existsSync(diskPath)) { if (name === ENTRY) throw new Error(`${diskPath}: no such file`); return; } // the module builder reports missing imports with the importing line
-    let content = isTextFile(name) ? readFileSync(diskPath, 'utf8') : readFileSync(diskPath);
-    if (content instanceof Buffer) content = content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength);
-    project.set(name, content);
-    if (!isScript(name)) return;
-    for (const im of findImports(content)) {
-      const target = resolveImport(im.spec, name);
-      if (target) visit(target, join(root, target));
-    }
-  };
-  visit(ENTRY, entryPath);
-  return project;
-}
-
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const log = opts.quiet ? () => {} : (s) => console.log(s);
+  if (opts.add) return addPackage(opts.add, opts.into ?? 'main.js', log);
   const scriptPath = resolve(opts.script);
   let project;
-  try { project = scriptPath.toLowerCase().endsWith(PROJECT_EXT) ? Project.fromZip(readFileSync(scriptPath)) : projectFromDisk(scriptPath); }
+  try { project = loadProject(scriptPath); }
   catch (e) { fail(`Cannot load ${opts.script}: ${e.message}`); }
   const output = resolve(opts.output ?? scriptPath.replace(/\.[^.]*$/, '') + '.stl');
   const format = extname(output).toLowerCase();
   if (format !== '.stl' && format !== '.3mf') fail(`Output must end in .stl or .3mf, got ${basename(output)}`);
   const plate = opts.plate ? parsePlate(opts.plate) : null;
 
-  await init();
-  for (const { name, file } of FONTS) {
-    const b = readFileSync(join(ROOT, 'src/assets', file)); // small files share a pooled buffer, so slice to this file's bytes
-    registerFont(name, b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
-  }
-
   const where = (m) => whereText(m.trace);
-  // Scripts become data: module URLs, which Node can import without touching the filesystem.
-  const env = { makeUrl: (source) => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}` };
   let result;
   try {
-    result = await runScript(project.toFiles(), (m) => {
-      if (m.type === 'log') log(m.text);
-      else if (m.type === 'warn') console.error(`Warning${where(m)}: ${m.text}`);
-    }, env);
+    result = await buildProject(project, { onLog: log, onWarn: (m) => console.error(`Warning${where(m)}: ${m.text}`) });
   } catch (err) {
     fail(`Error${where(err)}: ${err.message}`);
   }
@@ -152,6 +124,34 @@ async function main() {
     }
   }
   process.exitCode = plate && fitProblems(bounds(parts), plate).length ? 2 : 0;
+}
+
+/** temencad add <name>: fetch the package from the catalogue and vendor it into a folder project or a .temen file. */
+async function addPackage(name, into, log) {
+  const target = resolve(into);
+  const isArchive = target.toLowerCase().endsWith(PROJECT_EXT);
+  const res = await fetch(`${CATALOG_URL}packages/${encodeURIComponent(name)}.temen`);
+  if (!res.ok) fail(`Package "${name}" not found in the catalogue (${res.status}). See ${CATALOG_URL}`);
+  const { manifest, project: pkg } = readPackage(new Uint8Array(await res.arrayBuffer()));
+  let project;
+  try { project = isArchive ? Project.fromZip(readFileSync(target)) : loadProject(target); }
+  catch (e) { fail(`Cannot load ${into}: ${e.message}`); }
+  const { dir, importLine, added } = vendorPackage(project, pkg, manifest);
+  project.set(ENTRY, addImportLine(project.get(ENTRY), importLine));
+  if (isArchive) {
+    writeFileSync(target, project.toZip());
+    log(`Added ${manifest.name}@${manifest.version} to ${target}`);
+  } else {
+    const root = dirname(target);
+    for (const file of added) {
+      mkdirSync(dirname(join(root, file)), { recursive: true });
+      const c = project.get(file);
+      writeFileSync(join(root, file), typeof c === 'string' ? c : Buffer.from(c));
+    }
+    writeFileSync(target, project.get(ENTRY));
+    log(`Added ${manifest.name}@${manifest.version} to ${dir}/ and imported it in ${basename(target)}`);
+  }
+  log(`  ${importLine}`);
 }
 
 main().catch((e) => fail(`Error: ${e?.message ?? e}`));
