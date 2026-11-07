@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { init } from './engine.js';
 import { registerFont, FONTS } from './fonts.js';
 import { runScript } from './runner.js';
-import { Project, ENTRY, PROJECT_EXT, findImports, resolveImport, isScript, isTextFile } from './project.js';
+import { Project, ENTRY, PROJECT_EXT, ACCEPTED_EXT, extOf, findImports, resolveImport, isScript, isTextFile } from './project.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -74,6 +74,7 @@ export function projectFromFolder(dir, { readdirSync, statSync } = {}) {
       if (entry.startsWith('.') || entry === 'node_modules') continue;
       const relPath = rel ? `${rel}/${entry}` : entry;
       if (fs.statSync(join(dir, relPath)).isDirectory()) { walk(relPath); continue; }
+      if (!ACCEPTED_EXT.includes(extOf(relPath))) continue; // manifest.json is accepted; preview.png and the like are not
       try {
         const b = readFileSync(join(dir, relPath));
         project.set(relPath, isTextFile(relPath) ? b.toString('utf8') : b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
