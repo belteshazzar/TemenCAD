@@ -23,10 +23,12 @@
             <div class="tab-menu">
               <button type="button" data-action="new">New script…</button>
               <button type="button" data-action="add">Add files… <span class="hint">.js .ttf .stl</span></button>
-              <hr />
-              <button type="button" data-action="rename">Rename…</button>
-              <button type="button" data-action="remove">Remove</button>
             </div>
+          </div>
+          <!-- Per-file menu, anchored under the active tab's ▾ -->
+          <div class="tab-menu file-menu" id="file-tab-menu">
+            <button type="button" data-action="rename">Rename…</button>
+            <button type="button" data-action="remove">Remove</button>
           </div>
         </div>
         <div id="editor"></div>
@@ -138,6 +140,20 @@
         <div class="dialog-actions">
           <button type="button" class="secondary" value="cancel" data-cancel>Cancel</button>
           <button type="submit" value="ok">Apply</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="name-dialog">
+      <form method="dialog" id="name-form">
+        <h2 class="name-title">File name</h2>
+        <p class="muted name-message"></p>
+        <label class="field name-field">File name
+          <input type="text" name="name" autocomplete="off" spellcheck="false" />
+        </label>
+        <p class="dialog-error" hidden></p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" value="cancel" data-cancel>Cancel</button>
+          <button type="submit" value="ok" class="name-ok">OK</button>
         </div>
       </form>
     </dialog>
