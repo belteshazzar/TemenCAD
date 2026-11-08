@@ -64,8 +64,8 @@ slices of `src/cad.js` and friends to bring across into `prelude.js` plus native
 ## lamassu changes needed
 
 Found while building this. None is worked around here; each is the gap as it stands and the fix
-that seems right. The host currently includes three internal headers (`js_bytecode.h`,
-`js_error.h`, `js_syntax.h`) to reach the first two items.
+that seems right. The host currently includes two internal headers (`js_bytecode.h`,
+`js_error.h`) to reach the first two items.
 
 1. **Native function values.** `js_register_native` only defines globals. Building the `__cad`
    namespace object needs a native as a *value* to store in a property. `js_native_new(ctx, name,
@@ -75,23 +75,18 @@ that seems right. The host currently includes three internal headers (`js_byteco
 2. **Error constructors.** A native that wants to throw a `TypeError` or `RangeError` has no public
    way to make one; `js_error_new(ctx, kind, message)` and `js_error_from_ascii` in `js_error.h`
    should be public, with `JsErrorKind`.
-3. **Error locations with module identity.** `js_context_error_pos` gives a source offset but not
-   which module it is in, so a project with more than one file cannot map an error to a file, and a
-   throw inside the prelude (every `assert()` failure, every argument error) points at the prelude,
-   not at the script line that called it. Functions already know their module
-   (`JsFunctionCell.module`) and have line tables (`JsLineEntry`), so the fix is a stack capture:
-   `js_context_stack(ctx, JsStackFrame *out, size_t max)` returning `{ specifier, offset }` per
-   frame of the current fiber, callable from a native (for `echo()` and warnings, which need the
-   caller's line) and recorded on an Error object when it is created (so a rejection carries its
-   trace). This replaces the browser runner's `new Error().stack` parsing. Until then the host
-   reports a location only when the offset falls inside main.js and assumes it belongs there.
+3. **Error locations with module identity — done** (lamassu branch `error-locations`).
+   `js_context_error_stack` returns the frames captured when the last exception started unwinding,
+   innermost first, each with its module specifier and source offset; `js_context_stack` gives a
+   native the frames of the running fiber, so `echo()` and warnings know the script line that called
+   them; a compile error in a module carries a one-frame trace naming the module. The host walks a
+   trace to the first frame in one of the project's files, which skips the prelude, so an `assert()`
+   or an argument error points at the script. `test/test_stack.c` in lamassu covers it.
 4. **Evicting a module from the registry.** Modules stay in a context's registry, so running
    main.js twice in one context returns the first evaluation. The host rebuilds the context per run
    (cheap: one prelude compile). A `js_context_reset_modules(ctx)` or per-module eviction would let
    the prelude stay compiled across runs.
-5. **Line and column helper.** `js_source_line_col` lives in the frontend header; a public form
-   (or offsets reported as line/column directly) would avoid the host keeping the wrapped source
-   around just to map positions.
+5. **Line and column helper — done.** `js_source_line_col` moved into the runtime and `lamassu.h`.
 6. **Finalizers (later).** Shapes are released in bulk per run, so this is not blocking, but a
    long-lived interactive session that keeps shapes between runs would need a per-object hook when
    the engine collects the wrapper.

@@ -20,7 +20,6 @@
 #include "lamassu_compile.h"
 #include "js_bytecode.h"      /* js_native_new, js_ascii_cell: not yet public, see README */
 #include "js_error.h"         /* js_error_new: not yet public */
-#include "js_syntax.h"        /* js_source_line_col */
 #include "lamassu_internal.h"
 #include "temencad.h"
 
@@ -148,10 +147,48 @@ static JsValue rejected(TemenCore *core, const char *msg) {
 
 /* ------------------------------------------------------- module loading */
 
-static const TemenHostFile *find_file(TemenCore *core, const char *name) {
+static TemenHostFile *find_file(TemenCore *core, const char *name) {
     for (size_t i = 0; i < core->n_files; i++)
         if (strcmp(core->files[i].name, name) == 0) return &core->files[i];
     return NULL;
+}
+
+/* Remember the source a module was compiled from, so an offset in it can become a line. */
+static void remember_source(TemenHostFile *f, const char *utf8, size_t len, int line_offset) {
+    free(f->src16);
+    f->src16 = temen_utf8_to_utf16(utf8, len, &f->len16);
+    f->line_offset = line_offset;
+    f->user_lines = 1;
+    for (size_t i = 0; i < f->len; i++) if (f->data[i] == '\n') f->user_lines++;
+    if (f->len && f->data[f->len - 1] == '\n') f->user_lines--; /* a trailing newline is not a line */
+    if (f->user_lines < 1) f->user_lines = 1;
+}
+
+bool temen_locate(TemenCore *core, const JsStackFrame *frames, size_t n, const char **file, int *line) {
+    for (size_t i = 0; i < n; i++) {
+        size_t sl;
+        const uint16_t *su = js_string_units(frames[i].specifier, &sl);
+        if (!su) continue;
+        char *name = temen_utf16_to_utf8(su, sl);
+        TemenHostFile *f = name ? find_file(core, name) : NULL;
+        free(name);
+        if (!f || !f->src16) continue;
+        uint32_t l, c;
+        js_source_line_col(f->src16, f->len16, frames[i].pos, &l, &c);
+        int ln = (int)l - f->line_offset;
+        /* an unterminated statement is reported at the wrapper's closing brace: show the user's last line */
+        if (ln > f->user_lines) ln = f->user_lines;
+        *file = f->name;
+        *line = ln < 1 ? 1 : ln;
+        return true;
+    }
+    return false;
+}
+
+bool temen_where(TemenCore *core, const char **file, int *line) {
+    JsStackFrame fr[JS_TRACE_MAX];
+    size_t n = js_context_stack(core->ctx, fr, JS_TRACE_MAX);
+    return temen_locate(core, fr, n, file, line);
 }
 
 static bool has_ext(const char *name, const char *ext) {
@@ -311,7 +348,7 @@ static JsValue loader(void *ud, JsContext *ctx, const uint16_t *spec, size_t spe
     if (strcmp(name, PRELUDE_SPEC) == 0) {
         result = fulfilled(core, temen_string(core, (const char *)temen_prelude_js, temen_prelude_js_len));
     } else {
-        const TemenHostFile *f = find_file(core, name);
+        TemenHostFile *f = find_file(core, name);
         char msg[1200];
         if (!f) {
             snprintf(msg, sizeof msg, "Cannot find '%s'", name);
@@ -322,12 +359,14 @@ static JsValue loader(void *ud, JsContext *ctx, const uint16_t *spec, size_t spe
                 char *wrapped = wrap_entry((const char *)f->data, f->len, &wl);
                 if (!wrapped) result = rejected(core, "out of memory");
                 else {
-                    free(core->entry_src);
-                    core->entry_src = temen_utf8_to_utf16(wrapped, wl, &core->entry_len);
+                    remember_source(f, wrapped, wl, 1);
                     result = fulfilled(core, temen_string(core, wrapped, wl));
                     free(wrapped);
                 }
-            } else result = fulfilled(core, temen_string(core, (const char *)f->data, f->len));
+            } else {
+                remember_source(f, (const char *)f->data, f->len, 0);
+                result = fulfilled(core, temen_string(core, (const char *)f->data, f->len));
+            }
         } else if (is_font(name)) {
             snprintf(msg, sizeof msg, "export default \"%s\";", name);
             result = fulfilled(core, temen_string(core, msg, strlen(msg)));
@@ -396,7 +435,7 @@ static void free_parts(TemenCore *core) {
 }
 
 static void free_files(TemenCore *core) {
-    for (size_t i = 0; i < core->n_files; i++) free(core->files[i].name);
+    for (size_t i = 0; i < core->n_files; i++) { free(core->files[i].name); free(core->files[i].src16); }
     free(core->files);
     core->files = NULL; core->n_files = 0;
 }
@@ -408,7 +447,6 @@ void temen_free(TemenCore *core) {
     free_files(core);
     temen_handles_release(core);
     free(core->objs);
-    free(core->entry_src);
     free(core->error); free(core->error_file);
     if (core->ctx) js_context_free(core->ctx);
     if (core->vm) js_vm_free(core->vm);
@@ -456,17 +494,13 @@ static void report_rejection(TemenCore *core, JsValue reason) {
             free(n);
         }
     }
-    uint32_t pos = js_context_error_pos(core->ctx);
-    int line = 0;
+    /* The engine's trace, innermost first; the first frame in one of the project's own files is
+     * the line to show — frames inside the prelude (assert, argument checks) are skipped. */
+    JsStackFrame fr[JS_TRACE_MAX];
+    size_t n = js_context_error_stack(core->ctx, fr, JS_TRACE_MAX);
     const char *file = NULL;
-    if (core->entry_src && pos < core->entry_len) {
-        /* The engine reports an offset but not which module it is in; main.js is assumed (see README). */
-        uint32_t l, c;
-        js_source_line_col(core->entry_src, core->entry_len, pos, &l, &c);
-        line = (int)l - 1;
-        if (line < 1) line = 1;
-        file = ENTRY;
-    }
+    int line = 0;
+    temen_locate(core, fr, n, &file, &line);
     set_error(core, msg, file, line);
     free(text);
 }
@@ -518,7 +552,6 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
     temen_handles_release(core);
     free(core->error); free(core->error_file);
     core->error = core->error_file = NULL; core->error_line = 0;
-    free(core->entry_src); core->entry_src = NULL; core->entry_len = 0;
 
     core->files = calloc(n_files ? n_files : 1, sizeof *core->files);
     if (!core->files) { set_error(core, "out of memory", NULL, 0); return 2; }

@@ -16,6 +16,10 @@ typedef struct TemenHostFile {
     char *name;
     const uint8_t *data;
     size_t len;
+    uint16_t *src16;   /* the module source as the engine saw it (set when loaded); for error lines */
+    size_t len16;
+    int line_offset;   /* lines the wrapper added before the user's first line (1 for main.js) */
+    int user_lines;    /* lines in the file as the user wrote it; a position in the wrapper's tail maps to the last one */
 } TemenHostFile;
 
 typedef struct TemenMessage {
@@ -38,8 +42,6 @@ struct TemenCore {
     /* the project of the current run */
     TemenHostFile *files;
     size_t n_files;
-    uint16_t *entry_src;   /* wrapped main.js as UTF-16, for error line mapping */
-    size_t entry_len;
     uint16_t canon_buf[1024];
 
     /* Manifold objects created during the run; all freed when it ends. */
@@ -66,6 +68,10 @@ JsValue temen_atom(TemenCore *core, const char *ascii);
 JsValue temen_string(TemenCore *core, const char *utf8, size_t len);
 JsValue temen_type_error(TemenCore *core, const char *msg);      /* a TypeError value to throw */
 JsValue temen_range_error(TemenCore *core, const char *msg);
+/* The innermost frame that lies in a project file: its name (owned by the core) and 1-based line. */
+bool temen_locate(TemenCore *core, const JsStackFrame *frames, size_t n, const char **file, int *line);
+/* Where the running script is right now (for a native: its caller's line in the user's file). */
+bool temen_where(TemenCore *core, const char **file, int *line);
 
 /* natives.c */
 bool temen_install_cad(TemenCore *core);                        /* creates __cad on the globals */

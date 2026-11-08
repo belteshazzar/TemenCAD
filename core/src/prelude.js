@@ -249,7 +249,12 @@ function fmtEcho(v, depth = 0) {
 
 const log = (...args) => { cad.log(args.map(fmt).join(' ')); };
 /** echo(...values): OpenSCAD-style output; returns the first value so it works inline. */
-const echo = (...args) => { cad.log(`ECHO: ${args.map((a) => fmtEcho(a)).join(', ')}`); return args[0]; };
+const echo = (...args) => {
+  const w = cad.where();
+  const loc = w ? (w[0] === 'main.js' ? `line ${w[1]}` : `${w[0]} line ${w[1]}`) : '';
+  cad.log(`ECHO${loc ? ` (${loc})` : ''}: ${args.map((a) => fmtEcho(a)).join(', ')}`);
+  return args[0];
+};
 /** assert(condition, message?): stops the build when the condition is falsy. */
 const assert = (condition, message) => {
   if (!condition) {

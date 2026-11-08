@@ -30,7 +30,7 @@ check('booleans run', r.ok, r.error?.message);
 check('difference volume 960', r.ok && near(r.parts[0].volume, 960));
 check('union volume 16', r.ok && near(r.parts[1].volume, 16));
 check('intersection volume 500', r.ok && near(r.parts[2].volume, 500));
-check('echo message', r.messages.some((m) => m.text === 'ECHO: "diff", 960'), JSON.stringify(r.messages));
+check('echo message with its line', r.messages.some((m) => m.text === 'ECHO (line 3): "diff", 960' && m.line === 3), JSON.stringify(r.messages));
 
 // 3. a module import, a cylinder along Y, a sphere
 r = rt.run({
@@ -49,16 +49,19 @@ if (r.ok) {
 // 4. errors: an assert, a thrown TypeError from the api, a syntax error
 r = rt.run({ 'main.js': 'const w = 5;\nassert(w > 10, "too narrow");\nreturn box(w)' });
 check('assert fails the build', !r.ok && r.error.message === 'Assertion failed: too narrow', r.error?.message);
-// Known gap: the engine reports an error offset without the module it belongs to, and the throw site
-// of assert() is the prelude, not the script (core/README.md, "lamassu changes needed"). Reported, not failed.
-{
-  const located = r.error?.file === 'main.js' && r.error?.line === 2;
-  console.log(`${located ? 'ok  ' : 'gap '} assert reports the line ${r.error?.file}:${r.error?.line}`);
-}
+check('assert reports the script line, not the prelude', r.error?.file === 'main.js' && r.error?.line === 2, `${r.error?.file}:${r.error?.line}`);
+r = rt.run({ 'main.js': 'import { f } from "./parts/bad.js";\nreturn f()', 'parts/bad.js': 'export function f() {\n\n  return box("x");\n}' });
+check('error inside an imported module names that file and line', r.error?.file === 'parts/bad.js' && r.error?.line === 3, `${r.error?.file}:${r.error?.line} ${r.error?.message}`);
+r = rt.run({ 'main.js': 'import { f } from "./parts/bad.js";\nreturn f()', 'parts/bad.js': 'export function f() {\n  return (1 +;\n}' });
+check('syntax error in an imported module names that file and line', r.error?.file === 'parts/bad.js' && r.error?.line === 2, `${r.error?.file}:${r.error?.line} ${r.error?.message}`);
+r = rt.run({ 'main.js': 'const a = box(1);\n\necho("here", a.volume());\nreturn a' });
+check('echo names its line', r.messages.some((m) => m.text.startsWith('ECHO (line 3): "here", 1') && m.file === 'main.js' && m.line === 3), JSON.stringify(r.messages));
 r = rt.run({ 'main.js': 'return box(-1)' });
 check('range error from the api', !r.ok && /box: width must be greater than 0/.test(r.error?.message ?? ''), r.error?.message);
+check('range error points at the script line', r.error?.file === 'main.js' && r.error?.line === 1, `${r.error?.file}:${r.error?.line}`);
 r = rt.run({ 'main.js': 'return box(1' });
 check('syntax error reported', !r.ok && /SyntaxError|expected/i.test(r.error?.message ?? ''), r.error?.message);
+check('syntax error on line 1 of main.js', r.error?.file === 'main.js' && r.error?.line === 1, `${r.error?.file}:${r.error?.line}`);
 r = rt.run({ 'main.js': 'class A {}' });
 check('class is rejected', !r.ok, r.error?.message);
 

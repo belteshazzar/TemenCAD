@@ -195,13 +195,33 @@ static bool n_bounds(JsContext *ctx, JsValue this_val, const JsValue *args, int 
 static bool emit(JsContext *ctx, const JsValue *args, int argc, TemenMessageKind kind, JsValue *result) {
     TemenCore *core = CORE();
     char *text = argc > 0 ? temen_value_to_utf8(core, args[0]) : strdup("");
-    temen_message(core, kind, text ? text : "", NULL, 0);
+    const char *file = NULL;
+    int line = 0;
+    temen_where(core, &file, &line);
+    temen_message(core, kind, text ? text : "", file, line);
     free(text);
     *result = js_undefined();
     return true;
 }
 static bool n_log(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) { (void)this_val; return emit(ctx, args, argc, TEMEN_LOG, result); }
 static bool n_warn(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) { (void)this_val; return emit(ctx, args, argc, TEMEN_WARN, result); }
+
+/* where() -> [file, line] of the script line that called the prelude function now running, or undefined */
+static bool n_where(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val; (void)args; (void)argc;
+    TemenCore *core = CORE();
+    const char *file = NULL;
+    int line = 0;
+    if (!temen_where(core, &file, &line)) { *result = js_undefined(); return true; }
+    JsValue arr = js_array_new(ctx, 2);
+    if (js_is_undefined(arr)) THROW(temen_range_error(core, "out of memory"));
+    js_gc_protect(core->vm, &arr);
+    bool ok = js_array_push(core->vm, arr, temen_string(core, file, strlen(file))) && js_array_push(core->vm, arr, js_number(line));
+    js_gc_unprotect(core->vm, &arr);
+    if (!ok) THROW(temen_range_error(core, "out of memory"));
+    *result = arr;
+    return true;
+}
 
 /* -------------------------------------------------------- install */
 
@@ -211,7 +231,7 @@ static const Entry ENTRIES[] = {
     { "boolean", n_boolean }, { "batch", n_batch }, { "hull", n_hull },
     { "translate", n_translate }, { "rotate", n_rotate }, { "scale", n_scale }, { "mirror", n_mirror },
     { "volume", n_volume }, { "area", n_area }, { "isEmpty", n_is_empty }, { "numTri", n_num_tri }, { "bounds", n_bounds },
-    { "log", n_log }, { "warn", n_warn },
+    { "log", n_log }, { "warn", n_warn }, { "where", n_where },
 };
 
 bool temen_install_cad(TemenCore *core) {
