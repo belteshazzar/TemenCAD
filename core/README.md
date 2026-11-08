@@ -100,10 +100,14 @@ Y-up. PNG decoding is exact, so reliefs match the app; JPEG decoders round diffe
 brightness can differ by a few 1/255. The image loops run in the prelude (test/images builds in
 2.3 s against 1.0 s on V8); a C fast path for resize and blur is the obvious speed-up if needed.
 
+Printability: `overhangs`, `unsupported` (islands and bridges by casting rays downward),
+`minWallThickness` (rays cast inward from an area-weighted sample of faces), `printability` with
+its verdict and problem list, and the first-layer rule; all over the `mesh` native in the prelude.
+
 Each run gets a fresh engine context; Manifold objects are released in bulk after the run, as
 the browser app does with `releaseAll()`.
 
-Not yet: `shell`/`minkowski`/`roof` and printability. `npm run core:diff` says which test scripts the
+Not yet: `shell`/`minkowski`/`roof` (test/print.js and the demo both call `shell`). `npm run core:diff` says which test scripts the
 core already builds identically.
 
 ## Differential test

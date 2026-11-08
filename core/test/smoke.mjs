@@ -265,6 +265,27 @@ if (r.ok) {
   check('lithophane with a border has a frame', byName.litho.volume > 0);
 }
 
+// 4i. printability
+r = rt.run({ 'main.js': `
+  const b = box(20, 10, 20).onPlate();
+  const f = box(20, 10, 20).translate(0, 15, 0);
+  const table = box(40, 3, 40).translate(0, 21.5, 0).add(cylinder(5, 20).translate(0, 10, 0));
+  const thin = box(20, 10, 0.4).onPlate();
+  const tube = difference(box(20, 10, 20), box(17.6, 12, 17.6)).onPlate();
+  echo('r', overhangs(b).area, unsupported(f).area, overhangs(table).area, b.printability().ok, thin.printability().ok, minWallThickness(tube).thickness, minWallThickness(b).thickness);
+  echo(thin.printability().problems[0]);
+  return b;
+` });
+check('printability runs', r.ok, r.error?.message);
+if (r.ok) {
+  const t = r.messages.map((m) => m.text).join('\n');
+  const m = t.match(/"r", ([\d.]+), ([\d.]+), ([\d.]+), (true|false), (true|false), ([\d.]+), (Infinity|[\d.]+)/);
+  check('box has no overhangs, floating box 400 unsupported, table 1600 - pi*25', m && +m[1] === 0 && +m[2] === 400 && near(+m[3], 1600 - Math.PI * 25, 0.01), t.split('\n')[0]);
+  check('verdicts: box ok, thin wall flagged', m && m[4] === 'true' && m[5] === 'false', t.split('\n')[0]);
+  check('tube wall 1.2, solid box measures its far face at 10', m && near(+m[6], 1.2, 1e-6) && +m[7] === 10, t.split('\n')[0]);
+  check('problem text names the wall', /thinnest wall 0\.40 mm at \[.*\], under 0\.8 mm/.test(t), t.split('\n')[1]);
+}
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);
