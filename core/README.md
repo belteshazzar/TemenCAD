@@ -117,8 +117,8 @@ were slow on the interpreter now run natively with the same arithmetic: `solidFr
 (consistent orientation, build, volume-sign flip, used by sweep, loft, fillet, polyhedron, STL
 import), `heightmapSolid`, `minWall`, `imageResize` and `imageBlur`. Timings against V8 today:
 images 0.45 s vs 1.0 s, print 0.11 s vs 0.09 s, sweep 0.19 s vs 0.24 s, the demo 0.23 s vs 0.25 s;
-the rest within a few tens of milliseconds. The JavaScript versions stay in `prelude.js` as
-`*Reference` functions, the readable statement of what the natives compute.
+the rest within a few tens of milliseconds. The JavaScript they replaced lives on in the app's
+`src/mesh.js`, `src/image.js` and `src/print.js` until the app swap retires them.
 
 Note on fonts: the vendored `stb_truetype.h` is patched to keep vertex coordinates as floats, so
 the implied on-curve point between two off-curve points is the exact midpoint. The stock header

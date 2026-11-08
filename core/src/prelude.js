@@ -1142,39 +1142,8 @@ function mark(point, text = '') {
 
 // ---- solids from raw triangles (mesh.js) ------------------------------------------------
 
-/** Flip triangles as needed so every shared edge is traversed in opposite directions. */
-function orientConsistently(tris) {
-  const n = tris.length / 3;
-  const faces = [];
-  for (let i = 0; i < n; i++) faces.push([tris[i * 3], tris[i * 3 + 1], tris[i * 3 + 2]]);
-  const byEdge = new Map();
-  const key = (a, b) => (a < b ? `${a}_${b}` : `${b}_${a}`);
-  for (let i = 0; i < n; i++) { const f = faces[i]; for (let k = 0; k < 3; k++) { const e = key(f[k], f[(k + 1) % 3]); if (!byEdge.has(e)) byEdge.set(e, []); byEdge.get(e).push(i); } }
-  const hasDirected = (f, a, b) => (f[0] === a && f[1] === b) || (f[1] === a && f[2] === b) || (f[2] === a && f[0] === b);
-  const visited = [];
-  for (let i = 0; i < n; i++) visited.push(false);
-  for (let seed = 0; seed < n; seed++) {
-    if (visited[seed]) continue;
-    visited[seed] = true;
-    const stack = [seed];
-    while (stack.length) {
-      const i = stack.pop(), f = faces[i];
-      for (let k = 0; k < 3; k++) {
-        const a = f[k], b = f[(k + 1) % 3];
-        for (const j of byEdge.get(key(a, b))) {
-          if (j === i || visited[j]) continue;
-          if (hasDirected(faces[j], a, b)) faces[j] = [faces[j][0], faces[j][2], faces[j][1]];
-          visited[j] = true; stack.push(j);
-        }
-      }
-    }
-  }
-  const out = [];
-  for (const f of faces) out.push(f[0], f[1], f[2]);
-  return out;
-}
 function manifoldFromTriangles(fn, positions, tris) {
-  // orientation, build and the volume-sign flip run natively (solidFromTriangles); orientConsistently above is the reference
+  // orientation, build and the volume-sign flip run natively (solidFromTriangles)
   try { return cad.solidFromTriangles(positions, tris); }
   catch (err) { throw new Error(`${fn}: mesh is not a closed, manifold solid (${err.message}). Check that every edge is shared by exactly two faces.`); }
 }
@@ -1913,33 +1882,6 @@ G.blur = function (radius = 1) {
   if (radius === 0) return this;
   return new GrayImage(this.width, this.height, cad.imageBlur(this.gray, this.width, this.height, radius));
 };
-/** The JavaScript reference for the blur native (kept for the record; not called). */
-G._blurReference = function (radius) {
-  const w = this.width, h = this.height;
-  const pass = (src) => {
-    const tmp = [], out = [];
-    for (let i = 0; i < src.length; i++) { tmp.push(0); out.push(0); }
-    const n = 2 * radius + 1;
-    for (let y = 0; y < h; y++) {
-      let acc = 0;
-      for (let k = -radius; k <= radius; k++) acc += src[y * w + Math.min(w - 1, Math.max(0, k))];
-      for (let x = 0; x < w; x++) {
-        tmp[y * w + x] = f32(acc / n);
-        acc += src[y * w + Math.min(w - 1, x + radius + 1)] - src[y * w + Math.max(0, x - radius)];
-      }
-    }
-    for (let x = 0; x < w; x++) {
-      let acc = 0;
-      for (let k = -radius; k <= radius; k++) acc += tmp[Math.min(h - 1, Math.max(0, k)) * w + x];
-      for (let y = 0; y < h; y++) {
-        out[y * w + x] = f32(acc / n);
-        acc += tmp[Math.min(h - 1, y + radius + 1) * w + x] - tmp[Math.max(0, y - radius) * w + x];
-      }
-    }
-    return out;
-  };
-  return new GrayImage(w, h, pass(pass(this.gray)));
-};
 G.crop = function (x, y, w, h) {
   checkInt('crop', 'x', x, 0); checkInt('crop', 'y', y, 0); checkInt('crop', 'width', w, 1); checkInt('crop', 'height', h, 1);
   if (x + w > this.width || y + h > this.height) throw new RangeError(`crop: the rectangle leaves the image (${this.width}×${this.height})`);
@@ -1993,30 +1935,6 @@ function heightmap(img, opts = {}) {
   if (invert) image = image.invert();
   const x0 = center ? -width / 2 : 0, z0 = center ? -depth / 2 : 0;
   return new Shape(cad.heightmapSolid(image.gray, nx, nz, x0, z0, width, depth, base, height));
-}
-/** The JavaScript reference for the heightmapSolid native (kept for the record; not called). */
-function heightmapReference(image, nx, nz, x0, z0, width, depth, base, height) {
-  const pos = [];
-  const top = (i, j) => j * nx + i, bottom = (i, j) => nx * nz + j * nx + i;
-  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-    const v = Math.min(1, Math.max(0, image.gray[j * nx + i]));
-    pos.push(x0 + (i / (nx - 1)) * width, base + v * height, z0 + (j / (nz - 1)) * depth);
-  }
-  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) pos.push(x0 + (i / (nx - 1)) * width, 0, z0 + (j / (nz - 1)) * depth);
-  const tris = [];
-  for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
-    tris.push(top(i, j), top(i, j + 1), top(i + 1, j + 1), top(i, j), top(i + 1, j + 1), top(i + 1, j));
-    tris.push(bottom(i, j), bottom(i + 1, j + 1), bottom(i, j + 1), bottom(i, j), bottom(i + 1, j), bottom(i + 1, j + 1));
-  }
-  for (let i = 0; i < nx - 1; i++) {
-    tris.push(top(i, 0), top(i + 1, 0), bottom(i + 1, 0), top(i, 0), bottom(i + 1, 0), bottom(i, 0));
-    tris.push(top(i, nz - 1), bottom(i + 1, nz - 1), top(i + 1, nz - 1), top(i, nz - 1), bottom(i, nz - 1), bottom(i + 1, nz - 1));
-  }
-  for (let j = 0; j < nz - 1; j++) {
-    tris.push(top(0, j), bottom(0, j + 1), top(0, j + 1), top(0, j), bottom(0, j), bottom(0, j + 1));
-    tris.push(top(nx - 1, j), top(nx - 1, j + 1), bottom(nx - 1, j + 1), top(nx - 1, j), bottom(nx - 1, j + 1), bottom(nx - 1, j));
-  }
-  return new Shape(manifoldFromTriangles('heightmap', pos, tris));
 }
 /** Positions and triangles of a box centred in X and Z with its base at y = 0. */
 function boxMesh(w, h, dd) {
@@ -2147,27 +2065,6 @@ function minWallThickness(s, opts = {}) {
   checkPositive('minWallThickness', 'samples', samples);
   checkShape('minWallThickness', 'shape', s);
   return cad.minWall(s.h, samples);
-}
-/** The JavaScript reference for the minWall native (kept for the record; not called). */
-function minWallThicknessReference(s, samples) {
-  const m = meshOf('minWallThickness', s);
-  const all = meshTriangles(m.positions, m.indices);
-  let total = 0;
-  for (const t of all) total += t.area;
-  const faces = all.filter((t) => t.area >= Math.min(0.02, total / 1e5));
-  const picked = [];
-  if (faces.length <= samples) { for (const f of faces) picked.push(f); }
-  else {
-    const per = samples / total; let acc = 0;
-    for (const t of faces) { acc += t.area * per; while (acc >= 1 && picked.length < samples) { acc -= 1; picked.push(t); } }
-    for (let i = 0; picked.length < samples && i < faces.length; i += Math.ceil(faces.length / samples)) picked.push(faces[i]);
-  }
-  let best = Infinity, at = null;
-  for (const t of picked) {
-    const d = rayDistance(t.centroid, [-t.n[0], -t.n[1], -t.n[2]], all, 0.05);
-    if (d < best) { best = d; at = t.centroid; }
-  }
-  return { thickness: best, at };
 }
 /** A printing verdict: overhang and unsupported areas, the thinnest wall, and the problems found. opts: { angle=45, minWall=0.8, maxUnsupported=1 } */
 function printability(s, opts = {}) {
