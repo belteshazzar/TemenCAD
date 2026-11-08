@@ -10,7 +10,10 @@
     "cli": "node bin/temencad.mjs",
     "prebuild": "node scripts/api-text.mjs",
     "api": "node bin/temencad.mjs api",
-    "test": "node bin/temencad.mjs test test/"
+    "test": "node bin/temencad.mjs test test/",
+    "core:native": "cmake -S core -B build/native && cmake --build build/native -j8",
+    "core:wasm": "emcmake cmake -S core -B build/wasm && cmake --build build/wasm -j8",
+    "core:test": "node core/test/smoke.mjs"
   },
   "devDependencies": {
     "vite": "^8.3.6"

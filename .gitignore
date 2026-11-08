@@ -69,3 +69,7 @@ dist/
 .DS_Store
 public/api.txt
 public/llms.txt
+
+# TemenCAD core (CMake build trees and the wasm artefact)
+build/
+core/wasm/dist/
