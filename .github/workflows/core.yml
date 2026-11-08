@@ -35,6 +35,34 @@ jobs:
       - name: Every test script and the demo through the CLI
         run: core/test/run-native.sh
 
+  windows:
+    name: native (windows, MSYS2 gcc)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          path-type: inherit
+          install: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja git
+      - name: Configure and build
+        run: |
+          cmake -S core -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/native -j4
+      - name: Version
+        run: build/native/temencore.exe --version
+      - name: Every test script and the demo through the CLI
+        run: core/test/run-native.sh build/native/temencore.exe
+
   wasm:
     name: wasm (Emscripten) + parity with the JavaScript runner
     runs-on: ubuntu-latest

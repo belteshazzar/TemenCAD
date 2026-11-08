@@ -63,8 +63,10 @@ target_include_directories(lamassu
   PUBLIC ${LAMASSU_DIR}/src ${LAMASSU_DIR}/src/runtime ${LAMASSU_DIR}/src/frontend
   PRIVATE ${LAMASSU_DIR}/third_party/baru-re/include)
 target_compile_definitions(lamassu PUBLIC LAMASSU_HAS_REGEX PRIVATE _POSIX_C_SOURCE=200809L)
-target_compile_options(lamassu PRIVATE -Wall -Wextra -Wshadow -ffp-contract=off)
-if(NOT EMSCRIPTEN)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(lamassu PRIVATE -Wall -Wextra -Wshadow -ffp-contract=off)
+endif()
+if(NOT EMSCRIPTEN AND NOT WIN32)
   target_link_libraries(lamassu PUBLIC m)
 endif()
 
@@ -109,8 +111,13 @@ target_include_directories(temencore
   PUBLIC include
   PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated ${MANIFOLD_DIR}/bindings/c/include ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 target_compile_definitions(temencore PRIVATE TEMEN_MANIFOLD_VERSION="${TEMEN_MANIFOLD_VERSION}" _POSIX_C_SOURCE=200809L _DARWIN_C_SOURCE)
-target_compile_options(temencore PRIVATE -Wall -Wextra)
-set_source_files_properties(src/text.c src/image.c PROPERTIES COMPILE_OPTIONS "-Wno-unused-function") # stb's unused helpers
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(temencore PRIVATE -Wall -Wextra -ffp-contract=off)
+  set_source_files_properties(src/text.c src/image.c PROPERTIES COMPILE_OPTIONS "-Wno-unused-function") # stb's unused helpers
+endif()
+if(WIN32)
+  target_compile_definitions(temencore PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
 target_link_libraries(temencore PUBLIC lamassu manifoldc manifold)
 
 # ---- native command line tool ------------------------------------------------

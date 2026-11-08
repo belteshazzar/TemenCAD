@@ -9,10 +9,8 @@
  * Decoding is stb_image (public domain). PNG decoding is exact, so reliefs built from PNGs match the
  * app bit for bit; JPEG decoders differ in rounding, so JPEG brightness can differ by a few 1/255.
  */
-#define _GNU_SOURCE
 #include <ctype.h>
 #include <math.h>
-#include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +23,7 @@
 #define STBI_ASSERT(x) ((void)0)
 #include "stb_image.h"
 
+#include "compat.h"
 #include "host.h"
 #include "js_bytecode.h"
 
@@ -99,7 +98,7 @@ static float *stl_raw(const TemenHostFile *f, size_t *n_floats, const char **err
     {
         size_t i = 0;
         while (i < len && isspace(b[i])) i++;
-        if (i + 5 <= len && strncasecmp((const char *)b + i, "solid", 5) == 0) {
+        if (i + 5 <= len && temen_strncasecmp((const char *)b + i, "solid", 5) == 0) {
             bool binary = len >= 84 && len == 84 + (size_t)rd_u32(b + 80) * 50;
             ascii = !binary;
         }
@@ -120,7 +119,7 @@ static float *stl_raw(const TemenHostFile *f, size_t *n_floats, const char **err
     if (!out) { *err = "out of memory"; return NULL; }
     const char *s = (const char *)b, *end = s + len;
     while (s < end) {
-        const char *v = memmem(s, (size_t)(end - s), "vertex", 6);
+        const char *v = temen_memmem(s, (size_t)(end - s), "vertex", 6);
         if (!v) break;
         s = v + 6;
         if (n + 3 > cap) { cap *= 2; float *o = realloc(out, cap * sizeof *o); if (!o) { free(out); *err = "out of memory"; return NULL; } out = o; }

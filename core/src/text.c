@@ -12,7 +12,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STBTT_STATIC
@@ -30,6 +29,7 @@
 #define STBTT_assert(x) ((void)0)
 #include "stb_truetype.h"
 
+#include "compat.h"
 #include "host.h"
 #include "js_bytecode.h"
 #include "fonts_gen.h" /* the bundled fonts: TEMEN_BUNDLED_FONTS[] of { name, bytes, len } */
@@ -90,7 +90,7 @@ void temen_fonts_set_project(TemenCore *core, const TemenHostFile *files, size_t
     for (size_t i = 0; i < n_files; i++) {
         const char *n = files[i].name;
         size_t l = strlen(n);
-        if (l > 4 && (strcasecmp(n + l - 4, ".ttf") == 0 || strcasecmp(n + l - 4, ".otf") == 0)) add_font(core, n, files[i].data, files[i].len, true);
+        if (l > 4 && (temen_strcasecmp(n + l - 4, ".ttf") == 0 || temen_strcasecmp(n + l - 4, ".otf") == 0)) add_font(core, n, files[i].data, files[i].len, true);
     }
 }
 

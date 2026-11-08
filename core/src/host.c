@@ -14,8 +14,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
+#include "compat.h"
 #include "host.h"
 #include "lamassu_compile.h"
 #include "js_bytecode.h"      /* js_native_new, js_ascii_cell: not yet public, see README */
@@ -234,7 +234,7 @@ static size_t resolve_path(const char *spec, const char *referrer, char *out, si
     char *segs[256];
     int n = 0;
     char *save = NULL;
-    for (char *tok = strtok_r(joined, "/", &save); tok; tok = strtok_r(NULL, "/", &save)) {
+    for (char *tok = temen_strtok_r(joined, "/", &save); tok; tok = temen_strtok_r(NULL, "/", &save)) {
         if (strcmp(tok, ".") == 0 || *tok == 0) continue;
         if (strcmp(tok, "..") == 0) { if (n) n--; continue; }
         if (n < 256) segs[n++] = tok;
@@ -487,11 +487,7 @@ const char *temen_version(void) { return "temencore 0.1 (lamassu-js, manifold " 
 
 /* ---------------------------------------------------------------- run */
 
-static double now_ms(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
-}
+static double now_ms(void) { return temen_now_ms(); }
 
 /* Waits for a promise by draining microtasks; the loader settles every promise synchronously. */
 static int settle(TemenCore *core, JsValue promise) {
