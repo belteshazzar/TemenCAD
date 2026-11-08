@@ -27,6 +27,15 @@ Then open the URL Vite prints (usually http://localhost:5173).
 - Units are millimetres, Y is up, the build plate is y = 0. 2D sketches also support `offset()` and `hull()`.
 - Your project is saved to `localStorage` between reloads.
 
+## Runtime
+
+Models build on the TemenCAD core: the script runs on the lamassu JavaScript engine and the geometry
+is Manifold, compiled together into one WebAssembly module (`core/`). The same library builds natively
+(`core/README.md`). The previous JavaScript modelling layer stays as a fallback: open the app with
+`?runtime=js` (or set `localStorage.temencad.runtime = 'js'`), or run the command line with
+`TEMENCAD_RUNTIME=js`. The command line also falls back to it when `core/wasm/dist` has not been built
+(`npm run core:wasm`, which needs the Emscripten SDK).
+
 ## Command line
 
 The same engine runs headless in Node, so scripts can be built in CI or batch-exported without a browser:

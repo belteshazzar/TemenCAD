@@ -3,10 +3,17 @@
  * { type: 'run', id, files } and posts back mesh buffers (transferred, not copied).
  */
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
+import coreWasmUrl from '../core/wasm/dist/temencore.wasm?url';
 import { init } from './engine.js';
 import { registerFont, FONTS } from './fonts.js';
 import { runScript } from './runner.js';
+import { initCore, runScriptCore, pickRuntime } from './core-runner.js';
 import { renderViews, sectionMeshes } from './render.js';
+
+// The lamassu core (core/) is the default runtime; the JavaScript modelling layer stays as a fallback,
+// chosen per run with runtime: 'js' (the app sets it from ?runtime=js or localStorage temencad.runtime).
+let coreError = null;
+const loadCore = initCore({ locateFile: () => coreWasmUrl }).catch((err) => { coreError = err; });
 
 // Vite resolves every bundled font to a hashed URL at build time.
 const fontUrls = import.meta.glob('./assets/*-subset.ttf', { query: '?url', import: 'default', eager: true });
@@ -33,7 +40,7 @@ let ready = false;
 
 self.onmessage = (e) => { if (ready) handle(e.data); else queue.push(e.data); };
 
-Promise.all([init({ locateFile: () => wasmUrl }), loadFonts])
+Promise.all([init({ locateFile: () => wasmUrl }), loadFonts, loadCore])
   .then(() => {
     ready = true;
     self.postMessage({ type: 'ready' });
@@ -44,7 +51,7 @@ Promise.all([init({ locateFile: () => wasmUrl }), loadFonts])
     self.onmessage = (e) => self.postMessage({ type: 'error', id: e.data.id, message: `Geometry engine failed to load: ${err?.message ?? err}` });
   });
 
-async function handle({ type, id, files, meshes, options }) {
+async function handle({ type, id, files, meshes, options, runtime }) {
   if (type === 'render') {
     try {
       const list = options.section ? sectionMeshes(meshes, options.section) : meshes;
@@ -57,9 +64,12 @@ async function handle({ type, id, files, meshes, options }) {
   }
   if (type !== 'run') return;
   try {
-    const { meshes, tris, ms, annotations } = await runScript(files, (m) => self.postMessage({ ...m, id }), env);
+    const post = (m) => self.postMessage({ ...m, id });
+    let which = pickRuntime(runtime);
+    if (which === 'core' && coreError) { post({ type: 'warn', text: `The core runtime failed to start (${coreError.message ?? coreError}); using the JavaScript runtime.`, file: null, line: null, trace: [] }); which = 'js'; }
+    const { meshes, tris, ms, annotations, profile } = which === 'core' ? await runScriptCore(files, post) : await runScript(files, post, env);
     const transfer = meshes.flatMap((m) => [m.positions.buffer, m.indices.buffer]);
-    self.postMessage({ type: 'result', id, meshes, tris, ms, annotations }, transfer);
+    self.postMessage({ type: 'result', id, meshes, tris, ms, annotations, profile }, transfer);
   } catch (err) {
     self.postMessage({ type: 'error', id, message: err.message ?? String(err), file: err.file ?? null, line: err.line ?? null, trace: err.trace ?? [] });
   }

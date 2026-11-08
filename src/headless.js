@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { init } from './engine.js';
 import { registerFont, FONTS } from './fonts.js';
 import { runScript } from './runner.js';
+import { existsSync as coreBuilt } from 'node:fs';
 import { Project, ENTRY, PROJECT_EXT, ACCEPTED_EXT, extOf, findImports, resolveImport, isScript, isTextFile } from './project.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -38,13 +39,29 @@ export const nodeEnv = {
   },
 };
 
+/**
+ * Which runtime builds: the lamassu core (default) or the JavaScript modelling layer
+ * (TEMENCAD_RUNTIME=js, or automatically when core/wasm/dist has not been built with `npm run core:wasm`).
+ */
+let coreRunner = null, runtimeNotice = false;
+export function selectedRuntime() {
+  if (process.env.TEMENCAD_RUNTIME === 'js') return 'js';
+  if (!coreBuilt(join(ROOT, 'core/wasm/dist/temencore.mjs'))) {
+    if (!runtimeNotice) { runtimeNotice = true; console.error('note: core/wasm/dist is not built (npm run core:wasm); using the JavaScript runtime'); }
+    return 'js';
+  }
+  return 'core';
+}
+
 /** Build a Project. Rejects with a ScriptError ({ message, file, line, trace }) on failure. */
 export async function buildProject(project, { onLog = () => {}, onWarn = () => {} } = {}) {
+  const post = (m) => { if (m.type === 'log') onLog(m.text); else if (m.type === 'warn') onWarn(m); };
+  if (selectedRuntime() === 'core') {
+    coreRunner ??= await import('./core-runner.js');
+    return coreRunner.runScriptCore(project.toFiles(), post);
+  }
   await initEngine();
-  return runScript(project.toFiles(), (m) => {
-    if (m.type === 'log') onLog(m.text);
-    else if (m.type === 'warn') onWarn(m);
-  }, nodeEnv);
+  return runScript(project.toFiles(), post, nodeEnv);
 }
 
 /** A project from a script on disk: the script becomes main.js and its imports are read relative to it, recursively. */

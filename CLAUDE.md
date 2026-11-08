@@ -20,7 +20,7 @@ The build prints `ECHO` lines from `echo()`, warnings with file and line, and er
 ## Repository map
 
 - `src/cad.js`, `src/sketch.js`, `src/shape.js`: the modelling API (3D, 2D, Shape class). `src/path.js` paths and `sweep()`; `src/fillet.js` edge fillets and chamfers; `src/image.js` images, `heightmap()` and `lithophane()`; `src/mesh.js` mesh-to-Manifold helpers.
-- `src/runner.js` runs a project (fonts, meshes and images are decoded first); `src/modules.js` turns project files into ES modules; `src/headless.js` is the Node entry used by the CLI and the catalogue build; `src/worker.js` the browser worker.
+- `src/core-runner.js` builds a project on the core (`core/wasm`), the default runtime in the worker and on the command line; `src/runner.js` + `src/modules.js` are the JavaScript fallback (`?runtime=js`, `TEMENCAD_RUNTIME=js`); `src/headless.js` is the Node entry used by the CLI and the catalogue build; `src/worker.js` the browser worker.
 - `src/main.js` wires the app; `src/tabs.js` file tabs; `src/chat.js` and `src/agent.js` the in-app assistant (its system prompt embeds the API reference); `src/completions.js` autocomplete.
 - `api.html` the reference; `README.md` the user guide; `src/default-script.js` the demo script that shows every feature.
 - `core/` the runtime as one C library (branch `lamassu-runtime`): lamassu-js runs the script, Manifold's C binding does the geometry, `core/src/prelude.js` defines the API on top of the `__cad` natives. `core/README.md` has the build, what works and the lamassu changes still needed. `third_party/lamassu-js` and `third_party/manifold` are git submodules (`git submodule update --init --recursive`).

@@ -19,9 +19,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.10
+      - run: git submodule update --init --recursive
+      - run: npm run core:wasm
           cache: npm
       - run: npm ci
       - run: npm run build

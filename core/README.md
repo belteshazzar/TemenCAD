@@ -126,6 +126,17 @@ halves it with an integer shift, which moved TrueType outlines by half a font un
 opentype.js. With the patch, text outlines agree with the app to the last digit. `npm run core:diff` says which test scripts the
 core already builds identically.
 
+## In the app
+
+`src/core-runner.js` wraps `core/wasm/index.js` behind the same `runScript` contract as the JavaScript
+runner. The worker (`src/worker.js`) starts the core beside the old engine and builds on the core
+unless a run asks for `runtime: 'js'` (the app reads `?runtime=js` or `localStorage.temencad.runtime`)
+or the core failed to start, in which case it warns and falls back. The command line
+(`src/headless.js`) does the same with `TEMENCAD_RUNTIME=js`, and falls back automatically when
+`core/wasm/dist` is missing. CI installs the Emscripten SDK and runs `npm run core:wasm` before the
+tests and the site build. Retiring `runner.js`, `modules.js` and the `manifold-3d` package is the
+step after this, once the fallback has had its time.
+
 ## Differential test
 
 `core/test/diff.mjs` builds every script under `test/` and the demo script with both the
