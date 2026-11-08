@@ -103,9 +103,8 @@ brightness can differ by a few 1/255. The image loops run in the prelude (test/i
 Each run gets a fresh engine context; Manifold objects are released in bulk after the run, as
 the browser app does with `releaseAll()`.
 
-Not yet:
-`shell`/`minkowski`/`roof`, images and mesh imports,
-printability. `npm run core:diff` says which test scripts the core already builds identically.
+Not yet: `shell`/`minkowski`/`roof` and printability. `npm run core:diff` says which test scripts the
+core already builds identically.
 
 ## Differential test
 
@@ -149,11 +148,15 @@ that seems right. The host currently includes two internal headers (`js_bytecode
    to LLVM libc's correctly-rounded functions, so about 2% of results still differ from Node by one
    ulp; bit-identical output with modern Node would need a correctly-rounded kernel, a separate
    project.
-8. **Number to string is not always the canonical shortest form.** For about 1% of doubles the
+8. **Function values take no properties.** `GrayImage.fromFunction = …` fails with "cannot create
+   property on a primitive value", so the app's statics on constructor functions (`Sketch.fromPoints`,
+   `GrayImage.fromRGBA`) cannot be written in the subset; the prelude keeps them as plain functions.
+   With classes out, properties on functions are the natural home for statics.
+9. **Number to string is not always the canonical shortest form.** For about 1% of doubles the
    printed digits differ from V8 in the last place while naming the same value
    (0.09983341664682816 for what V8 prints as 0.09983341664682815). Harmless for geometry; it
    shows in `echo()` text compared across runtimes.
-9. **Top-level `return` in the entry (nice to have).** main.js is wrapped in
+10. **Top-level `return` in the entry (nice to have).** main.js is wrapped in
    `export default async function main() {}` with imports hoisted onto line 1, as the browser app
    does, which costs a one-line offset in every location. A compile flag allowing a top-level
    `return` in a module would remove the wrapping.
