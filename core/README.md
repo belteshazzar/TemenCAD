@@ -83,7 +83,7 @@ builds a solid from raw triangles plus Manifold's polygon triangulation for caps
 Edge fillets and chamfers: `fillet`, `chamfer`, `sharpEdges`, the edge selectors ('all', 'top',
 'bottom', 'horizontal', 'vertical', 'convex', 'concave', lists, functions), concave-then-convex
 passes with mitred chains; the mesh is read through the `mesh` native and the edge walk stays in the
-prelude (test/fillet.js builds in 145 ms against 80 ms on V8).
+prelude (test/fillet.js builds in 117 ms against 83 ms on V8).
 
 Text: `text`, `text3d`, `emboss`, `engrave` on faces and anchors. Glyph outlines come from
 stb_truetype in `src/text.c` (TrueType and CFF, cmap, advances, GPOS/kern kerning), laid out like
@@ -97,8 +97,8 @@ stb_image reads, in `src/image.c`) gives a `GrayImage` with `at`, `sample`, `inv
 `normalize`, `blur`, `crop`, `resize`, `flip`; `heightmap` and `lithophane` build reliefs from an
 image or a function; `import part from './part.stl'` reads binary or ASCII STL, welded and turned
 Y-up. PNG decoding is exact, so reliefs match the app; JPEG decoders round differently, so JPEG
-brightness can differ by a few 1/255. The image loops run in the prelude (test/images builds in
-2.3 s against 1.0 s on V8); a C fast path for resize and blur is the obvious speed-up if needed.
+brightness can differ by a few 1/255. Resize, blur and the relief mesh run natively; test/images builds in
+0.45 s against 1.0 s on V8.
 
 Printability: `overhangs`, `unsupported` (islands and bridges by casting rays downward),
 `minWallThickness` (rays cast inward from an area-weighted sample of faces), `printability` with
@@ -111,11 +111,14 @@ batching of cone cutters as the app.
 Each run gets a fresh engine context; Manifold objects are released in bulk after the run, as
 the browser app does with `releaseAll()`.
 
-Every script under `test/` and the demo script now build identically on both runtimes
-(`npm run core:diff`: 12 ok, 0 differ, 0 unsupported). Slower on the interpreter where a script
-does heavy per-triangle work in JavaScript: test/print.js takes 1.6 s against 0.09 s on V8 (ray
-casting in `minWallThickness`), test/images 2.3 s against 1.0 s; natives for those loops are the
-next performance step if the app needs them.
+Every script under `test/` and the demo script build identically on both runtimes
+(`npm run core:diff`: 12 ok, 0 differ, 0 unsupported). The per-triangle and per-pixel loops that
+were slow on the interpreter now run natively with the same arithmetic: `solidFromTriangles`
+(consistent orientation, build, volume-sign flip, used by sweep, loft, fillet, polyhedron, STL
+import), `heightmapSolid`, `minWall`, `imageResize` and `imageBlur`. Timings against V8 today:
+images 0.45 s vs 1.0 s, print 0.11 s vs 0.09 s, sweep 0.19 s vs 0.24 s, the demo 0.23 s vs 0.25 s;
+the rest within a few tens of milliseconds. The JavaScript versions stay in `prelude.js` as
+`*Reference` functions, the readable statement of what the natives compute.
 
 Note on fonts: the vendored `stb_truetype.h` is patched to keep vertex coordinates as floats, so
 the implied on-curve point between two off-curve points is the exact midpoint. The stock header

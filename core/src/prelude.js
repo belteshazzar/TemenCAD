@@ -1174,16 +1174,9 @@ function orientConsistently(tris) {
   return out;
 }
 function manifoldFromTriangles(fn, positions, tris) {
-  const oriented = orientConsistently(tris);
-  let h;
-  try { h = cad.meshFromTriangles(positions, oriented); }
+  // orientation, build and the volume-sign flip run natively (solidFromTriangles); orientConsistently above is the reference
+  try { return cad.solidFromTriangles(positions, tris); }
   catch (err) { throw new Error(`${fn}: mesh is not a closed, manifold solid (${err.message}). Check that every edge is shared by exactly two faces.`); }
-  if (cad.volume(h) < 0) {
-    const flipped = [];
-    for (let i = 0; i < oriented.length; i += 3) flipped.push(oriented[i], oriented[i + 2], oriented[i + 1]);
-    h = cad.meshFromTriangles(positions, flipped);
-  }
-  return h;
 }
 /** A solid from points and faces (index lists, any winding). */
 function polyhedron(points, faces) {
@@ -1918,6 +1911,10 @@ G.normalize = function () {
 G.blur = function (radius = 1) {
   checkInt('blur', 'radius', radius, 0);
   if (radius === 0) return this;
+  return new GrayImage(this.width, this.height, cad.imageBlur(this.gray, this.width, this.height, radius));
+};
+/** The JavaScript reference for the blur native (kept for the record; not called). */
+G._blurReference = function (radius) {
   const w = this.width, h = this.height;
   const pass = (src) => {
     const tmp = [], out = [];
@@ -1953,10 +1950,7 @@ G.crop = function (x, y, w, h) {
 G.resize = function (width, height) {
   if (height === undefined) height = Math.max(1, Math.round((width * this.height) / this.width));
   checkInt('resize', 'width', width, 1); checkInt('resize', 'height', height, 1);
-  const gray = [];
-  const sx = this.width / width, sy = this.height / height;
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) gray.push(f32(this.sample((x + 0.5) * sx - 0.5, (y + 0.5) * sy - 0.5)));
-  return new GrayImage(width, height, gray);
+  return new GrayImage(width, height, cad.imageResize(this.gray, this.width, this.height, width, height));
 };
 G.flip = function (axis = 'x') {
   const w = this.width, h = this.height;
@@ -1998,6 +1992,10 @@ function heightmap(img, opts = {}) {
   if (gamma !== 1) image = image.gamma(gamma);
   if (invert) image = image.invert();
   const x0 = center ? -width / 2 : 0, z0 = center ? -depth / 2 : 0;
+  return new Shape(cad.heightmapSolid(image.gray, nx, nz, x0, z0, width, depth, base, height));
+}
+/** The JavaScript reference for the heightmapSolid native (kept for the record; not called). */
+function heightmapReference(image, nx, nz, x0, z0, width, depth, base, height) {
   const pos = [];
   const top = (i, j) => j * nx + i, bottom = (i, j) => nx * nz + j * nx + i;
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
@@ -2147,6 +2145,11 @@ function unsupported(s, opts = {}) {
 function minWallThickness(s, opts = {}) {
   const samples = opts.samples === undefined ? 600 : opts.samples;
   checkPositive('minWallThickness', 'samples', samples);
+  checkShape('minWallThickness', 'shape', s);
+  return cad.minWall(s.h, samples);
+}
+/** The JavaScript reference for the minWall native (kept for the record; not called). */
+function minWallThicknessReference(s, samples) {
   const m = meshOf('minWallThickness', s);
   const all = meshTriangles(m.positions, m.indices);
   let total = 0;

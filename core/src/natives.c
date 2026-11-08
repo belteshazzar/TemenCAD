@@ -527,6 +527,342 @@ static bool n_trim_by_plane(JsContext *ctx, JsValue this_val, const JsValue *arg
     return ret_handle(CORE(), manifold_trim_by_plane(mem(), m, NUM(1), NUM(2), NUM(3), NUM(4)), result);
 }
 
+/* ---- a solid from raw triangles, oriented consistently (mesh.js manifoldFromTriangles) ---- */
+
+/* Flip triangles so every shared edge is traversed in opposite directions (same walk as the JS). */
+static void orient_consistently(uint32_t *tri, size_t n) {
+    if (!n) return;
+    /* edge -> list of faces, via a hash table of undirected edges */
+    size_t cap = 1; while (cap < n * 6) cap <<= 1;
+    uint64_t *keys = malloc(cap * sizeof *keys);
+    int32_t *heads = malloc(cap * sizeof *heads);     /* first entry index per edge */
+    int32_t *next = malloc(n * 3 * sizeof *next);     /* entry -> next entry on the same edge */
+    int32_t *face = malloc(n * 3 * sizeof *face);     /* entry -> face */
+    uint8_t *visited = calloc(n, 1);
+    uint32_t *stack = malloc(n * sizeof *stack);
+    if (!keys || !heads || !next || !face || !visited || !stack) goto done;
+    for (size_t i = 0; i < cap; i++) heads[i] = -1;
+    size_t entries = 0;
+    for (size_t f = 0; f < n; f++) for (int k = 0; k < 3; k++) {
+        uint32_t a = tri[f * 3 + k], b = tri[f * 3 + (k + 1) % 3];
+        uint64_t key = a < b ? ((uint64_t)a << 32 | b) : ((uint64_t)b << 32 | a);
+        size_t s = (size_t)((key * 0x9E3779B97F4A7C15ull) >> 20) & (cap - 1);
+        while (heads[s] >= 0 && keys[s] != key) s = (s + 1) & (cap - 1);
+        keys[s] = key;
+        face[entries] = (int32_t)f; next[entries] = heads[s]; heads[s] = (int32_t)entries; entries++;
+    }
+    for (size_t seed = 0; seed < n; seed++) {
+        if (visited[seed]) continue;
+        visited[seed] = 1;
+        size_t sp = 0; stack[sp++] = (uint32_t)seed;
+        while (sp) {
+            uint32_t i = stack[--sp];
+            for (int k = 0; k < 3; k++) {
+                uint32_t a = tri[i * 3 + k], b = tri[i * 3 + (k + 1) % 3];
+                uint64_t key = a < b ? ((uint64_t)a << 32 | b) : ((uint64_t)b << 32 | a);
+                size_t s = (size_t)((key * 0x9E3779B97F4A7C15ull) >> 20) & (cap - 1);
+                while (heads[s] >= 0 && keys[s] != key) s = (s + 1) & (cap - 1);
+                for (int32_t e = heads[s]; e >= 0; e = next[e]) {
+                    uint32_t j = (uint32_t)face[e];
+                    if (j == i || visited[j]) continue;
+                    uint32_t *g = tri + j * 3;
+                    bool directed = (g[0] == a && g[1] == b) || (g[1] == a && g[2] == b) || (g[2] == a && g[0] == b);
+                    if (directed) { uint32_t t = g[1]; g[1] = g[2]; g[2] = t; }
+                    visited[j] = 1; stack[sp++] = j;
+                }
+            }
+        }
+    }
+done:
+    free(keys); free(heads); free(next); free(face); free(visited); free(stack);
+}
+
+static ManifoldManifold *build_solid(const float *pos, size_t nv, const uint32_t *tri, size_t nt, ManifoldError *status) {
+    ManifoldMeshGL *raw = manifold_meshgl(malloc(manifold_meshgl_size()), (float *)pos, nv, 3, (uint32_t *)tri, nt);
+    ManifoldMeshGL *merged = manifold_meshgl_merge(malloc(manifold_meshgl_size()), raw);
+    manifold_delete_meshgl(raw);
+    ManifoldManifold *m = manifold_of_meshgl(mem(), merged);
+    manifold_delete_meshgl(merged);
+    *status = manifold_status(m);
+    return m;
+}
+
+/* Oriented, built, and flipped when the volume comes out negative; throws "mesh status X" like meshFromTriangles. */
+static bool solid_from_arrays(JsContext *ctx, float *pos, size_t nv, uint32_t *tri, size_t nt, JsValue *result) {
+    TemenCore *core = CORE();
+    orient_consistently(tri, nt);
+    ManifoldError st;
+    ManifoldManifold *m = build_solid(pos, nv, tri, nt, &st);
+    if (st != MANIFOLD_NO_ERROR) {
+        char msg[128];
+        snprintf(msg, sizeof msg, "mesh status %s", (size_t)st < sizeof STATUS_NAMES / sizeof *STATUS_NAMES ? STATUS_NAMES[st] : "unknown");
+        manifold_delete_manifold(m);
+        THROW(temen_range_error(core, msg));
+    }
+    if (manifold_volume(m) < 0) {
+        manifold_delete_manifold(m);
+        for (size_t i = 0; i < nt; i++) { uint32_t t = tri[i * 3 + 1]; tri[i * 3 + 1] = tri[i * 3 + 2]; tri[i * 3 + 2] = t; }
+        m = build_solid(pos, nv, tri, nt, &st);
+    }
+    return ret_handle(core, m, result);
+}
+
+/* solidFromTriangles(positions[], tris[]) */
+static bool n_solid_from_triangles(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val;
+    TemenCore *core = CORE();
+    if (argc < 2 || !js_is_array(args[0]) || !js_is_array(args[1])) THROW(temen_type_error(core, "__cad.solidFromTriangles: expected two arrays"));
+    uint32_t np = js_array_length(args[0]), nt = js_array_length(args[1]);
+    if (np % 3 || nt % 3) THROW(temen_type_error(core, "__cad.solidFromTriangles: lengths must be multiples of 3"));
+    float *pos = malloc((np ? np : 1) * sizeof *pos);
+    uint32_t *tri = malloc((nt ? nt : 1) * sizeof *tri);
+    if (!pos || !tri) { free(pos); free(tri); THROW(temen_range_error(core, "out of memory")); }
+    for (uint32_t i = 0; i < np; i++) { JsValue v = js_array_get(args[0], i); if (!js_is_number(v)) { free(pos); free(tri); THROW(temen_type_error(core, "__cad.solidFromTriangles: positions must be numbers")); } pos[i] = (float)js_get_number(v); }
+    for (uint32_t i = 0; i < nt; i++) {
+        JsValue v = js_array_get(args[1], i);
+        double d = js_is_number(v) ? js_get_number(v) : -1;
+        if (d < 0 || d >= np / 3 || d != floor(d)) { free(pos); free(tri); THROW(temen_range_error(core, "__cad.solidFromTriangles: triangle index out of range")); }
+        tri[i] = (uint32_t)d;
+    }
+    bool ok = solid_from_arrays(ctx, pos, np / 3, tri, nt / 3, result);
+    free(pos); free(tri);
+    return ok;
+}
+
+/* heightmapSolid(gray[], nx, nz, x0, z0, width, depth, base, height): the relief plate of image.js heightmap() */
+static bool n_heightmap_solid(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val;
+    TemenCore *core = CORE();
+    if (argc < 9 || !js_is_array(args[0])) THROW(temen_type_error(core, "__cad.heightmapSolid: bad arguments"));
+    size_t nx = (size_t)NUM(1), nz = (size_t)NUM(2);
+    double x0 = NUM(3), z0 = NUM(4), width = NUM(5), depth = NUM(6), base = NUM(7), height = NUM(8);
+    if (nx < 2 || nz < 2 || js_array_length(args[0]) < nx * nz) THROW(temen_range_error(core, "__cad.heightmapSolid: grid too small"));
+    size_t nv = nx * nz * 2, nt = ((nx - 1) * (nz - 1) * 2 + (nx - 1) * 2 + (nz - 1) * 2) * 2;
+    float *pos = malloc(nv * 3 * sizeof *pos);
+    uint32_t *tri = malloc(nt * 3 * sizeof *tri);
+    if (!pos || !tri) { free(pos); free(tri); THROW(temen_range_error(core, "out of memory")); }
+    size_t p = 0;
+    for (size_t j = 0; j < nz; j++) for (size_t i = 0; i < nx; i++) {
+        JsValue gv = js_array_get(args[0], (uint32_t)(j * nx + i));
+        double v = js_is_number(gv) ? js_get_number(gv) : 0;
+        v = v < 0 ? 0 : v > 1 ? 1 : v;
+        pos[p++] = (float)(x0 + ((double)i / (double)(nx - 1)) * width);
+        pos[p++] = (float)(base + v * height);
+        pos[p++] = (float)(z0 + ((double)j / (double)(nz - 1)) * depth);
+    }
+    for (size_t j = 0; j < nz; j++) for (size_t i = 0; i < nx; i++) {
+        pos[p++] = (float)(x0 + ((double)i / (double)(nx - 1)) * width);
+        pos[p++] = 0.0f;
+        pos[p++] = (float)(z0 + ((double)j / (double)(nz - 1)) * depth);
+    }
+#define TOP(i, j) ((uint32_t)((j) * nx + (i)))
+#define BOT(i, j) ((uint32_t)(nx * nz + (j) * nx + (i)))
+    size_t t = 0;
+#define TRI(a, b, c) do { tri[t++] = (a); tri[t++] = (b); tri[t++] = (c); } while (0)
+    for (size_t j = 0; j < nz - 1; j++) for (size_t i = 0; i < nx - 1; i++) {
+        TRI(TOP(i, j), TOP(i, j + 1), TOP(i + 1, j + 1)); TRI(TOP(i, j), TOP(i + 1, j + 1), TOP(i + 1, j));
+        TRI(BOT(i, j), BOT(i + 1, j + 1), BOT(i, j + 1)); TRI(BOT(i, j), BOT(i + 1, j), BOT(i + 1, j + 1));
+    }
+    for (size_t i = 0; i < nx - 1; i++) {
+        TRI(TOP(i, 0), TOP(i + 1, 0), BOT(i + 1, 0)); TRI(TOP(i, 0), BOT(i + 1, 0), BOT(i, 0));
+        TRI(TOP(i, nz - 1), BOT(i + 1, nz - 1), TOP(i + 1, nz - 1)); TRI(TOP(i, nz - 1), BOT(i, nz - 1), BOT(i + 1, nz - 1));
+    }
+    for (size_t j = 0; j < nz - 1; j++) {
+        TRI(TOP(0, j), BOT(0, j + 1), TOP(0, j + 1)); TRI(TOP(0, j), BOT(0, j), BOT(0, j + 1));
+        TRI(TOP(nx - 1, j), TOP(nx - 1, j + 1), BOT(nx - 1, j + 1)); TRI(TOP(nx - 1, j), BOT(nx - 1, j + 1), BOT(nx - 1, j));
+    }
+#undef TRI
+#undef TOP
+#undef BOT
+    bool ok = solid_from_arrays(ctx, pos, nv, tri, t / 3, result);
+    free(pos); free(tri);
+    return ok;
+}
+
+/* ---- minWall(h, samples) -> { thickness, at }: print.js minWallThickness, the same arithmetic ---- */
+
+typedef struct { double a[3], b[3], c[3], n[3], area, centroid[3]; } Tri;
+
+static Tri *mesh_tris(ManifoldManifold *m, size_t *count) {
+    ManifoldMeshGL *mesh = manifold_get_meshgl(malloc(manifold_meshgl_size()), m);
+    size_t nprop = manifold_meshgl_num_prop(mesh), nt = manifold_meshgl_num_tri(mesh);
+    float *props = malloc((manifold_meshgl_vert_properties_length(mesh) + 1) * sizeof(float));
+    uint32_t *tv = malloc((manifold_meshgl_tri_length(mesh) + 1) * sizeof(uint32_t));
+    Tri *out = malloc((nt + 1) * sizeof *out);
+    *count = 0;
+    if (props && tv && out) {
+        manifold_meshgl_vert_properties(props, mesh);
+        manifold_meshgl_tri_verts(tv, mesh);
+        for (size_t t = 0; t < nt; t++) {
+            Tri *o = &out[*count];
+            for (int k = 0; k < 3; k++) { o->a[k] = props[tv[t * 3] * nprop + k]; o->b[k] = props[tv[t * 3 + 1] * nprop + k]; o->c[k] = props[tv[t * 3 + 2] * nprop + k]; }
+            double e1[3] = { o->b[0] - o->a[0], o->b[1] - o->a[1], o->b[2] - o->a[2] }, e2[3] = { o->c[0] - o->a[0], o->c[1] - o->a[1], o->c[2] - o->a[2] };
+            double cr[3] = { e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0] };
+            double l = hypot(hypot(cr[0], cr[1]), cr[2]); /* Math.hypot(x, y, z) == hypot(hypot(x, y), z) in V8 and lamassu */
+            if (l < 1e-12) continue;
+            for (int k = 0; k < 3; k++) { o->n[k] = cr[k] / l; o->centroid[k] = (o->a[k] + o->b[k] + o->c[k]) / 3; }
+            o->area = l / 2;
+            (*count)++;
+        }
+    } else { free(out); out = NULL; }
+    free(props); free(tv); manifold_delete_meshgl(mesh);
+    return out;
+}
+
+static double ray_distance(const double *o, const double *d, const Tri *tris, size_t n, double skip) {
+    double best = INFINITY;
+    for (size_t i = 0; i < n; i++) {
+        const Tri *t = &tris[i];
+        double e1[3] = { t->b[0] - t->a[0], t->b[1] - t->a[1], t->b[2] - t->a[2] }, e2[3] = { t->c[0] - t->a[0], t->c[1] - t->a[1], t->c[2] - t->a[2] };
+        double p[3] = { d[1] * e2[2] - d[2] * e2[1], d[2] * e2[0] - d[0] * e2[2], d[0] * e2[1] - d[1] * e2[0] };
+        double det = e1[0] * p[0] + e1[1] * p[1] + e1[2] * p[2];
+        if (fabs(det) < 1e-12) continue;
+        double inv = 1 / det, s[3] = { o[0] - t->a[0], o[1] - t->a[1], o[2] - t->a[2] };
+        double u = (s[0] * p[0] + s[1] * p[1] + s[2] * p[2]) * inv; if (u < -1e-9 || u > 1 + 1e-9) continue;
+        double q[3] = { s[1] * e1[2] - s[2] * e1[1], s[2] * e1[0] - s[0] * e1[2], s[0] * e1[1] - s[1] * e1[0] };
+        double v = (d[0] * q[0] + d[1] * q[1] + d[2] * q[2]) * inv; if (v < -1e-9 || u + v > 1 + 1e-9) continue;
+        double dist = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) * inv;
+        if (dist > skip && dist < best) best = dist;
+    }
+    return best;
+}
+
+static bool n_min_wall(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val;
+    TemenCore *core = CORE();
+    ManifoldManifold *m = SHAPE(0);
+    double samples = NUM(1);
+    size_t n;
+    Tri *all = mesh_tris(m, &n);
+    if (!all) THROW(temen_range_error(core, "out of memory"));
+    double total = 0;
+    for (size_t i = 0; i < n; i++) total += all[i].area;
+    double min_area = fmin(0.02, total / 1e5);
+    size_t nf = 0;
+    const Tri **faces = malloc((n + 1) * sizeof *faces);
+    const Tri **picked = malloc((n + (size_t)samples + 2) * sizeof *picked);
+    if (!faces || !picked) { free(all); free(faces); free(picked); THROW(temen_range_error(core, "out of memory")); }
+    for (size_t i = 0; i < n; i++) if (all[i].area >= min_area) faces[nf++] = &all[i];
+    size_t np = 0;
+    if ((double)nf <= samples) { for (size_t i = 0; i < nf; i++) picked[np++] = faces[i]; }
+    else {
+        double per = samples / total, acc = 0;
+        for (size_t i = 0; i < nf; i++) { acc += faces[i]->area * per; while (acc >= 1 && (double)np < samples) { acc -= 1; picked[np++] = faces[i]; } }
+        size_t step = (size_t)ceil((double)nf / samples);
+        for (size_t i = 0; (double)np < samples && i < nf; i += step) picked[np++] = faces[i];
+    }
+    double best = INFINITY; const double *at = NULL;
+    for (size_t i = 0; i < np; i++) {
+        const Tri *t = picked[i];
+        double d[3] = { -t->n[0], -t->n[1], -t->n[2] };
+        double dist = ray_distance(t->centroid, d, all, n, 0.05);
+        if (dist < best) { best = dist; at = t->centroid; }
+    }
+    JsValue obj = js_object_new(ctx);
+    bool ok = !js_is_undefined(obj);
+    js_gc_protect(core->vm, &obj);
+    if (ok) ok = js_object_set(core->vm, obj, temen_atom(core, "thickness"), js_number(best));
+    if (ok) {
+        if (at) {
+            JsValue arr = js_array_new(ctx, 3);
+            ok = !js_is_undefined(arr);
+            js_gc_protect(core->vm, &arr);
+            for (int k = 0; k < 3 && ok; k++) ok = js_array_push(core->vm, arr, js_number(at[k]));
+            if (ok) ok = js_object_set(core->vm, obj, temen_atom(core, "at"), arr);
+            js_gc_unprotect(core->vm, &arr);
+        } else ok = js_object_set(core->vm, obj, temen_atom(core, "at"), js_null());
+    }
+    js_gc_unprotect(core->vm, &obj);
+    free(all); free(faces); free(picked);
+    if (!ok) THROW(temen_range_error(core, "out of memory"));
+    *result = obj;
+    return true;
+}
+
+/* ---- images: imageResize(gray, w, h, nw, nh) and imageBlur(gray, w, h, radius), float32 storage like the app ---- */
+
+static float *read_gray(JsContext *ctx, JsValue arr, size_t n, JsValue *result) {
+    TemenCore *core = CORE();
+    if (!js_is_array(arr) || js_array_length(arr) < n) { *result = temen_type_error(core, "__cad: image data too short"); return NULL; }
+    float *g = malloc((n ? n : 1) * sizeof *g);
+    if (!g) { *result = temen_range_error(core, "out of memory"); return NULL; }
+    for (size_t i = 0; i < n; i++) { JsValue v = js_array_get(arr, (uint32_t)i); g[i] = (float)(js_is_number(v) ? js_get_number(v) : 0); }
+    return g;
+}
+static bool gray_to_js(JsContext *ctx, const float *g, size_t n, JsValue *result) {
+    TemenCore *core = CORE();
+    JsValue arr = js_array_new(ctx, (uint32_t)n);
+    if (js_is_undefined(arr)) THROW(temen_range_error(core, "out of memory"));
+    js_gc_protect(core->vm, &arr);
+    bool ok = true;
+    for (size_t i = 0; i < n && ok; i++) ok = js_array_push(core->vm, arr, js_number(g[i]));
+    js_gc_unprotect(core->vm, &arr);
+    if (!ok) THROW(temen_range_error(core, "out of memory"));
+    *result = arr;
+    return true;
+}
+static double gray_at(const float *g, long w, long h, long x, long y) {
+    x = x < 0 ? 0 : x > w - 1 ? w - 1 : x; y = y < 0 ? 0 : y > h - 1 ? h - 1 : y;
+    return g[y * w + x];
+}
+static bool n_image_resize(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val;
+    long w = (long)NUM(1), h = (long)NUM(2), nw = (long)NUM(3), nh = (long)NUM(4);
+    if (w < 1 || h < 1 || nw < 1 || nh < 1) THROW(temen_range_error(CORE(), "__cad.imageResize: bad size"));
+    float *g = read_gray(ctx, argc > 0 ? args[0] : js_undefined(), (size_t)(w * h), result);
+    if (!g) return false;
+    float *out = malloc((size_t)(nw * nh) * sizeof *out);
+    if (!out) { free(g); THROW(temen_range_error(CORE(), "out of memory")); }
+    double sx = (double)w / nw, sy = (double)h / nh;
+    for (long y = 0; y < nh; y++) for (long x = 0; x < nw; x++) {
+        double px = (x + 0.5) * sx - 0.5, py = (y + 0.5) * sy - 0.5;
+        double x0 = floor(px), y0 = floor(py), fx = px - x0, fy = py - y0;
+        double a = gray_at(g, w, h, (long)x0, (long)y0), b = gray_at(g, w, h, (long)x0 + 1, (long)y0), c = gray_at(g, w, h, (long)x0, (long)y0 + 1), d = gray_at(g, w, h, (long)x0 + 1, (long)y0 + 1);
+        out[y * nw + x] = (float)((a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy);
+    }
+    bool ok = gray_to_js(ctx, out, (size_t)(nw * nh), result);
+    free(g); free(out);
+    return ok;
+}
+static bool n_image_blur(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val;
+    long w = (long)NUM(1), h = (long)NUM(2), radius = (long)NUM(3);
+    if (w < 1 || h < 1 || radius < 1) THROW(temen_range_error(CORE(), "__cad.imageBlur: bad size"));
+    size_t n = (size_t)(w * h);
+    float *src = read_gray(ctx, argc > 0 ? args[0] : js_undefined(), n, result);
+    if (!src) return false;
+    float *tmp = malloc(n * sizeof *tmp), *out = malloc(n * sizeof *out);
+    if (!tmp || !out) { free(src); free(tmp); free(out); THROW(temen_range_error(CORE(), "out of memory")); }
+    double nn = 2 * radius + 1;
+    for (int pass = 0; pass < 2; pass++) {
+        const float *in = pass == 0 ? src : out;
+        for (long y = 0; y < h; y++) {
+            double acc = 0;
+            for (long k = -radius; k <= radius; k++) acc += in[y * w + (k < 0 ? 0 : k > w - 1 ? w - 1 : k)];
+            for (long x = 0; x < w; x++) {
+                tmp[y * w + x] = (float)(acc / nn);
+                long xr = x + radius + 1; if (xr > w - 1) xr = w - 1;
+                long xl = x - radius; if (xl < 0) xl = 0;
+                acc += in[y * w + xr] - in[y * w + xl];
+            }
+        }
+        float *dst = pass == 0 ? out : src; /* second pass writes back into src's buffer */
+        for (long x = 0; x < w; x++) {
+            double acc = 0;
+            for (long k = -radius; k <= radius; k++) acc += tmp[(k < 0 ? 0 : k > h - 1 ? h - 1 : k) * w + x];
+            for (long y = 0; y < h; y++) {
+                dst[y * w + x] = (float)(acc / nn);
+                long yd = y + radius + 1; if (yd > h - 1) yd = h - 1;
+                long yu = y - radius; if (yu < 0) yu = 0;
+                acc += tmp[yd * w + x] - tmp[yu * w + x];
+            }
+        }
+    }
+    bool ok = gray_to_js(ctx, src, n, result);
+    free(src); free(tmp); free(out);
+    return ok;
+}
+
 /* ------------------------------------------------------- transforms */
 
 static bool n_translate(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
@@ -652,6 +988,8 @@ static const Entry ENTRIES[] = {
     { "boolean", n_boolean }, { "batch", n_batch }, { "hull", n_hull }, { "hullPoints", n_hull_points },
     { "translate", n_translate }, { "rotate", n_rotate }, { "scale", n_scale }, { "mirror", n_mirror },
     { "minGap", n_min_gap }, { "annotate", n_annotate },
+    { "solidFromTriangles", n_solid_from_triangles }, { "heightmapSolid", n_heightmap_solid }, { "minWall", n_min_wall },
+    { "imageResize", n_image_resize }, { "imageBlur", n_image_blur },
     { "minkowskiSum", n_minkowski_sum }, { "minkowskiDifference", n_minkowski_difference }, { "trimByPlane", n_trim_by_plane }, { "meshFromTriangles", n_mesh_from_triangles }, { "triangulate", n_triangulate }, { "mesh", n_mesh },
     { "volume", n_volume }, { "area", n_area }, { "isEmpty", n_is_empty }, { "numTri", n_num_tri }, { "bounds", n_bounds },
     { "log", n_log }, { "warn", n_warn }, { "where", n_where },
