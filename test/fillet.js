@@ -27,6 +27,6 @@ const cv = cylinder(10, 20, { segments: 48 }).volume(); echo('cylinder removed',
 // 7. function filter, chamfer method on a prism, global forms, sketch pass-through
 const c7 = prism(6, 10, 10).chamfer(1.5, { edges: (e) => e.nA[1] > 0.9 || e.nB[1] > 0.9 });
 assert(c7.volume() < prism(6, 10, 10).volume(), 'fn filter');
-assert(fillet(rect(10, 10), 2) instanceof Object, 'sketch fillet via global');
+assert(typeof fillet(rect(10, 10), 2) === 'object', 'sketch fillet via global');
 echo('edges on box', sharpEdges(box(10)).length);
 return { c1: c1.translate(-60, 0, -40), c2: c2.translate(0, 0, -40), c3: c3.translate(60, 0, -40), c4: c4.translate(-60, 0, 10), c5: c5.translate(0, 0, 10), L: L.translate(45, 0, 0), cyl: cyl.translate(-60, 0, 60), c7: c7.translate(0, 0, 60) };

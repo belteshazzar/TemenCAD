@@ -22,6 +22,10 @@ Run `npx temencad api --list` (in this repository: `node bin/temencad.mjs api`) 
 5. For a folder of models, `npx temencad test folder/ --check` builds them all and fails on any error, failed assert or printability problem; `--json` for tooling.
 6. Export STL for single-material prints or `-o model.3mf` for named, coloured parts.
 
+## The language is a JavaScript subset
+
+Scripts run on TemenCAD's own engine in every host (browser, CLI, phone), which executes strict-mode ES modules in a subset of JavaScript. `npx temencad api language` prints it. Use `let`/`const`, functions and arrows, closures, object and array literals, destructuring, spread, template literals, `for...of`, `switch`, `try`/`catch`, regular expressions, `async`/`await`, `import`/`export`, and the `Math`, `JSON`, `Array`, `String`, `Object`, `Map` and `Set` builtins. Do **not** use `class`, `var`, `for...in`, generators, `eval`/`new Function`, `Proxy`, `Reflect`, `Symbol`, typed arrays/`ArrayBuffer`, `Intl`, `with`, labels, `__proto__`, `instanceof` (a syntax error), `flatMap` or `Array.from({ length: n })`. Build arrays with a counted `for` loop and `push`, or map an existing array. Group helpers as plain functions or object literals rather than classes.
+
 ## Conventions that avoid most mistakes
 
 - Put parts on the plate with `.onPlate()`. Sketches live on the ground plane: sketch x is world X, sketch y is world −Z, `extrude` goes up Y.

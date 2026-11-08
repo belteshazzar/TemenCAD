@@ -1,6 +1,6 @@
 # TemenCAD
 
-A code-driven 3D modelling playground for 3D printing. Write JavaScript on the left, see the model on the right.
+A code-driven 3D modelling playground for 3D printing. Write JavaScript on the left, see the model on the right. Scripts are strict-mode ES modules in a JavaScript subset (no classes, `var`, `for...in`, `instanceof`, generators, `eval`, `Proxy`, `Symbol` or typed arrays) so the same script runs in the browser, on the command line and on a phone; `npx temencad api language` lists it.
 
 ## Why "Temen"?
 

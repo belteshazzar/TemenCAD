@@ -26,7 +26,7 @@
       <aside class="toc" aria-label="Sections"><div class="toc-title">On this page</div><ol id="toc"></ol></aside>
     <main class="api">
 <h2>TemenCAD API</h2>
-      <p class="lead">Your script is JavaScript. Return a shape (or an array of shapes), or call <code>show(shape)</code>. Units are millimetres, Y is up, the build plate is y&nbsp;=&nbsp;0. Every operation returns a new shape; nothing is mutated.</p>
+      <p class="lead">Your script is JavaScript (a strict subset; see <em>Script language</em> at the end). Return a shape (or an array of shapes), or call <code>show(shape)</code>. Units are millimetres, Y is up, the build plate is y&nbsp;=&nbsp;0. Every operation returns a new shape; nothing is mutated.</p>
       <h3>3D primitives</h3>
       <pre>box(w, h, d)                                      // box centred on the origin; box(10) is a cube
 cone(r, h)                                        // cone along Y with base radius r
@@ -269,6 +269,17 @@ echo(...values)                                   // OpenSCAD-style output with 
 log(...values)                                    // print to the console
 Math.*                                            // the usual JavaScript maths
 rad(degrees)                                      // degrees to radians</pre>
+      <h3>Script language</h3>
+      <p>Scripts are strict-mode ES modules in a JavaScript subset that every TemenCAD host runs (browser, command line, phone). Stay within it:</p>
+      <pre>// Use: let / const, functions and arrows (default and rest parameters), closures,
+//      object and array literals, destructuring, spread, template literals,
+//      if / for / for...of / while / do / switch, try / catch / finally, regular expressions,
+//      async / await (top-level await too), import / export, Math, JSON, Array, String, Object, Map, Set.
+// Not available: class, var, for...in, generators (function* / yield), eval and new Function,
+//      Proxy, Reflect, Symbol, typed arrays and ArrayBuffer, Intl, with, labels, __proto__,
+//      instanceof (a syntax error), flatMap, Array.from({ length: n }) and holes (Array(n)).
+// Build arrays with a counted for loop and push(), or map an existing array.
+// Group helpers as plain functions or object literals instead of classes.</pre>
       <p class="muted">Geometry kernel: <a href="https://github.com/elalish/manifold" target="_blank" rel="noopener">Manifold</a> (C++ via WebAssembly). All output is watertight.</p>
       <p class="muted">Units are millimetres, Y is up, the build plate is y = 0. Every operation returns a new shape; nothing is mutated.</p>
     </main>

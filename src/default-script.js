@@ -51,10 +51,12 @@ place(extrude(plate2d, 3), -60, -5, '#8fe3a8');
 place(extrude(rect(10, 10), 18, { twist: 90, scale: 0.4 }), -35, -5, '#8fe3a8');
 
 // star outline from polygon2d, extruded
-const star = polygon2d(Array.from({ length: 10 }, (_, k) => {
+const starPoints = [];
+for (let k = 0; k < 10; k++) {
   const a = (k / 10) * Math.PI * 2, r = k % 2 ? 4 : 9;
-  return [Math.cos(a) * r, Math.sin(a) * r];
-}));
+  starPoints.push([Math.cos(a) * r, Math.sin(a) * r]);
+}
+const star = polygon2d(starPoints);
 place(extrude(star, 4), -10, -5, '#8fe3a8');
 
 // 5b. Draw a profile like a pen: lines, a tangent arc, a per-corner fillet; close() gives a sketch
