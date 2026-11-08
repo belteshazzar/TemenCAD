@@ -658,6 +658,7 @@ bool temen_install_cad(TemenCore *core) {
         core->slot_a = fn;
         if (!js_object_set(core->vm, core->cad_ns, temen_atom(core, ENTRIES[i].name), fn)) return false;
     }
+    if (!temen_install_text(core, core->cad_ns)) return false;
     core->slot_a = js_undefined();
     return js_object_set(core->vm, js_context_globals(core->ctx), temen_atom(core, "__cad"), core->cad_ns);
 }

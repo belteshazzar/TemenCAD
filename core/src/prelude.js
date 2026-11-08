@@ -552,6 +552,33 @@ function slot(length = 2, r = 0.5, opts = {}) {
   return hull2d(circle(r, { segments }).translate(-length / 2, 0), circle(r, { segments }).translate(length / 2, 0));
 }
 
+// ---- text (sketch.js + fonts.js): outlines come from the fonts natively ----------------------
+
+const DEFAULT_FONT = 'Inter';
+/** Text as a 2D sketch, baseline on y = 0, starting at x = 0. opts: { size=10, font, align, letterSpacing=0, kerning=true, curveSegments=8 } */
+function text(str, opts = {}) {
+  if (typeof str !== 'string') throw new TypeError(`text: first argument must be a string, got ${describe(str)}`);
+  const size = opts.size === undefined ? 10 : opts.size;
+  const font = opts.font === undefined ? DEFAULT_FONT : opts.font;
+  const align = opts.align === undefined ? 'left' : opts.align;
+  const letterSpacing = opts.letterSpacing === undefined ? 0 : opts.letterSpacing;
+  const kerning = opts.kerning === undefined ? true : opts.kerning;
+  const curveSegments = opts.curveSegments === undefined ? 8 : opts.curveSegments;
+  if (opts.size !== undefined) checkPositive('text', 'size', size);
+  if (align !== 'left' && align !== 'center' && align !== 'right') throw new TypeError(`text: align must be 'left', 'center' or 'right', got ${describe(align)}`);
+  const out = cad.textOutlines(str, String(font), size, align === 'center' ? 1 : align === 'right' ? 2 : 0, letterSpacing, kerning ? 1 : 0, curveSegments);
+  // Font contours use non-zero winding (holes run the opposite way).
+  return sketchFromRings(out.rings, FILL.nonZero);
+}
+/** Text extruded to `height` (mm). Same opts as text(), plus { height=1 }. */
+function text3d(str, opts = {}) {
+  const height = opts.height === undefined ? 1 : opts.height;
+  checkPositive('text3d', 'height', height);
+  const textOpts = Object.assign({}, opts);
+  delete textOpts.height;
+  return extrude(text(str, textOpts), height);
+}
+
 // ---- 3D <-> 2D
 
 /** Flatten a solid onto the ground plane: its footprint, or with { cut: y } the section at that height. */
@@ -1808,6 +1835,51 @@ const chamfer = (shape, d, opts) => (isShape(shape) ? filletEdges('chamfer', sha
 P.fillet = function (r, opts) { return filletEdges('fillet', this, r, opts); };
 P.chamfer = function (d, opts) { return filletEdges('chamfer', this, d, opts); };
 
+// ---- lettering on a face (emboss.js) ---------------------------------------------------------
+//
+// The sketch is laid on the face so it reads correctly from outside: on top as a drawing seen from
+// above; on the sides upright with x to the viewer's right; on the bottom seen from below.
+
+const LAY = { top: [0, 0, 0], bottom: [180, 0, 0], front: [90, 0, 0], back: [90, 180, 0], right: [90, 90, 0], left: [90, -90, 0] };
+const LETTER_OVERLAP = 0.01;
+function toLetterSketch(fn, what, opts) {
+  if (isSketch(what)) return what;
+  if (typeof what === 'string') return text(what, { size: opts.size === undefined ? 6 : opts.size, font: opts.font, align: opts.align === undefined ? 'center' : opts.align });
+  throw new TypeError(`${fn}: expected a 2D sketch or a string, got ${describe(what)}`);
+}
+/** The solid of the lettering, placed on the target: from -below to +above along the normal. */
+function lettering(fn, what, target, opts, below, above) {
+  const depth = opts.depth === undefined ? 1 : opts.depth;
+  const at = opts.at === undefined ? [0, 0] : opts.at;
+  const angle = opts.angle === undefined ? 0 : opts.angle;
+  const center = opts.center === undefined ? true : opts.center;
+  checkPositive(fn, 'depth', depth); checkNumber(fn, 'angle', angle);
+  let sk = toLetterSketch(fn, what, opts);
+  if (center) sk = sk.center();
+  if (angle) sk = sk.rotate(angle);
+  let solid = extrude(sk, below + above).translate(0, -below, 0);
+  let point, rot;
+  if (isFace(target)) { rot = LAY[target.name]; point = target.point(at); }
+  else if (isAnchor(target)) { rot = rotationToward(target.normal === null ? [0, 1, 0] : target.normal); point = target.point.map((v, k) => v + (Array.isArray(at) && at.length === 3 ? at[k] : 0)); }
+  else throw new TypeError(`${fn}: expected a face (shape.face('top')) or an anchor, got ${describe(target)}`);
+  if (rot[0] || rot[1] || rot[2]) solid = solid.rotate(rot[0], rot[1], rot[2]);
+  return solid.translate(point[0], point[1], point[2]);
+}
+/** Raise a sketch or text out of a face by depth. */
+function emboss(shape, what, target, opts = {}) {
+  if (!isShape(shape)) throw new TypeError(`emboss: expected a Shape, got ${describe(shape)}`);
+  const d = opts.depth === undefined ? 1 : opts.depth;
+  return shape.add(lettering('emboss', what, target, Object.assign({}, opts, { depth: d }), LETTER_OVERLAP, d));
+}
+/** Cut a sketch or text into a face by depth. */
+function engrave(shape, what, target, opts = {}) {
+  if (!isShape(shape)) throw new TypeError(`engrave: expected a Shape, got ${describe(shape)}`);
+  const d = opts.depth === undefined ? 1 : opts.depth;
+  return shape.subtract(lettering('engrave', what, target, Object.assign({}, opts, { depth: d }), d, LETTER_OVERLAP));
+}
+P.emboss = function (what, target, opts) { return emboss(this, what, target, opts); };
+P.engrave = function (what, target, opts) { return engrave(this, what, target, opts); };
+
 // ---- helpers --------------------------------------------------------------------
 
 const deg = (radians) => (radians * 180) / Math.PI;
@@ -1907,7 +1979,7 @@ export const api = {
   Shape, box, cube, sphere, cylinder, cone, roundedBox, torus, polygon, prism, resize,
   union, difference, intersect, hull, linearArray, polarArray, grid,
   Sketch, circle, ellipse, rect, square, roundedRect, regularPolygon, polygon2d, slot, teardrop, bridgedCircle,
-  union2d, difference2d, intersect2d, hull2d, extrude, revolve, projection, sketch, SketchBuilder,
+  union2d, difference2d, intersect2d, hull2d, extrude, revolve, projection, sketch, SketchBuilder, text, text3d, emboss, engrave,
   SCREWS, screw, screwHole, nutPocket, heatInsert, hole,
   Path, path, line, arc, helix, bezier, sweep, polyhedron, loft, fillet, chamfer, sharpEdges,
   Face, distance, rectPattern, gridPattern, intersects, interference, overlap, clearance, dimension, mark,

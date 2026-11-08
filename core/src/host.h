@@ -23,6 +23,17 @@ typedef struct TemenHostFile {
     int user_lines;    /* lines in the file as the user wrote it; a position in the wrapper's tail maps to the last one */
 } TemenHostFile;
 
+/* A font the runtime can draw text with: bundled (embedded at build) or a project file (for one run). */
+typedef struct TemenFont {
+    char *name;
+    char key[256];        /* normalised name: lower case, no spaces/hyphens/underscores */
+    const uint8_t *data;
+    size_t len;
+    bool project;
+    bool parsed;
+    void *info;           /* stbtt_fontinfo, lazily parsed */
+} TemenFont;
+
 typedef struct TemenMessage {
     TemenMessageKind kind;
     char *text;
@@ -54,6 +65,8 @@ struct TemenCore {
     /* results */
     TemenPart *parts;
     size_t n_parts, cap_parts;
+    TemenFont *fonts;
+    size_t n_fonts, cap_fonts;
     TemenProfile profile;
     char **annotations;      /* JSON records from dimension() and mark(), in order */
     size_t n_annotations, cap_annotations;
@@ -74,10 +87,18 @@ JsValue temen_atom(TemenCore *core, const char *ascii);
 JsValue temen_string(TemenCore *core, const char *utf8, size_t len);
 JsValue temen_type_error(TemenCore *core, const char *msg);      /* a TypeError value to throw */
 JsValue temen_range_error(TemenCore *core, const char *msg);
+JsValue temen_plain_error(TemenCore *core, const char *msg);           /* a plain Error */
+#define error_plain temen_plain_error
 /* The innermost frame that lies in a project file: its name (owned by the core) and 1-based line. */
 bool temen_locate(TemenCore *core, const JsStackFrame *frames, size_t n, const char **file, int *line);
 /* Where the running script is right now (for a native: its caller's line in the user's file). */
 bool temen_where(TemenCore *core, const char **file, int *line);
+
+/* text.c */
+bool temen_fonts_init(TemenCore *core);
+void temen_fonts_set_project(TemenCore *core, const TemenHostFile *files, size_t n_files);
+void temen_fonts_free(TemenCore *core);
+bool temen_install_text(TemenCore *core, JsValue ns);
 
 /* natives.c */
 bool temen_install_cad(TemenCore *core);                        /* creates __cad on the globals */

@@ -112,6 +112,14 @@ static JsValue error_of_kind(TemenCore *core, JsErrorKind kind, const char *msg)
 }
 JsValue temen_type_error(TemenCore *core, const char *msg) { return error_of_kind(core, JS_ERROR_TYPE, msg); }
 JsValue temen_range_error(TemenCore *core, const char *msg) { return error_of_kind(core, JS_ERROR_RANGE, msg); }
+JsValue temen_plain_error(TemenCore *core, const char *msg) {
+    /* js_error_from_ascii caps at 128 chars; longer messages (font lists) go through a real string */
+    size_t n = strlen(msg);
+    if (n < 128) return error_of_kind(core, JS_ERROR_PLAIN, msg);
+    JsValue s = temen_string(core, msg, n);
+    if (!js_is_string(s)) return js_undefined();
+    return js_error_new(core->ctx, JS_ERROR_PLAIN, js_value_string(s));
+}
 
 /* --------------------------------------------------------------- messages */
 
@@ -418,6 +426,7 @@ TemenCore *temen_new(void) {
     js_gc_protect(core->vm, &core->slot_a);
     js_gc_protect(core->vm, &core->slot_b);
     js_gc_protect(core->vm, &core->slot_c);
+    if (!temen_fonts_init(core)) { temen_free(core); return NULL; }
     if (!fresh_context(core)) {
         if (core->error) fprintf(stderr, "temencore: %s\n", core->error);
         temen_free(core);
@@ -446,6 +455,7 @@ void temen_free(TemenCore *core) {
     free(core->parts);
     free_files(core);
     temen_handles_release(core);
+    temen_fonts_free(core);
     free(core->objs);
     free(core->cs);
     for (size_t i = 0; i < core->n_annotations; i++) free(core->annotations[i]);
@@ -572,6 +582,7 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
         core->files[i].len = files[i].len;
     }
     core->n_files = n_files;
+    temen_fonts_set_project(core, core->files, core->n_files);
     if (!find_file(core, ENTRY)) { set_error(core, "The project has no " ENTRY, NULL, 0); return 1; }
 
     if (!fresh_context(core)) return 2;

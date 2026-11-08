@@ -85,10 +85,17 @@ Edge fillets and chamfers: `fillet`, `chamfer`, `sharpEdges`, the edge selectors
 passes with mitred chains; the mesh is read through the `mesh` native and the edge walk stays in the
 prelude (test/fillet.js builds in 145 ms against 80 ms on V8).
 
+Text: `text`, `text3d`, `emboss`, `engrave` on faces and anchors. Glyph outlines come from
+stb_truetype in `src/text.c` (TrueType and CFF, cmap, advances, GPOS/kern kerning), laid out like
+opentype.js (advance, kerning, letterSpacing * size, alignment) and flattened with `curveSegments`
+points per curve. The five bundled fonts are embedded at build time; a project's `.ttf`/`.otf`
+files are registered for the run and named by their path, as in the app. Not covered: GSUB
+ligatures, which opentype.js applies to Latin text by default, so "fi" stays two glyphs here.
+
 Each run gets a fresh engine context; Manifold objects are released in bulk after the run, as
 the browser app does with `releaseAll()`.
 
-Not yet: `text`/`text3d`/`emboss`/`engrave` (fonts),
+Not yet:
 `shell`/`minkowski`/`roof`, images and mesh imports,
 printability. `npm run core:diff` says which test scripts the core already builds identically.
 

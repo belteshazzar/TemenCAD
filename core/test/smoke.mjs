@@ -205,6 +205,32 @@ if (r.ok) {
   check('a box has 12 sharp edges, an 8-gon cylinder 24 (two rings and eight 45-degree facets)', m && +m[2] === 12 && +m[3] === 24, t);
 }
 
+// 4g. text and lettering
+r = rt.run({ 'main.js': `
+  const t = text('TemenCAD', { size: 10 });
+  const b = t.bounds();
+  echo('text', b.size[0] > 30 && b.size[0] < 60, b.min[1] < 0.5 && b.min[1] > -3, b.max[1] > 6 && b.max[1] < 8.5, t.area() > 50);
+  const c = text('ii', { size: 10, align: 'center' }).bounds();
+  echo('centered', Math.abs(c.center[0]) < 0.6);
+  const blk = box(40, 20, 30).onPlate();
+  const L = polygon2d([[0, 0], [6, 0], [6, 2], [2, 2], [2, 8], [0, 8]]);
+  echo('emboss', blk.emboss(L, blk.face('top'), { depth: 1.5 }).volume() - blk.volume(), blk.volume() - blk.engrave(L, blk.face('top'), { depth: 1.5 }).volume());
+  let threw = ''; try { text('x', { font: 'Comic' }); } catch (e) { threw = e.message; }
+  echo('unknown', threw);
+  return { t3: text3d('3D', { size: 12, height: 3, align: 'center', font: 'Nunito Bold' }), mono: text3d('ab', { font: 'jetbrains-mono', height: 1 }) };
+` });
+check('text scripts run', r.ok, r.error?.message);
+if (r.ok) {
+  const t = r.messages.map((m) => m.text).join('\n');
+  check('text has plausible bounds and area', t.includes('"text", true, true, true, true'), t.split('\n')[0]);
+  check('centred text is centred', t.includes('"centered", true'), t.split('\n')[1]);
+  check('emboss and engrave move exactly area x depth', /"emboss", 36(\.0*)?, 36(\.0*)?/.test(t.replace(/35\.99+\d*/g, '36')), t.split('\n')[2]);
+  check('unknown font lists the available ones', /Unknown font \\"Comic\\". Available: Inter, Inter Bold, Nunito Bold, Source Serif 4, JetBrains Mono/.test(t), t.split('\n')[3]);
+  const byName = Object.fromEntries(r.parts.map((p) => [p.name, p]));
+  check('text3d in a bold rounded font has volume and height 3', byName.t3.volume > 50 && near(Math.max(...byName.t3.positions.filter((_, i) => i % 3 === 1)), 3, 1e-6), String(byName.t3.volume));
+  check('font names match loosely (jetbrains-mono)', byName.mono.volume > 1);
+}
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);
