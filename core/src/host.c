@@ -448,6 +448,8 @@ void temen_free(TemenCore *core) {
     temen_handles_release(core);
     free(core->objs);
     free(core->cs);
+    for (size_t i = 0; i < core->n_annotations; i++) free(core->annotations[i]);
+    free(core->annotations);
     free((void *)core->profile.material);
     free(core->error); free(core->error_file);
     if (core->ctx) js_context_free(core->ctx);
@@ -463,6 +465,8 @@ size_t temen_part_count(const TemenCore *core) { return core->n_parts; }
 const TemenPart *temen_part(const TemenCore *core, size_t i) { return i < core->n_parts ? &core->parts[i] : NULL; }
 double temen_last_run_ms(const TemenCore *core) { return core->last_ms; }
 const TemenProfile *temen_profile(const TemenCore *core) { return &core->profile; }
+size_t temen_annotation_count(const TemenCore *core) { return core->n_annotations; }
+const char *temen_annotation(const TemenCore *core, size_t i) { return i < core->n_annotations ? core->annotations[i] : NULL; }
 const char *temen_version(void) { return "temencore 0.1 (lamassu-js, manifold " TEMEN_MANIFOLD_VERSION ")"; }
 
 /* ---------------------------------------------------------------- run */
@@ -557,6 +561,8 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
     core->error = core->error_file = NULL; core->error_line = 0;
     free((void *)core->profile.material);
     memset(&core->profile, 0, sizeof core->profile);
+    for (size_t i = 0; i < core->n_annotations; i++) free(core->annotations[i]);
+    core->n_annotations = 0;
 
     core->files = calloc(n_files ? n_files : 1, sizeof *core->files);
     if (!core->files) { set_error(core, "out of memory", NULL, 0); return 2; }

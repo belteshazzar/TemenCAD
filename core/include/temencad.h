@@ -80,6 +80,11 @@ int         temen_error_line(const TemenCore *core);
 size_t           temen_part_count(const TemenCore *core);
 const TemenPart *temen_part(const TemenCore *core, size_t index);
 
+/* Annotations from dimension() and mark(), as JSON records in script order:
+ * {"type":"dimension","a":[x,y,z],"b":[x,y,z],"label":"12 mm","length":12} or {"type":"mark","p":[x,y,z],"text":"tip"} */
+size_t      temen_annotation_count(const TemenCore *core);
+const char *temen_annotation(const TemenCore *core, size_t index);
+
 /* The profile of the last run (declared == 0 when the script declared none). */
 const TemenProfile *temen_profile(const TemenCore *core);
 

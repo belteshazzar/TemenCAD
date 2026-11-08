@@ -69,11 +69,16 @@ Screws and holes: `SCREWS`, `screw`, `screwHole` (clearance, tap, counterbore, c
 `printProfile`, `wall`, `layers`, `fit`, `peg`, `FITS`; a declared profile compensates `hole()` and is
 returned to the host (`temen_profile`, `result.profile`).
 
+Placement and measurement: `s.face()`, `Face.point`, `placeOn`, `at()` on faces and anchors,
+`alignTo`, anchors that travel through transforms and booleans (`s.anchor(name, point, normal)`,
+`s.anchor(name)`, `s.anchors`), `distance`, `rectPattern`, `gridPattern`, `intersects`,
+`interference`, `overlap`, `clearance` (Manifold's min-gap), and the annotations `dimension` and
+`mark`, delivered to the host as JSON records (`temen_annotation`, `result.annotations`).
+
 Each run gets a fresh engine context; Manifold objects are released in bulk after the run, as
 the browser app does with `releaseAll()`.
 
-Not yet: `text`/`text3d`/`emboss`/`engrave` (fonts),
-placement (`Face`, `placeOn`, `alignTo`, anchors, patterns), measurements, paths and `sweep`,
+Not yet: `text`/`text3d`/`emboss`/`engrave` (fonts), paths and `sweep`,
 3D fillets and chamfers, `loft`/`shell`/`minkowski`/`polyhedron`/`roof`, images and mesh imports,
 printability. `npm run core:diff` says which test scripts the core already builds identically.
 

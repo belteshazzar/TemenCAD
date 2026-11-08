@@ -128,6 +128,33 @@ if (r.ok) {
 r = rt.run({ 'main.js': 'return box(2).subtract(hole(1, 4))' });
 check('profile is null when none declared', r.ok && r.profile === null, JSON.stringify(r.profile));
 
+// 4d. placement, anchors, measurement, annotations
+r = rt.run({ 'main.js': `
+  const base = box(40, 6, 30).onPlate().translate(5, 0, -2);
+  const t = base.face('top');
+  echo('top', t.center, t.normal, t.point([3, -4]));
+  const boss = cylinder(4, 10).placeOn(base, 'top');
+  echo('boss', boss.bounds().min, boss.bounds().max);
+  const cut = screwHole('M3', 5).at(base.face('front'), [0, 1]);
+  echo('cut', cut.bounds().max[2], cut.bounds().min[2]);
+  const pin = cylinder(1, 10, { center: false }).anchor('tip', [0, 10, 0], [0, 1, 0]);
+  echo('tip', pin.rotate(90, 0, 0).anchor('tip').point, pin.rotate(90, 0, 0).anchor('tip').normal, Object.keys(pin.translate(1, 0, 0).anchors));
+  echo('clear', clearance(box(10), box(10).translate(15, 0, 0)), interference(box(10), box(10).translate(5, 0, 0)));
+  dimension(base.face('top'), base.face('bottom'));
+  mark(pin.anchor('tip'), 'tip');
+  return base.add(pin.translate(0, 6, 0));
+` });
+check('placement script runs', r.ok, r.error?.message);
+if (r.ok) {
+  const t = r.messages.map((m) => m.text).join('\n');
+  check('face centre, normal and uv point', t.includes('"top", [5, 6, -2], [0, 1, 0], [8, 6, -6]'), t.split('\n')[0]);
+  check('placeOn centres the boss on the face', t.includes('"boss", [1, 6, -6], [9, 16, 2]'), t.split('\n')[1]);
+  check('at() turns +Y along the front normal', t.includes('"cut", 14, 8'), t.split('\n')[2]);
+  check('anchors rotate with the shape', t.includes('"tip", [0, 0, 10], [0, 0, 1], ["tip"]'), t.split('\n')[3]);
+  check('clearance 5 and interference 500', t.includes('"clear", 5, 500'), t.split('\n')[4]);
+  check('annotations reach the host', r.annotations.length === 2 && r.annotations[0].type === 'dimension' && r.annotations[0].label === '6 mm' && r.annotations[1].type === 'mark' && r.annotations[1].text === 'tip', JSON.stringify(r.annotations));
+}
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);

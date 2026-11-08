@@ -17,6 +17,8 @@ const DEFAULT_COLOR = '#8fb3ff';
 function describe(v) {
   if (isShape(v)) return 'a Shape';
   if (isSketch(v)) return 'a 2D sketch';
+  if (isFace(v)) return `the ${v.name} face of a shape`;
+  if (isAnchor(v)) return `the anchor '${v.name}'`;
   if (v === null) return 'null';
   if (Array.isArray(v)) return `an array [${v.slice(0, 4).map(describe).join(', ')}${v.length > 4 ? ', …' : ''}]`;
   if (typeof v === 'object') return 'an object';
@@ -61,38 +63,101 @@ function resizeFactors(fn, size, target, auto) {
 
 // ---- Shape ----------------------------------------------------------------
 
+/** A named point on a shape, with an optional direction. */
+function Anchor(name, point, normal) {
+  this.name = name; this.point = [point[0], point[1], point[2]]; this.normal = normal ? [normal[0], normal[1], normal[2]] : null;
+  Object.freeze(this);
+}
+function isAnchor(v) { return v !== null && typeof v === 'object' && Object.getPrototypeOf(v) === Anchor.prototype; }
+
+function rotationMatrix(x, y, z) {
+  const r = (d) => (d * Math.PI) / 180;
+  const cx = Math.cos(r(x)), sx = Math.sin(r(x)), cy = Math.cos(r(y)), sy = Math.sin(r(y)), cz = Math.cos(r(z)), sz = Math.sin(r(z));
+  const rx = [[1, 0, 0], [0, cx, -sx], [0, sx, cx]], ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]], rz = [[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]];
+  const mm = (a, b) => a.map((row) => [0, 1, 2].map((j) => row[0] * b[0][j] + row[1] * b[1][j] + row[2] * b[2][j]));
+  return mm(rz, mm(ry, rx));
+}
+/** Apply a point transform to every anchor (and, for rotations and mirrors, to their directions too). */
+function mapAnchors(meta, mapPoint, directions) {
+  if (!meta.anchors) return meta;
+  const anchors = {};
+  for (const k of Object.keys(meta.anchors)) {
+    const a = meta.anchors[k];
+    let normal = a.normal;
+    if (normal && directions) { const n = mapPoint(normal); const l = Math.hypot(n[0], n[1], n[2]) || 1; normal = n.map((v) => v / l); }
+    anchors[k] = { point: mapPoint(a.point), normal };
+  }
+  return Object.assign({}, meta, { anchors });
+}
+
+/** A solid: an immutable wrapper around a Manifold handle (world space, Y up). */
 function Shape(h, color, meta) {
   this.h = h;
   this.colorValue = color === undefined ? DEFAULT_COLOR : color;
   this.meta = meta === undefined ? {} : meta;
+  // Shapes never change, so the anchor view is built once here (the app exposes it as a getter).
+  const anchors = {};
+  if (this.meta.anchors) for (const k of Object.keys(this.meta.anchors)) { const a = this.meta.anchors[k]; anchors[k] = new Anchor(k, a.point, a.normal); }
+  this.anchors = anchors;
 }
 function isShape(v) { return v !== null && typeof v === 'object' && Object.getPrototypeOf(v) === Shape.prototype; }
-function wrap(s, h) { return new Shape(h, s.colorValue, s.meta); }
+/** A new shape from a handle, with anchors carried through `mapPoint` when given. */
+function wrap(s, h, mapPoint, directions) { return new Shape(h, s.colorValue, mapPoint ? mapAnchors(s.meta, mapPoint, !!directions) : s.meta); }
 function withMeta(s, patch) { return new Shape(s.h, s.colorValue, Object.assign({}, s.meta, patch)); }
+/** Anchors of several shapes combined; the first shape wins on a clash. */
+function mergeAnchors(shapes) {
+  const anchors = {};
+  for (const s of shapes) if (s.meta.anchors) for (const k of Object.keys(s.meta.anchors)) if (!(k in anchors)) anchors[k] = s.meta.anchors[k];
+  return Object.keys(anchors).length ? Object.assign({}, shapes[0].meta, { anchors }) : shapes[0].meta;
+}
 
 const P = Shape.prototype;
 P.translate = function (x = 0, y = 0, z = 0) {
   if (Array.isArray(x)) { const v = x; x = v[0]; y = v[1] === undefined ? 0 : v[1]; z = v[2] === undefined ? 0 : v[2]; }
   checkNumber('translate', 'x', x); checkNumber('translate', 'y', y); checkNumber('translate', 'z', z);
-  return wrap(this, cad.translate(this.h, x, y, z));
+  return wrap(this, cad.translate(this.h, x, y, z), (p) => [p[0] + x, p[1] + y, p[2] + z]);
 };
 P.rotate = function (x = 0, y = 0, z = 0) {
   if (Array.isArray(x)) { const v = x; x = v[0]; y = v[1] === undefined ? 0 : v[1]; z = v[2] === undefined ? 0 : v[2]; }
   checkNumber('rotate', 'x', x); checkNumber('rotate', 'y', y); checkNumber('rotate', 'z', z);
-  return wrap(this, cad.rotate(this.h, x, y, z));
+  const R = rotationMatrix(x, y, z);
+  return wrap(this, cad.rotate(this.h, x, y, z), (p) => R.map((row) => row[0] * p[0] + row[1] * p[1] + row[2] * p[2]), true);
 };
 P.scale = function (x = 1, y, z) {
   if (Array.isArray(x)) { const v = x; x = v[0]; y = v[1]; z = v[2]; }
   if (y === undefined) { y = x; z = x; }
   checkNumber('scale', 'x', x); checkNumber('scale', 'y', y); checkNumber('scale', 'z', z);
   if (x === 0 || y === 0 || z === 0) throw new RangeError('scale: factors must not be 0');
-  return wrap(this, cad.scale(this.h, x, y, z));
+  return wrap(this, cad.scale(this.h, x, y, z), (p) => [p[0] * x, p[1] * y, p[2] * z]);
 };
 P.mirror = function (axis = 'x') {
   const n = axis === 'x' ? [1, 0, 0] : axis === 'y' ? [0, 1, 0] : axis === 'z' ? [0, 0, 1] : null;
   if (!n) throw new Error("mirror: axis must be 'x', 'y' or 'z'");
-  return wrap(this, cad.mirror(this.h, n[0], n[1], n[2]));
+  const i = n.indexOf(1);
+  return wrap(this, cad.mirror(this.h, n[0], n[1], n[2]), (p) => p.map((v, k) => (k === i ? -v : v)), true);
 };
+/** anchor(name, point, normal?) records a named point that travels with the shape; anchor(name) reads it back. */
+P.anchor = function (name, point, normal) {
+  if (typeof name !== 'string' || !name.trim()) throw new TypeError(`anchor: expected a name, got ${describe(name)}`);
+  if (point === undefined) {
+    const a = this.meta.anchors ? this.meta.anchors[name] : undefined;
+    if (!a) throw new Error(`anchor: "${name}" is not an anchor of this shape${this.meta.anchors ? ` (it has ${Object.keys(this.meta.anchors).map((k) => `'${k}'`).join(', ')})` : ''}`);
+    return new Anchor(name, a.point, a.normal);
+  }
+  checkVec('anchor', 'point', point);
+  if (normal !== undefined) { checkVec('anchor', 'normal', normal); const l = Math.hypot(normal[0], normal[1], normal[2]) || 1; normal = normal.map((v) => v / l); }
+  const anchors = Object.assign({}, this.meta.anchors);
+  anchors[name] = { point: [point[0], point[1], point[2]], normal: normal ? [normal[0], normal[1], normal[2]] : null };
+  return withMeta(this, { anchors });
+};
+P.face = function (name) { return new Face(this, name); };
+P.at = function (target, offset, opts) { return at(this, target, offset, opts); };
+P.placeOn = function (base, faceName, opts) { return placeOn(this, base, faceName, opts); };
+P.alignTo = function (other, spec, opts) { return alignTo(this, other, spec, opts); };
+P.intersects = function (o) { return intersects(this, o); };
+P.interference = function (o) { return interference(this, o); };
+P.overlap = function (o) { return overlap(this, o); };
+P.clearance = function (o, opts) { return clearance(this, o, opts); };
 P.add = function (...others) { return union(this, ...others); };
 P.union = P.add;
 P.subtract = function (...others) { return difference(this, ...others); };
@@ -223,7 +288,7 @@ function union(...items) {
   if (!shapes.length) throw new TypeError('union: needs at least one Shape');
   if (shapes.length === 1) return shapes[0];
   const h = cad.batch(shapes.map((s) => s.h), 0);
-  return new Shape(h, shapes[0].colorValue, shapes[0].meta);
+  return new Shape(h, shapes[0].colorValue, mergeAnchors(shapes));
 }
 function difference(first, ...rest) {
   if (allSketches([first, rest])) return difference2d(first, ...rest);
@@ -232,7 +297,7 @@ function difference(first, ...rest) {
   const cutters = flattenShapes('difference', rest);
   if (!cutters.length) return first;
   const cutter = cutters.length === 1 ? cutters[0].h : cad.batch(cutters.map((s) => s.h), 0);
-  return wrap(first, cad.boolean(first.h, cutter, 1));
+  return new Shape(cad.boolean(first.h, cutter, 1), first.colorValue, mergeAnchors([first].concat(cutters)));
 }
 function intersect(...items) {
   if (allSketches(items)) return intersect2d(...items);
@@ -240,7 +305,7 @@ function intersect(...items) {
   if (!shapes.length) throw new TypeError('intersect: needs at least one Shape');
   let h = shapes[0].h;
   for (let i = 1; i < shapes.length; i++) h = cad.boolean(h, shapes[i].h, 2);
-  return wrap(shapes[0], h);
+  return new Shape(h, shapes[0].colorValue, mergeAnchors(shapes));
 }
 /** Convex hull of any number of shapes (or raw [x, y, z] points, or arrays of either). 2D sketches hull in 2D. */
 function hull(...items) {
@@ -875,6 +940,177 @@ function heatInsert(size, opts = {}) {
   return cylinder((s.insert + tolerance) / 2, d + OVERSHOOT, { segments }).translate(0, OVERSHOOT / 2 - d / 2, 0);
 }
 
+// ---- placement by named features (place.js) ------------------------------------------
+
+const FACES = {
+  top: { axis: 1, sign: 1, u: 0, v: 2, rotate: [0, 0, 0] },
+  bottom: { axis: 1, sign: -1, u: 0, v: 2, rotate: [180, 0, 0] },
+  front: { axis: 2, sign: 1, u: 0, v: 1, rotate: [90, 0, 0] },
+  back: { axis: 2, sign: -1, u: 0, v: 1, rotate: [-90, 0, 0] },
+  right: { axis: 0, sign: 1, u: 2, v: 1, rotate: [0, 0, -90] },
+  left: { axis: 0, sign: -1, u: 2, v: 1, rotate: [0, 0, 90] },
+};
+const FACE_NAMES = ['top', 'bottom', 'front', 'back', 'right', 'left'];
+const AXES = 'xyz';
+
+/** A face of a shape's bounding box: { name, normal, center, min, max, size, u, v }. */
+function Face(shape, name) {
+  const f = FACES[name];
+  if (!f) throw new TypeError(`face: expected one of ${FACE_NAMES.join(', ')}, got ${describe(name)}`);
+  const b = shape.bounds();
+  this.name = name; this.shape = shape;
+  this.axis = AXES[f.axis]; this.sign = f.sign;
+  this.normal = [0, 0, 0]; this.normal[f.axis] = f.sign;
+  this.center = [b.center[0], b.center[1], b.center[2]]; this.center[f.axis] = f.sign > 0 ? b.max[f.axis] : b.min[f.axis];
+  this.min = b.min; this.max = b.max; this.size = b.size;
+  this.u = AXES[f.u]; this.v = AXES[f.v];
+  Object.freeze(this);
+}
+function isFace(v) { return v !== null && typeof v === 'object' && Object.getPrototypeOf(v) === Face.prototype; }
+/** A point on the face: [u, v] along its in-plane axes, or { x, y, z } offsets in world axes. */
+Face.prototype.point = function (at = [0, 0]) {
+  const p = [this.center[0], this.center[1], this.center[2]];
+  if (Array.isArray(at)) {
+    if (at.length !== 2) throw new TypeError(`${this.name} face: an offset is [${this.u}, ${this.v}], got ${describe(at)}`);
+    p[AXES.indexOf(this.u)] += checkNumber('at', this.u, at[0]); p[AXES.indexOf(this.v)] += checkNumber('at', this.v, at[1]);
+  } else if (at && typeof at === 'object') {
+    for (const k of AXES) if (at[k] !== undefined) p[AXES.indexOf(k)] += checkNumber('at', k, at[k]);
+  } else throw new TypeError(`at: expected [u, v] or { x, y, z }, got ${describe(at)}`);
+  return p;
+};
+const checkFace = (fn, f) => { if (!isFace(f)) throw new TypeError(`${fn}: expected a face (shape.face('top')), got ${describe(f)}`); return f; };
+
+/** Rotation (degrees about X, Y, Z) that turns +Y onto a unit direction. */
+function rotationToward(n) {
+  const x = n[0], y = n[1], z = n[2];
+  if (Math.abs(y - 1) < 1e-9) return [0, 0, 0];
+  if (Math.abs(y + 1) < 1e-9) return [180, 0, 0];
+  const tilt = (Math.acos(Math.max(-1, Math.min(1, y))) * 180) / Math.PI;
+  const turn = (Math.atan2(x, z) * 180) / Math.PI;
+  return [tilt, turn, 0];
+}
+/** Put a shape's origin on a point of a face or on an anchor, +Y turned along the normal. */
+function at(shape, target, offset = [0, 0], opts = {}) {
+  const gap = opts.gap === undefined ? 0 : opts.gap;
+  const orient = opts.orient === undefined ? true : opts.orient;
+  checkNumber('at', 'gap', gap);
+  if (isAnchor(target)) {
+    const n = target.normal === null ? [0, 1, 0] : target.normal;
+    const p = target.point.map((v, k) => v + n[k] * gap);
+    if (Array.isArray(offset) && offset.length === 3) for (let k = 0; k < 3; k++) p[k] += checkNumber('at', 'xyz'[k], offset[k]);
+    const rot = rotationToward(n);
+    const s = orient && target.normal ? shape.rotate(rot[0], rot[1], rot[2]) : shape;
+    return s.translate(p[0], p[1], p[2]);
+  }
+  const face = checkFace('at', target);
+  const f = FACES[face.name];
+  const p = face.point(offset);
+  for (let k = 0; k < 3; k++) p[k] += face.normal[k] * gap;
+  const s = orient && (f.rotate[0] || f.rotate[1] || f.rotate[2]) ? shape.rotate(f.rotate[0], f.rotate[1], f.rotate[2]) : shape;
+  return s.translate(p[0], p[1], p[2]);
+}
+/** Put a shape on a face of another: its opposite face touches the target face. opts: { at, gap, align } */
+function placeOn(shape, base, faceName = 'top', opts = {}) {
+  const offset = opts.at === undefined ? [0, 0] : opts.at;
+  const gap = opts.gap === undefined ? 0 : opts.gap;
+  const align = opts.align === undefined ? 'center' : opts.align;
+  checkShape('placeOn', 'base', base); checkNumber('placeOn', 'gap', gap);
+  const face = new Face(base, faceName);
+  const f = FACES[faceName];
+  const b = shape.bounds();
+  const target = face.point(offset);
+  const d = [0, 0, 0];
+  const mine = f.sign > 0 ? b.min[f.axis] : b.max[f.axis];
+  d[f.axis] = target[f.axis] + f.sign * gap - mine;
+  if (align === 'center') { d[f.u] = target[f.u] - b.center[f.u]; d[f.v] = target[f.v] - b.center[f.v]; }
+  else if (align !== 'keep') throw new TypeError(`placeOn: align must be 'center' or 'keep', got ${describe(align)}`);
+  return shape.translate(d[0], d[1], d[2]);
+}
+const RELATIONS = { x: { left: -1, right: 1 }, y: { below: -1, above: 1 }, z: { back: -1, front: 1 } };
+/** Align bounding boxes axis by axis: 'min' | 'center' | 'max', or a side of the other shape to sit against. */
+function alignTo(shape, other, spec = {}, opts = {}) {
+  const gap = opts.gap === undefined ? 0 : opts.gap;
+  checkShape('alignTo', 'other', other); checkNonNegative('alignTo', 'gap', gap);
+  if (!spec || typeof spec !== 'object') throw new TypeError(`alignTo: expected { x, y, z }, got ${describe(spec)}`);
+  const a = shape.bounds(), b = other.bounds();
+  const d = [0, 0, 0];
+  for (const k of AXES) {
+    const how = spec[k]; if (how === undefined) continue;
+    const i = AXES.indexOf(k);
+    if (how === 'min') d[i] = b.min[i] - a.min[i];
+    else if (how === 'center') d[i] = b.center[i] - a.center[i];
+    else if (how === 'max') d[i] = b.max[i] - a.max[i];
+    else if (RELATIONS[k][how] === 1) d[i] = b.max[i] + gap - a.min[i];
+    else if (RELATIONS[k][how] === -1) d[i] = b.min[i] - gap - a.max[i];
+    else throw new TypeError(`alignTo: ${k} must be 'min', 'center', 'max' or ${Object.keys(RELATIONS[k]).map((s) => `'${s}'`).join(' | ')}, got ${describe(how)}`);
+  }
+  return shape.translate(d[0], d[1], d[2]);
+}
+/** Distance between two faces (along the first one's normal), a face and a point, or two points. */
+function distance(a, b) {
+  const pt = (v) => (isFace(v) ? v.center : isAnchor(v) ? v.point : Array.isArray(v) && v.length === 3 ? v.map((x, i) => checkNumber('distance', AXES[i], x)) : null);
+  const pa = pt(a), pb = pt(b);
+  if (!pa || !pb) throw new TypeError(`distance: expected faces, anchors or [x, y, z] points, got ${describe(a)} and ${describe(b)}`);
+  if (isFace(a)) return Math.abs((pb[0] - pa[0]) * a.normal[0] + (pb[1] - pa[1]) * a.normal[1] + (pb[2] - pa[2]) * a.normal[2]);
+  if (isFace(b)) return distance(b, a);
+  return Math.hypot(pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]);
+}
+/** The four corners of a w x d rectangle centred on the origin, as [u, v] points. */
+function rectPattern(w, d) {
+  if (d === undefined) d = w;
+  checkNumber('rectPattern', 'w', w); checkNumber('rectPattern', 'd', d);
+  return [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2]];
+}
+/** An nu x nv grid of [u, v] points with the given pitch, centred on the origin. */
+function gridPattern(nu, nv, du, dv) {
+  if (dv === undefined) dv = du;
+  checkNumber('gridPattern', 'nu', nu); checkNumber('gridPattern', 'nv', nv); checkNumber('gridPattern', 'du', du); checkNumber('gridPattern', 'dv', dv);
+  const out = [];
+  for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) out.push([(i - (nu - 1) / 2) * du, (j - (nv - 1) / 2) * dv]);
+  return out;
+}
+
+// ---- measurements (measure.js) -----------------------------------------------------------
+
+const diag = (s) => { const size = s.bounds().size; return Math.hypot(size[0], size[1], size[2]); };
+function overlap(a, b) { checkShape('overlap', 'a', a); checkShape('overlap', 'b', b); return new Shape(cad.boolean(a.h, b.h, 2)); }
+function interference(a, b) { checkShape('interference', 'a', a); checkShape('interference', 'b', b); return cad.volume(cad.boolean(a.h, b.h, 2)); }
+const intersects = (a, b) => interference(a, b) > 1e-9;
+/** Smallest distance between the surfaces of two shapes; 0 when they touch or overlap. opts: { searchLength } */
+function clearance(a, b, opts = {}) {
+  checkShape('clearance', 'a', a); checkShape('clearance', 'b', b);
+  if (opts.searchLength !== undefined) checkNumber('clearance', 'searchLength', opts.searchLength);
+  if (interference(a, b) > 1e-9) return 0;
+  const L = opts.searchLength === undefined ? diag(a) + diag(b) + 1 : opts.searchLength;
+  const g = cad.minGap(a.h, b.h, L);
+  return g >= L ? Infinity : g;
+}
+
+// ---- annotations (annotate.js): drawn over renders and listed in the report, never geometry -----
+
+function toPoint(fn, v) {
+  if (isFace(v)) return [v.center[0], v.center[1], v.center[2]];
+  if (isAnchor(v)) return [v.point[0], v.point[1], v.point[2]];
+  if (isShape(v)) { const c = v.bounds().center; return [c[0], c[1], c[2]]; }
+  if (Array.isArray(v) && v.length === 3) return v.map((x, i) => checkNumber(fn, 'xyz'[i], x));
+  throw new TypeError(`${fn}: expected [x, y, z], a face, an anchor or a shape, got ${describe(v)}`);
+}
+const fmtMm = (v) => (Math.abs(v - Math.round(v)) < 0.005 ? String(Math.round(v)) : v.toFixed(2).replace(/0$/, ''));
+/** A dimension between a and b; returns the length. opts: { label, offset } */
+function dimension(a, b, opts = {}) {
+  let pa = toPoint('dimension', a), pb = toPoint('dimension', b);
+  const length = Math.hypot(pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]);
+  if (opts.offset !== undefined) { const o = toPoint('dimension', opts.offset); pa = pa.map((v, i) => v + o[i]); pb = pb.map((v, i) => v + o[i]); }
+  cad.annotate(JSON.stringify({ type: 'dimension', a: pa, b: pb, label: opts.label === undefined ? `${fmtMm(length)} mm` : String(opts.label), length }));
+  return length;
+}
+/** A labelled point. */
+function mark(point, text = '') {
+  const p = toPoint('mark', point);
+  cad.annotate(JSON.stringify({ type: 'mark', p, text: String(text) }));
+  return p;
+}
+
 // ---- helpers --------------------------------------------------------------------
 
 const deg = (radians) => (radians * 180) / Math.PI;
@@ -976,6 +1212,7 @@ export const api = {
   Sketch, circle, ellipse, rect, square, roundedRect, regularPolygon, polygon2d, slot, teardrop, bridgedCircle,
   union2d, difference2d, intersect2d, hull2d, extrude, revolve, projection, sketch, SketchBuilder,
   SCREWS, screw, screwHole, nutPocket, heatInsert, hole,
+  Face, distance, rectPattern, gridPattern, intersects, interference, overlap, clearance, dimension, mark,
   printer, printProfile, wall, layers, fit, peg, FITS,
   deg, rad, log, print: log, echo, assert, show,
 };

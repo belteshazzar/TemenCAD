@@ -43,7 +43,8 @@ export async function createRuntime(moduleOptions = {}) {
     for (let i = 0; i < M._tw_msg_count(); i++) {
       messages.push({ kind: M._tw_msg_kind(i) === 1 ? 'warn' : 'log', text: str(M._tw_msg_text(i)), file: str(M._tw_msg_file(i)), line: M._tw_msg_line(i) || null });
     }
-    const result = { ok: status === 0, status, error: null, messages, parts: [], ms: M._tw_last_ms(), profile: null };
+    const result = { ok: status === 0, status, error: null, messages, parts: [], ms: M._tw_last_ms(), profile: null, annotations: [] };
+    if (status === 0) for (let i = 0; i < M._tw_annotation_count(); i++) result.annotations.push(JSON.parse(str(M._tw_annotation(i))));
     if (status === 0 && M._tw_profile_declared()) {
       result.profile = { nozzle: M._tw_profile_nozzle(), layer: M._tw_profile_layer(), holeCompensation: M._tw_profile_hole_compensation(), material: str(M._tw_profile_material()), declared: true };
     }

@@ -444,6 +444,32 @@ static bool n_mirror(JsContext *ctx, JsValue this_val, const JsValue *args, int 
     return ret_handle(CORE(), manifold_mirror(mem(), m, NUM(1), NUM(2), NUM(3)), result);
 }
 
+/* minGap(a, b, searchLength): smallest distance between two shapes' surfaces (>= searchLength when none found) */
+static bool n_min_gap(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val;
+    ManifoldManifold *a = SHAPE(0), *b = SHAPE(1);
+    *result = js_number(manifold_min_gap(a, b, NUM(2)));
+    return true;
+}
+
+/* annotate(json): a dimension or mark record for the host to draw and report; never geometry */
+static bool n_annotate(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val;
+    TemenCore *core = CORE();
+    if (argc < 1 || !js_is_string(args[0])) THROW(temen_type_error(core, "__cad.annotate: expected a JSON string"));
+    char *json = temen_value_to_utf8(core, args[0]);
+    if (!json) THROW(temen_range_error(core, "out of memory"));
+    if (core->n_annotations == core->cap_annotations) {
+        size_t cap = core->cap_annotations ? core->cap_annotations * 2 : 16;
+        char **n = realloc(core->annotations, cap * sizeof *n);
+        if (!n) { free(json); THROW(temen_range_error(core, "out of memory")); }
+        core->annotations = n; core->cap_annotations = cap;
+    }
+    core->annotations[core->n_annotations++] = json;
+    *result = js_undefined();
+    return true;
+}
+
 /* -------------------------------------------------------- queries */
 
 static bool n_volume(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
@@ -519,6 +545,7 @@ static const Entry ENTRIES[] = {
     { "cube", n_cube }, { "cylinder", n_cylinder }, { "sphere", n_sphere },
     { "boolean", n_boolean }, { "batch", n_batch }, { "hull", n_hull }, { "hullPoints", n_hull_points },
     { "translate", n_translate }, { "rotate", n_rotate }, { "scale", n_scale }, { "mirror", n_mirror },
+    { "minGap", n_min_gap }, { "annotate", n_annotate },
     { "volume", n_volume }, { "area", n_area }, { "isEmpty", n_is_empty }, { "numTri", n_num_tri }, { "bounds", n_bounds },
     { "log", n_log }, { "warn", n_warn }, { "where", n_where },
     { "csCircle", n_cs_circle }, { "csSquare", n_cs_square }, { "csPolygons", n_cs_polygons },

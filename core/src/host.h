@@ -55,6 +55,8 @@ struct TemenCore {
     TemenPart *parts;
     size_t n_parts, cap_parts;
     TemenProfile profile;
+    char **annotations;      /* JSON records from dimension() and mark(), in order */
+    size_t n_annotations, cap_annotations;
     char *error, *error_file;
     int error_line;
     double last_ms;

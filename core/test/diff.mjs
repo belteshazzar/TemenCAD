@@ -68,6 +68,9 @@ for (const c of cases) {
     if (a.color !== b.color) problems.push(`"${a.name}" color ${a.color} vs ${b.color}`);
     if (!!a.ghost !== b.ghost || !!a.hidden !== b.hidden) problems.push(`"${a.name}" ghost/hidden flags differ`);
   }
+  const oa = old.annotations ?? [], na = res.annotations ?? [];
+  const r4 = (v) => (typeof v === 'number' ? +v.toFixed(4) : Array.isArray(v) ? v.map(r4) : v);
+  if (JSON.stringify(oa.map(r4)) !== JSON.stringify(na.map(r4))) problems.push(`annotations ${JSON.stringify(oa.map(r4)).slice(0, 120)} vs ${JSON.stringify(na.map(r4)).slice(0, 120)}`);
   const op = old.profile ?? null, np = res.profile;
   if (!!op !== !!np || (op && (op.nozzle !== np.nozzle || op.layer !== np.layer || op.holeCompensation !== np.holeCompensation || (op.material ?? null) !== np.material))) problems.push(`profile ${JSON.stringify(op)} vs ${JSON.stringify(np)}`);
   if (problems.length) { diffs++; console.log(`DIFF        ${c.label}\n    ${problems.slice(0, 8).join('\n    ')}${problems.length > 8 ? `\n    … ${problems.length - 8} more` : ''}`); }

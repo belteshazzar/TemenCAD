@@ -84,6 +84,9 @@ EXPORT double tw_profile_layer(void) { return temen_profile(g_core)->layer; }
 EXPORT double tw_profile_hole_compensation(void) { return temen_profile(g_core)->hole_compensation; }
 EXPORT const char *tw_profile_material(void) { return temen_profile(g_core)->material; }
 
+EXPORT int tw_annotation_count(void) { return (int)temen_annotation_count(g_core); }
+EXPORT const char *tw_annotation(int i) { return temen_annotation(g_core, (size_t)i); }
+
 EXPORT int tw_part_count(void) { return g_core ? (int)temen_part_count(g_core) : 0; }
 EXPORT const char *tw_part_name(int i) { return temen_part(g_core, (size_t)i)->name; }
 EXPORT int tw_part_named(int i) { return temen_part(g_core, (size_t)i)->named; }
