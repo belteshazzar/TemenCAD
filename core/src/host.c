@@ -18,9 +18,6 @@
 #include "compat.h"
 #include "host.h"
 #include "lamassu_compile.h"
-#include "js_bytecode.h"      /* js_native_new, js_ascii_cell: not yet public, see README */
-#include "js_error.h"         /* js_error_new: not yet public */
-#include "lamassu_internal.h"
 #include "temencad.h"
 
 #include "prelude_js.h"       /* generated from prelude.js at build time */
@@ -103,22 +100,16 @@ JsValue temen_string(TemenCore *core, const char *utf8, size_t len) {
     return s;
 }
 
-static JsValue error_of_kind(TemenCore *core, JsErrorKind kind, const char *msg) {
-    char trimmed[128];
-    snprintf(trimmed, sizeof trimmed, "%s", msg);
-    JsString *m = js_ascii_cell(core->vm, trimmed);
-    if (!m) return js_undefined();
-    return js_error_new(core->ctx, kind, m);
-}
-JsValue temen_type_error(TemenCore *core, const char *msg) { return error_of_kind(core, JS_ERROR_TYPE, msg); }
-JsValue temen_range_error(TemenCore *core, const char *msg) { return error_of_kind(core, JS_ERROR_RANGE, msg); }
+/* Error values to throw from a native; the messages are ASCII or UTF-8 that happens to be ASCII (file names, numbers). */
+JsValue temen_type_error(TemenCore *core, const char *msg) { return js_error_new_ascii(core->ctx, JS_ERROR_TYPE, msg); }
+JsValue temen_range_error(TemenCore *core, const char *msg) { return js_error_new_ascii(core->ctx, JS_ERROR_RANGE, msg); }
 JsValue temen_plain_error(TemenCore *core, const char *msg) {
-    /* js_error_from_ascii caps at 128 chars; longer messages (font lists) go through a real string */
-    size_t n = strlen(msg);
-    if (n < 128) return error_of_kind(core, JS_ERROR_PLAIN, msg);
-    JsValue s = temen_string(core, msg, n);
-    if (!js_is_string(s)) return js_undefined();
-    return js_error_new(core->ctx, JS_ERROR_PLAIN, js_value_string(s));
+    size_t n;
+    uint16_t *u = temen_utf8_to_utf16(msg, strlen(msg), &n); /* file names in messages may not be ASCII */
+    if (!u) return js_undefined();
+    JsValue e = js_error_new_utf16(core->ctx, JS_ERROR_PLAIN, u, n);
+    free(u);
+    return e;
 }
 
 /* --------------------------------------------------------------- messages */

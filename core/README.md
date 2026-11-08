@@ -147,17 +147,13 @@ has moved from that reference.
 ## lamassu changes needed
 
 Found while building this. None is worked around here; each is the gap as it stands and the fix
-that seems right. The host currently includes two internal headers (`js_bytecode.h`,
-`js_error.h`) to reach the first two items.
+that seems right. The core builds against `lamassu.h` alone.
 
-1. **Native function values.** `js_register_native` only defines globals. Building the `__cad`
-   namespace object needs a native as a *value* to store in a property. `js_native_new(ctx, name,
-   fn, ud)` exists in `js_interp.c` and does exactly this; it should move to `lamassu.h`. While
-   there, `JsNative.ud` is stored but never handed to the function; passing it as a parameter (or a
-   `js_native_userdata(ctx)` accessor during a call) would let one C function serve many methods.
-2. **Error constructors.** A native that wants to throw a `TypeError` or `RangeError` has no public
-   way to make one; `js_error_new(ctx, kind, message)` and `js_error_from_ascii` in `js_error.h`
-   should be public, with `JsErrorKind`.
+1. **Native function values — done.** `js_native_new` is public, and `js_native_userdata(ctx)` hands a
+   native the userdata it was created with (restored across nested `js_call`s), so one C function can
+   serve many natives.
+2. **Error constructors — done.** `JsErrorKind`, `js_error_new_ascii` and `js_error_new_utf16` are
+   public; the core no longer includes any internal lamassu header.
 3. **Error locations with module identity — done** (lamassu branch `error-locations`).
    `js_context_error_stack` returns the frames captured when the last exception started unwinding,
    innermost first, each with its module specifier and source offset; `js_context_stack` gives a

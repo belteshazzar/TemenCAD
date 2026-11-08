@@ -25,7 +25,6 @@
 
 #include "compat.h"
 #include "host.h"
-#include "js_bytecode.h"
 
 #define CORE() ((TemenCore *)js_context_userdata(ctx))
 #define THROW(v) do { *result = (v); return false; } while (0)

@@ -31,7 +31,6 @@
 
 #include "compat.h"
 #include "host.h"
-#include "js_bytecode.h"
 #include "fonts_gen.h" /* the bundled fonts: TEMEN_BUNDLED_FONTS[] of { name, bytes, len } */
 
 #define CORE() ((TemenCore *)js_context_userdata(ctx))

@@ -59,9 +59,7 @@ list(TRANSFORM BARU_RE PREPEND ${LAMASSU_DIR}/third_party/baru-re/src/)
 add_library(lamassu STATIC ${LAMASSU_RUNTIME} ${LAMASSU_FRONTEND} ${BARU_RE})
 target_include_directories(lamassu
   PUBLIC ${LAMASSU_DIR}/include
-  # The host reaches a few internals (js_native_new, js_error_new, js_source_line_col) until they are public.
-  PUBLIC ${LAMASSU_DIR}/src ${LAMASSU_DIR}/src/runtime ${LAMASSU_DIR}/src/frontend
-  PRIVATE ${LAMASSU_DIR}/third_party/baru-re/include)
+  PRIVATE ${LAMASSU_DIR}/src ${LAMASSU_DIR}/src/runtime ${LAMASSU_DIR}/src/frontend ${LAMASSU_DIR}/third_party/baru-re/include)
 target_compile_definitions(lamassu PUBLIC LAMASSU_HAS_REGEX PRIVATE _POSIX_C_SOURCE=200809L)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(lamassu PRIVATE -Wall -Wextra -Wshadow -ffp-contract=off)

@@ -15,7 +15,6 @@
 #include <string.h>
 
 #include "host.h"
-#include "js_bytecode.h" /* js_native_new */
 #include "manifold/manifoldc.h"
 
 /* ---------------------------------------------------------- handles */
