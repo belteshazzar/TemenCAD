@@ -201,6 +201,9 @@ fixes that.
 ## Swift and native use
 
 `include/temencad.h` is plain C with no Emscripten or POSIX dependence beyond `clock_gettime`.
-A Swift package would compile `src/` plus the two submodules' sources the way lamassu's own
-`packages/swift` does (symlinked sources, one copy of the C), and call `temen_run` with the
-project's files; parts come back as float and index buffers ready for SceneKit or Metal.
+`core/swift/` is the Swift package: `build-xcframework.sh` builds the core, lamassu, Manifold and
+Clipper2 with CMake for macOS (arm64 + x86_64), iOS and the iOS simulator and merges them into
+`TemenCore.xcframework`; the `TemenCAD` target wraps the C API (`TemenCore().build(files:)` →
+parts as float and index buffers, messages with script lines, annotations, the printer profile).
+`swift test` in that folder builds a cube, a multi-file project with text and a profile, and an
+assert failure with its line. See `core/swift/README.md`.
