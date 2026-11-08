@@ -28,7 +28,7 @@ C one at a time when the interpreter is too slow for them; the boundary is a fla
 table, so that is a local change.
 
 The prelude must follow the same JavaScript subset scripts do (no classes, getters, `instanceof`,
-`arguments`, typed arrays), which is why `Shape` is a constructor function with prototype methods.
+typed arrays), which is why `Shape` is a constructor function with prototype methods.
 
 ## Build
 
@@ -101,7 +101,7 @@ that seems right. The host currently includes three internal headers (`js_byteco
    `return` in a module would remove the wrapping.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
-getters/setters in object literals, the `arguments` object, object rest in destructuring,
+getters/setters in object literals, object rest in destructuring,
 `instanceof`, `Array.from({ length })`, `flatMap`. Object key order follows hash order, which the
 runner relies on for part order from `return { body, lid }`; the planned "shapes" work in lamassu
 fixes that.
