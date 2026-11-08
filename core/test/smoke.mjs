@@ -181,6 +181,30 @@ if (r.ok) {
 r = rt.run({ 'main.js': 'sweep(circle(5), path([[0, 0, 0], [3, 0, 0], [3, 0, 3]])); return box(1)' });
 check('tight bend warns with a line', r.ok && r.messages.some((m) => m.kind === 'warn' && /too tight/.test(m.text) && m.line === 1), JSON.stringify(r.messages));
 
+// 4f. edge fillets and chamfers
+r = rt.run({ 'main.js': `
+  const W = 40, H = 20, D = 30;
+  const c1 = box(W, H, D).chamfer(3, { edges: 'top' });
+  const c2 = box(W, H, D).fillet(4, { edges: 'top', segments: 64 });
+  const plate = box(50, 4, 50).onPlate(), boss = box(16, 14, 16).onPlate();
+  const base = plate.add(boss);
+  const c5 = base.fillet(2, { edges: 'concave', segments: 64 });
+  echo('concave', c5.volume() - base.volume(), 'edges', sharpEdges(box(10)).length, sharpEdges(cylinder(5, 10, { segments: 12 }), 30).length);
+  return { c1, c2, c7: prism(6, 10, 10).chamfer(1.5, { edges: (e) => e.nA[1] > 0.9 || e.nB[1] > 0.9 }) };
+` });
+check('fillet scripts run', r.ok, r.error?.message);
+if (r.ok) {
+  const W = 40, H = 20, D = 30, f = 1 - Math.PI / 4, rr = 4;
+  const byName = Object.fromEntries(r.parts.map((p) => [p.name, p]));
+  check('top chamfer exact volume', near(byName.c1.volume, W * H * D - (9 / 2) * (2 * W + 2 * D) + (4 * 27) / 3, 1e-6), String(byName.c1.volume));
+  check('top fillet volume (64 segments)', near(byName.c2.volume, W * H * D - (f * rr * rr * (2 * W + 2 * D) - 4 * (2 * rr ** 3 * f - rr ** 3 / 3)), 0.002), String(byName.c2.volume));
+  check('chamfered prism is smaller', byName.c7.volume < (3 * Math.sqrt(3) / 2) * 100 * 10);
+  const t = r.messages.map((m) => m.text).join('\n');
+  const m = t.match(/"concave", ([\d.]+), "edges", (\d+), (\d+)/);
+  check('concave fillet adds the boss base ring', m && near(+m[1], f * 4 * 64 + 4 * 8 * (5 / 3 - Math.PI / 2), 0.002), t);
+  check('a box has 12 sharp edges, a 12-gon cylinder 24 at 30 degrees', m && +m[2] === 12 && +m[3] === 24, t);
+}
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);

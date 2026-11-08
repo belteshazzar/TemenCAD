@@ -487,6 +487,32 @@ static bool n_triangulate(JsContext *ctx, JsValue this_val, const JsValue *args,
     return true;
 }
 
+/* mesh(h) -> { positions: [x, y, z, ...], triangles: [a, b, c, ...] }: a shape's mesh for mesh-level algorithms */
+static bool n_mesh(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val;
+    TemenCore *core = CORE();
+    ManifoldManifold *m = SHAPE(0);
+    ManifoldMeshGL *mesh = manifold_get_meshgl(malloc(manifold_meshgl_size()), m);
+    size_t nprop = manifold_meshgl_num_prop(mesh), nv = manifold_meshgl_num_vert(mesh), nt = manifold_meshgl_num_tri(mesh);
+    float *props = malloc((manifold_meshgl_vert_properties_length(mesh) + 1) * sizeof(float));
+    uint32_t *tv = malloc((manifold_meshgl_tri_length(mesh) + 1) * sizeof(uint32_t));
+    if (!props || !tv) { free(props); free(tv); manifold_delete_meshgl(mesh); THROW(temen_range_error(core, "out of memory")); }
+    manifold_meshgl_vert_properties(props, mesh);
+    manifold_meshgl_tri_verts(tv, mesh);
+    manifold_delete_meshgl(mesh);
+    JsValue obj = js_object_new(ctx), pos = js_array_new(ctx, (uint32_t)(nv * 3)), tri = js_array_new(ctx, (uint32_t)(nt * 3));
+    bool ok = !js_is_undefined(obj) && !js_is_undefined(pos) && !js_is_undefined(tri);
+    js_gc_protect(core->vm, &obj); js_gc_protect(core->vm, &pos); js_gc_protect(core->vm, &tri);
+    for (size_t i = 0; i < nv && ok; i++) for (int k = 0; k < 3 && ok; k++) ok = js_array_push(core->vm, pos, js_number(props[i * nprop + k]));
+    for (size_t i = 0; i < nt * 3 && ok; i++) ok = js_array_push(core->vm, tri, js_number(tv[i]));
+    if (ok) ok = js_object_set(core->vm, obj, temen_atom(core, "positions"), pos) && js_object_set(core->vm, obj, temen_atom(core, "triangles"), tri);
+    js_gc_unprotect(core->vm, &tri); js_gc_unprotect(core->vm, &pos); js_gc_unprotect(core->vm, &obj);
+    free(props); free(tv);
+    if (!ok) THROW(temen_range_error(core, "out of memory"));
+    *result = obj;
+    return true;
+}
+
 /* ------------------------------------------------------- transforms */
 
 static bool n_translate(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
@@ -611,7 +637,7 @@ static const Entry ENTRIES[] = {
     { "cube", n_cube }, { "cylinder", n_cylinder }, { "sphere", n_sphere },
     { "boolean", n_boolean }, { "batch", n_batch }, { "hull", n_hull }, { "hullPoints", n_hull_points },
     { "translate", n_translate }, { "rotate", n_rotate }, { "scale", n_scale }, { "mirror", n_mirror },
-    { "minGap", n_min_gap }, { "annotate", n_annotate }, { "meshFromTriangles", n_mesh_from_triangles }, { "triangulate", n_triangulate },
+    { "minGap", n_min_gap }, { "annotate", n_annotate }, { "meshFromTriangles", n_mesh_from_triangles }, { "triangulate", n_triangulate }, { "mesh", n_mesh },
     { "volume", n_volume }, { "area", n_area }, { "isEmpty", n_is_empty }, { "numTri", n_num_tri }, { "bounds", n_bounds },
     { "log", n_log }, { "warn", n_warn }, { "where", n_where },
     { "csCircle", n_cs_circle }, { "csSquare", n_cs_square }, { "csPolygons", n_cs_polygons },

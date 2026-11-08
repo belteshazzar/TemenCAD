@@ -80,11 +80,16 @@ Paths and sweeps: `Path` with transforms, `smooth`, `append`, `length`, `pointAt
 varying profile (and the tight-bend warning); `polyhedron` and `loft`, all through one native that
 builds a solid from raw triangles plus Manifold's polygon triangulation for caps.
 
+Edge fillets and chamfers: `fillet`, `chamfer`, `sharpEdges`, the edge selectors ('all', 'top',
+'bottom', 'horizontal', 'vertical', 'convex', 'concave', lists, functions), concave-then-convex
+passes with mitred chains; the mesh is read through the `mesh` native and the edge walk stays in the
+prelude (test/fillet.js builds in 145 ms against 80 ms on V8).
+
 Each run gets a fresh engine context; Manifold objects are released in bulk after the run, as
 the browser app does with `releaseAll()`.
 
 Not yet: `text`/`text3d`/`emboss`/`engrave` (fonts),
-3D fillets and chamfers, `loft`/`shell`/`minkowski`/`polyhedron`/`roof`, images and mesh imports,
+`shell`/`minkowski`/`roof`, images and mesh imports,
 printability. `npm run core:diff` says which test scripts the core already builds identically.
 
 ## Differential test

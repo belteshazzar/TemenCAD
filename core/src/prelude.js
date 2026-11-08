@@ -1539,6 +1539,275 @@ function sweep(profile, p, opts = {}) {
 }
 Q.sweep = function (p, opts) { return sweep(this, p, opts); };
 
+// ---- edge fillets and chamfers (fillet.js) ----------------------------------------------
+//
+// Every sharp edge of a planar-faced solid gets a prism whose section is the corner minus a
+// quarter circle (or a triangle for a chamfer): subtracted on convex edges, added on concave ones,
+// mitred against neighbouring edges of the same kind. Concave edges go first and the mesh is read
+// again, so a convex fillet that runs into a concave one follows its curve.
+
+const pkey = (p) => p.map((v) => Math.round(v * 1e5)).join(',');
+
+/** The mesh as unique vertices and triangles. */
+function readMesh(shape) {
+  const m = cad.mesh(shape.h);
+  const vp = m.positions, tv = m.triangles;
+  const ids = new Map(); const verts = []; const remap = [];
+  for (let i = 0; i < vp.length / 3; i++) {
+    const p = [vp[i * 3], vp[i * 3 + 1], vp[i * 3 + 2]];
+    const k = pkey(p);
+    let id = ids.get(k);
+    if (id === undefined) { id = verts.length; ids.set(k, id); verts.push(p); }
+    remap.push(id);
+  }
+  const tris = [];
+  for (let i = 0; i < tv.length; i += 3) {
+    const t = [remap[tv[i]], remap[tv[i + 1]], remap[tv[i + 2]]];
+    if (t[0] !== t[1] && t[1] !== t[2] && t[0] !== t[2]) tris.push(t);
+  }
+  return { verts, tris };
+}
+
+/** Sharp edges of a solid: straight runs where two planar face groups meet at >= minAngle degrees. */
+function sharpEdges(shape, minAngle = 30) {
+  checkShape('sharpEdges', 'shape', shape);
+  const rm = readMesh(shape);
+  const verts = rm.verts, tris = rm.tris;
+  const normals = tris.map((t) => vnorm(vcross(vsub(verts[t[1]], verts[t[0]]), vsub(verts[t[2]], verts[t[0]]))));
+  const edgeKey = (a, b) => (a < b ? a * 4294967296 + b : b * 4294967296 + a);
+  const byEdge = new Map();
+  for (let i = 0; i < tris.length; i++) { const t = tris[i]; for (let k = 0; k < 3; k++) { const e = edgeKey(t[k], t[(k + 1) % 3]); const l = byEdge.get(e); if (l) l.push(i); else byEdge.set(e, [i]); } }
+  const face = [];
+  for (let i = 0; i < tris.length; i++) face.push(-1);
+  const faceNormal = [];
+  for (let seed = 0; seed < tris.length; seed++) {
+    if (face[seed] >= 0 || vlen(normals[seed]) === 0) continue;
+    const id = faceNormal.length; faceNormal.push(normals[seed]);
+    face[seed] = id; const stack = [seed];
+    while (stack.length) {
+      const i = stack.pop(); const t = tris[i];
+      for (let k = 0; k < 3; k++) for (const j of byEdge.get(edgeKey(t[k], t[(k + 1) % 3]))) {
+        if (face[j] < 0 && vdot(normals[j], normals[seed]) > 0.99995) { face[j] = id; stack.push(j); }
+      }
+    }
+  }
+  const cosMin = Math.cos((minAngle * Math.PI) / 180);
+  const pairs = new Map();
+  for (const entry of byEdge) {
+    const e = entry[0], list = entry[1];
+    if (list.length !== 2) continue;
+    const A = face[list[0]], B = face[list[1]];
+    if (A === B || A < 0 || B < 0) continue;
+    if (vdot(faceNormal[A], faceNormal[B]) > cosMin) continue;
+    const lo = Math.min(A, B), hi = Math.max(A, B);
+    const pk = lo * 4294967296 + hi;
+    const a = Math.floor(e / 4294967296), b = e % 4294967296;
+    const g = pairs.get(pk); if (g) g.push([a, b]); else pairs.set(pk, [[a, b]]);
+  }
+  const out = [];
+  for (const entry of pairs) {
+    const pk = entry[0], edges = entry[1];
+    const A = Math.floor(pk / 4294967296), B = pk % 4294967296;
+    const nA = faceNormal[A], nB = faceNormal[B];
+    const t = vnorm(vcross(nA, nB));
+    const origin = verts[edges[0][0]];
+    const param = (v) => vdot(vsub(verts[v], origin), t);
+    const ivs = edges.map((ed) => { const pa = param(ed[0]), pb = param(ed[1]); return pa < pb ? [pa, pb, ed[0], ed[1]] : [pb, pa, ed[1], ed[0]]; }).sort((x, y) => x[0] - y[0]);
+    let cur = null;
+    const runs = [];
+    for (const iv of ivs) {
+      if (cur && iv[0] <= cur[1] + 1e-6) { if (iv[1] > cur[1]) { cur[1] = iv[1]; cur[3] = iv[3]; } }
+      else { cur = iv.slice(); runs.push(cur); }
+    }
+    let tri = null;
+    for (let i = 0; i < tris.length && !tri; i++) if (face[i] === A && tris[i].includes(edges[0][0]) && tris[i].includes(edges[0][1])) tri = tris[i];
+    const centroid = vmul(vadd(vadd(verts[tri[0]], verts[tri[1]]), verts[tri[2]]), 1 / 3);
+    let a = vcross(nA, t); if (vdot(a, vsub(centroid, origin)) < 0) a = vmul(a, -1);
+    const convex = vdot(a, nB) < 0;
+    const angle = (Math.acos(Math.max(-1, Math.min(1, vdot(nA, nB)))) * 180) / Math.PI;
+    for (const run of runs) {
+      if (run[1] - run[0] < 1e-6) continue;
+      const p0 = verts[run[2]], p1 = verts[run[3]];
+      out.push({ p0, p1, t: vnorm(vsub(p1, p0)), nA, nB, convex, angle, length: run[1] - run[0], faces: [A, B], v0: pkey(p0), v1: pkey(p1) });
+    }
+  }
+  return out;
+}
+
+const EDGE_FILTERS = {
+  all: () => true,
+  convex: (e) => e.convex,
+  concave: (e) => !e.convex,
+  horizontal: (e) => Math.abs(e.t[1]) < 0.01,
+  vertical: (e) => Math.abs(e.t[1]) > 0.99,
+  top: (e) => (e.nA[1] > 0.99 && Math.abs(e.nB[1]) < 0.99) || (e.nB[1] > 0.99 && Math.abs(e.nA[1]) < 0.99),
+  bottom: (e) => (e.nA[1] < -0.99 && Math.abs(e.nB[1]) < 0.99) || (e.nB[1] < -0.99 && Math.abs(e.nA[1]) < 0.99),
+};
+function edgeFilter(fn, edges) {
+  if (typeof edges === 'function') return edges;
+  const names = Array.isArray(edges) ? edges : [edges];
+  const fns = names.map((n) => {
+    const f = typeof n === 'string' ? EDGE_FILTERS[n] : undefined;
+    if (!f) throw new TypeError(`${fn}: edges must be 'all', 'top', 'bottom', 'horizontal', 'vertical', 'convex', 'concave', a list of those, or a function, got ${describe(n)}`);
+    return f;
+  });
+  return (e) => fns.every((f) => f(e));
+}
+function slerp(a, b, f) {
+  const c = Math.max(-1, Math.min(1, vdot(a, b))), w = Math.acos(c);
+  if (w < 1e-9) return a;
+  return vnorm(vadd(vmul(a, Math.sin((1 - f) * w) / Math.sin(w)), vmul(b, Math.sin(f * w) / Math.sin(w))));
+}
+/** The section of an edge's cutter (convex) or filler (concave), as offsets from the edge in its normal plane. */
+function edgeSection(e, kind, amount, segments, eps) {
+  const s = e.convex ? 1 : -1;
+  const nA = e.nA, nB = e.nB;
+  const c = vdot(nA, nB);
+  const pts = [];
+  pts.push(vmul(vadd(nA, nB), s * eps));
+  let Ta, Tb;
+  const inner = [];
+  if (kind === 'chamfer') {
+    const a = vmul(vnorm(vsub(nB, vmul(nA, c))), -s), b = vmul(vnorm(vsub(nA, vmul(nB, c))), -s);
+    Ta = vmul(a, amount); Tb = vmul(b, amount);
+  } else {
+    const centre = vmul(vadd(nA, nB), (-s * amount) / (1 + c));
+    Ta = vadd(centre, vmul(nA, s * amount)); Tb = vadd(centre, vmul(nB, s * amount));
+    for (let k = 1; k < segments; k++) inner.push(vadd(centre, vmul(slerp(nA, nB, k / segments), s * amount)));
+  }
+  pts.push(vadd(Ta, vmul(nA, s * eps)), Ta);
+  for (const q of inner) pts.push(q);
+  pts.push(Tb, vadd(Tb, vmul(nB, s * eps)));
+  return pts;
+}
+/** Planes (unit normals through the end vertex) that trim one end of an edge's prism. */
+function endPlanes(e, atEnd, edges) {
+  const v = atEnd ? e.v1 : e.v0;
+  const planes = [];
+  for (const o of edges) {
+    if (o === e || o.convex !== e.convex) continue;
+    if (!o.faces.some((f) => e.faces.includes(f))) continue;
+    let to;
+    if (atEnd) { if (o.v0 === v) to = o.t; else if (o.v1 === v) to = vmul(o.t, -1); else continue; }
+    else { if (o.v1 === v) to = o.t; else if (o.v0 === v) to = vmul(o.t, -1); else continue; }
+    const n = vnorm(atEnd ? vadd(e.t, to) : vadd(to, e.t));
+    if (vlen(n) > 1e-6 && Math.abs(vdot(n, e.t)) > 0.05) planes.push(n);
+  }
+  if (!planes.length) planes.push(e.t);
+  return planes;
+}
+function ringAt(sec, t, station, planes, pickMax) {
+  return sec.map((q) => {
+    let best = pickMax ? -Infinity : Infinity;
+    for (const n of planes) { const l = -vdot(q, n) / vdot(t, n); best = pickMax ? Math.max(best, l) : Math.min(best, l); }
+    return vadd(vadd(station, q), vmul(t, best));
+  });
+}
+const orientEdge = (e, v) => (e.v0 === v ? e : Object.assign({}, e, { p0: e.p1, p1: e.p0, v0: e.v1, v1: e.v0, t: vmul(e.t, -1) }));
+const sharedFace = (a, b) => a.faces.find((f) => b.faces.includes(f));
+/** Group edges of one kind into chains: [{ edges (oriented head to tail), face, closed }]. */
+function edgeChains(edges) {
+  for (let i = 0; i < edges.length; i++) edges[i].id = i;
+  const at = new Map();
+  for (const e of edges) for (const v of [e.v0, e.v1]) { const l = at.get(v); if (l) l.push(e); else at.set(v, [e]); }
+  const nextOf = (e, v) => { const c = (at.get(v) || []).filter((o) => o.id !== e.id && sharedFace(e, o) !== undefined); return c.length === 1 ? c[0] : null; };
+  const used = new Set(), out = [];
+  for (const start of edges) {
+    if (used.has(start.id)) continue;
+    let head = start, v = start.v0, closed = false;
+    const back = new Set([start.id]);
+    for (;;) {
+      const p = nextOf(head, v);
+      if (!p) break;
+      if (p.id === start.id) { closed = true; break; }
+      if (back.has(p.id)) break;
+      back.add(p.id); v = p.v0 === v ? p.v1 : p.v0; head = p;
+    }
+    let cur = closed ? orientEdge(start, start.v0) : orientEdge(head, v);
+    let chain = [cur], face = null;
+    used.add(cur.id);
+    for (;;) {
+      const n = nextOf(cur, cur.v1);
+      if (!n || used.has(n.id)) break;
+      const f = sharedFace(cur, n);
+      if (face === null) face = f;
+      if (f !== face) { out.push({ edges: chain, face, closed: false }); chain = []; face = f; }
+      const o = orientEdge(n, cur.v1);
+      chain.push(o); used.add(n.id); cur = o;
+    }
+    const loop = closed && chain.length >= 3 && chain[chain.length - 1].v1 === chain[0].v0 && sharedFace(chain[chain.length - 1], chain[0]) === face;
+    out.push({ edges: chain, face: face === null ? chain[0].faces[0] : face, closed: loop });
+  }
+  return out;
+}
+/** One continuous skin along a chain of edges: sections at every vertex, mitred, capped at open ends. */
+function chainMesh(ch, kind, amount, segments, eps, all) {
+  const chain = ch.edges, face = ch.face, closed = ch.closed;
+  const k = chain.length;
+  const secs = chain.map((e) => edgeSection(e.faces[0] === face ? e : Object.assign({}, e, { nA: e.nB, nB: e.nA }), kind, amount, segments, eps));
+  const n = secs[0].length;
+  const rings = [];
+  const stations = closed ? k : k + 1;
+  for (let i = 0; i < stations; i++) {
+    const ein = chain[(i - 1 + k) % k], eout = chain[i % k];
+    const station = i < k ? eout.p0 : ein.p1;
+    if (!closed && i === 0) rings.push(ringAt(secs[0], eout.t, station, endPlanes(eout, false, all), false));
+    else if (!closed && i === k) rings.push(ringAt(secs[k - 1], ein.t, station, endPlanes(ein, true, all), true));
+    else {
+      let nb = vnorm(vadd(ein.t, eout.t));
+      if (vlen(nb) < 1e-6 || Math.abs(vdot(nb, ein.t)) < 0.05) nb = ein.t;
+      rings.push(ringAt(secs[(i - 1 + k) % k], ein.t, station, [nb], true));
+    }
+  }
+  const pos = [];
+  for (const ring of rings) for (const p of ring) pos.push(p[0], p[1], p[2]);
+  const tris = [];
+  for (let i = 0; i < k; i++) {
+    const a = i * n, b = ((i + 1) % rings.length) * n;
+    for (let j = 0; j < n; j++) { const j2 = (j + 1) % n; tris.push(a + j, a + j2, b + j2, a + j, b + j2, b + j); }
+  }
+  if (!closed) {
+    const cap = (sec, e) => { const e1 = e.faces[0] === face ? e.nA : e.nB, e2 = vcross(e.t, e1); return triangulateRings([sec.map((q) => [vdot(q, e1), vdot(q, e2)])]); };
+    for (const t of cap(secs[0], chain[0])) tris.push(t[0], t[2], t[1]);
+    const top = k * n;
+    for (const t of cap(secs[k - 1], chain[k - 1])) tris.push(top + t[0], top + t[1], top + t[2]);
+  }
+  return manifoldFromTriangles('fillet', pos, tris);
+}
+function filletPass(shape, kind, amount, o, concavePass) {
+  const all = sharpEdges(shape, o.minAngle);
+  const chosen = all.filter((e) => o.want(e) && !e.convex === concavePass);
+  if (!chosen.length) return { shape, count: 0 };
+  const parts = [];
+  const edges = chosen.filter((e) => e.length >= amount * 0.05);
+  for (const c of edgeChains(edges)) {
+    try { parts.push(chainMesh(c, kind, amount, o.segments, o.eps, edges)); }
+    catch (err) { cad.warn(`${kind}: skipped ${c.edges.length} edge${c.edges.length === 1 ? '' : 's'} (${err.message})`); }
+  }
+  if (!parts.length) return { shape, count: 0 };
+  const tool = parts.length === 1 ? parts[0] : cad.batch(parts, 0);
+  const h = concavePass ? cad.boolean(shape.h, tool, 0) : cad.boolean(shape.h, tool, 1);
+  return { shape: wrap(shape, h), count: parts.length };
+}
+/** Round (fillet) or bevel (chamfer) the sharp edges of a solid with planar faces. opts: { edges, segments=8, minAngle=30 } */
+function filletEdges(kind, shape, amount, opts = {}) {
+  const edges = opts.edges === undefined ? 'all' : opts.edges;
+  const segments = opts.segments === undefined ? 8 : opts.segments;
+  const minAngle = opts.minAngle === undefined ? 30 : opts.minAngle;
+  if (!isShape(shape)) throw new TypeError(`${kind}: expected a Shape, got ${describe(shape)}`);
+  checkPositive(kind, kind === 'fillet' ? 'radius' : 'distance', amount);
+  checkInt(kind, 'segments', segments, 1);
+  const want = edgeFilter(kind, edges);
+  const o = { want, segments, minAngle, eps: Math.max(amount * 0.02, 1e-3) };
+  let r = filletPass(shape, kind, amount, o, true);
+  r = filletPass(r.shape, kind, amount, o, false);
+  return r.shape;
+}
+const fillet = (shape, r, opts) => (isShape(shape) ? filletEdges('fillet', shape, r, opts) : isSketch(shape) ? shape.fillet(r, opts) : filletEdges('fillet', shape, r, opts));
+const chamfer = (shape, d, opts) => (isShape(shape) ? filletEdges('chamfer', shape, d, opts) : isSketch(shape) ? shape.chamfer(d, opts) : filletEdges('chamfer', shape, d, opts));
+P.fillet = function (r, opts) { return filletEdges('fillet', this, r, opts); };
+P.chamfer = function (d, opts) { return filletEdges('chamfer', this, d, opts); };
+
 // ---- helpers --------------------------------------------------------------------
 
 const deg = (radians) => (radians * 180) / Math.PI;
@@ -1640,7 +1909,7 @@ export const api = {
   Sketch, circle, ellipse, rect, square, roundedRect, regularPolygon, polygon2d, slot, teardrop, bridgedCircle,
   union2d, difference2d, intersect2d, hull2d, extrude, revolve, projection, sketch, SketchBuilder,
   SCREWS, screw, screwHole, nutPocket, heatInsert, hole,
-  Path, path, line, arc, helix, bezier, sweep, polyhedron, loft,
+  Path, path, line, arc, helix, bezier, sweep, polyhedron, loft, fillet, chamfer, sharpEdges,
   Face, distance, rectPattern, gridPattern, intersects, interference, overlap, clearance, dimension, mark,
   printer, printProfile, wall, layers, fit, peg, FITS,
   deg, rad, log, print: log, echo, assert, show,
