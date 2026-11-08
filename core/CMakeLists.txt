@@ -41,10 +41,15 @@ list(JOIN TEMEN_MANIFOLD_VERSION_PARTS "." TEMEN_MANIFOLD_VERSION)
 
 # ---- lamassu-js (same file lists as its Makefile) -------------------------
 set(LAMASSU_RUNTIME
-  js_vm.c js_gc.c js_string.c js_map.c js_object.c js_number.c js_interp.c js_mathkernel.c
+  js_vm.c js_gc.c js_string.c js_map.c js_object.c js_number.c js_interp.c
   js_builtins.c js_promise.c js_case.c js_module.c js_regexp.c js_bytecode_read.c js_date.c
   js_mapobj.c js_setobj.c js_error.c)
 list(TRANSFORM LAMASSU_RUNTIME PREPEND ${LAMASSU_DIR}/src/runtime/)
+# the fdlibm-derived math kernel (same bits as Node; see lamassu's Makefile)
+set(LAMASSU_FDLIBM scalbn.c rem_pio2_large.c rem_pio2.c k_sin.c k_cos.c k_tan.c sin.c cos.c tan.c
+  atan.c atan2.c asin.c acos.c exp.c log.c pow.c log2.c log10.c cbrt.c)
+list(TRANSFORM LAMASSU_FDLIBM PREPEND ${LAMASSU_DIR}/src/runtime/fdlibm/)
+list(APPEND LAMASSU_RUNTIME ${LAMASSU_FDLIBM})
 set(LAMASSU_FRONTEND
   js_lexer.c js_parser.c js_compiler.c js_arena.c js_bytecode_write.c js_compile_api.c js_module_compile.c)
 list(TRANSFORM LAMASSU_FRONTEND PREPEND ${LAMASSU_DIR}/src/frontend/)
@@ -58,7 +63,7 @@ target_include_directories(lamassu
   PUBLIC ${LAMASSU_DIR}/src ${LAMASSU_DIR}/src/runtime ${LAMASSU_DIR}/src/frontend
   PRIVATE ${LAMASSU_DIR}/third_party/baru-re/include)
 target_compile_definitions(lamassu PUBLIC LAMASSU_HAS_REGEX PRIVATE _POSIX_C_SOURCE=200809L)
-target_compile_options(lamassu PRIVATE -Wall -Wextra -Wshadow)
+target_compile_options(lamassu PRIVATE -Wall -Wextra -Wshadow -ffp-contract=off)
 if(NOT EMSCRIPTEN)
   target_link_libraries(lamassu PUBLIC m)
 endif()

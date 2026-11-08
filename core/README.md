@@ -77,8 +77,7 @@ printability. `npm run core:diff` says which test scripts the core already build
 `core/test/diff.mjs` builds every script under `test/` and the demo script with both the
 JavaScript runner and the core, and compares part names, volumes and bounds. `ok` is parity,
 `UNSUPPORTED` means the core rejected the script (the port is incomplete there), `DIFF` means
-both built it and disagree — the one to look at. Today the only `DIFF` is `test/sketch-path.js`,
-caused by the math kernel accuracy item below.
+both built it and disagree — the one to look at. Every script the core can build today builds identically.
 
 ## lamassu changes needed
 
@@ -109,16 +108,17 @@ that seems right. The host currently includes two internal headers (`js_bytecode
 6. **Finalizers (later).** Shapes are released in bulk per run, so this is not blocking, but a
    long-lived interactive session that keeps shapes between runs would need a per-object hook when
    the engine collects the wrapper.
-7. **Transcendental accuracy.** `js_mathkernel.c` is about 1e-10 off on ordinary inputs, not the
-   documented 1e-12: `Math.tan(Math.PI / 4)` gives 0.9999999998476966 and `Math.sin(Math.PI / 4)`
-   0.7071067810719247, where Node (fdlibm) is within one ulp. The geometry notices: arc segment
-   counts computed as `Math.ceil(sweep / step)` flip by one between the engines, so a filleted
-   outline has 12 points under lamassu and 13 under V8 and the volumes differ in the fourth
-   significant figure (`core/test/diff.mjs` on `test/sketch-path.js`). The fix that makes models
-   identical on every host is to use fdlibm's sin, cos, tan, asin, acos, atan, atan2, exp, log and
-   pow in the kernel, which is what V8 and musl derive from, so results agree with Node to the bit
-   in nearly every case; it is freestanding C with a permissive licence.
-8. **Top-level `return` in the entry (nice to have).** main.js is wrapped in
+7. **Transcendental accuracy — done.** The kernel is now musl's fdlibm-derived code
+   (`src/runtime/fdlibm/` in lamassu), < 1 ulp, built with `-ffp-contract=off` so native and wasm
+   agree to the bit. `test/sketch-path.js` now matches the JavaScript runner. V8 itself has moved on
+   to LLVM libc's correctly-rounded functions, so about 2% of results still differ from Node by one
+   ulp; bit-identical output with modern Node would need a correctly-rounded kernel, a separate
+   project.
+8. **Number to string is not always the canonical shortest form.** For about 1% of doubles the
+   printed digits differ from V8 in the last place while naming the same value
+   (0.09983341664682816 for what V8 prints as 0.09983341664682815). Harmless for geometry; it
+   shows in `echo()` text compared across runtimes.
+9. **Top-level `return` in the entry (nice to have).** main.js is wrapped in
    `export default async function main() {}` with imports hoisted onto line 1, as the browser app
    does, which costs a one-line offset in every location. A compile flag allowing a top-level
    `return` in a module would remove the wrapping.
