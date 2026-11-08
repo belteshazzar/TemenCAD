@@ -447,6 +447,7 @@ void temen_free(TemenCore *core) {
     free_files(core);
     temen_handles_release(core);
     free(core->objs);
+    free(core->cs);
     free(core->error); free(core->error_file);
     if (core->ctx) js_context_free(core->ctx);
     if (core->vm) js_vm_free(core->vm);

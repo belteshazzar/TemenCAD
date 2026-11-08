@@ -42,6 +42,7 @@ build/native/temencore project-dir/
 
 npm run core:wasm       # emcmake cmake -S core -B build/wasm && cmake --build build/wasm  (needs emsdk on PATH)
 npm run core:test       # node core/test/smoke.mjs — exact volumes through the wasm build
+npm run core:diff       # node core/test/diff.mjs — every test script, old runner vs core
 ```
 
 The wasm build lands in `core/wasm/dist/` (ignored by git); `core/wasm/index.js` wraps it with
@@ -50,16 +51,34 @@ browser worker produces today so the app can swap runtimes.
 
 ## What works
 
-Primitives (`box`/`cube`, `sphere`, `cylinder`, `cone`), booleans (`union`, `difference`,
-`intersect`, `hull`), transforms, `bounds`/`align`/`onPlate`, naming, colours, ghost/hidden,
-`echo`/`log`/`assert`/`show`, multi-file projects with relative imports, font imports as names,
-return of a shape, an array or a named object, mesh extraction, binary STL from the CLI.
+Primitives (`box`/`cube`, `sphere`, `cylinder`, `cone`, `roundedBox`, `torus`, `polygon`, `prism`),
+booleans (`union`, `difference`, `intersect`, `hull` including hulls of raw points), transforms,
+`resize`, `bounds`/`align`/`onPlate`, arrays (`linearArray`, `polarArray`, `grid`), naming, colours,
+ghost/hidden, `echo`/`log`/`assert`/`show`, multi-file projects with relative imports, font imports
+as names, return of a shape, an array or a named object, mesh extraction, binary STL from the CLI.
+
+The 2D layer: `Sketch` with translate/rotate/scale/resize/mirror, 2D booleans and hull, `offset`,
+`fillet`, `chamfer`, `bounds`, `area`, `toPolygons`; `circle`, `ellipse`, `rect`/`square`,
+`roundedRect`, `regularPolygon`, `polygon2d` with holes, `slot`, `teardrop`, `bridgedCircle`; the
+pen (`sketch().moveTo/lineTo/line/horizontal/vertical/arcTo/tangentArcTo/fillet/close`); `extrude`
+(centre, twist, scale, slices), `revolve`, `projection` (footprint or a cut). Booleans and `hull`
+dispatch to 2D when every argument is a sketch, as in the app.
+
 Each run gets a fresh engine context; Manifold objects are released in bulk after the run, as
 the browser app does with `releaseAll()`.
 
-Not yet: sketches and 2D, extrude/revolve/sweep, fillets, text, images and meshes, screws and
-holes, placement helpers, measurements, printability, the printer profile. These are the next
-slices of `src/cad.js` and friends to bring across into `prelude.js` plus natives.
+Not yet: `text`/`text3d`/`emboss`/`engrave` (fonts), screws and holes and the printer profile,
+placement (`Face`, `placeOn`, `alignTo`, anchors, patterns), measurements, paths and `sweep`,
+3D fillets and chamfers, `loft`/`shell`/`minkowski`/`polyhedron`/`roof`, images and mesh imports,
+printability. `npm run core:diff` says which test scripts the core already builds identically.
+
+## Differential test
+
+`core/test/diff.mjs` builds every script under `test/` and the demo script with both the
+JavaScript runner and the core, and compares part names, volumes and bounds. `ok` is parity,
+`UNSUPPORTED` means the core rejected the script (the port is incomplete there), `DIFF` means
+both built it and disagree — the one to look at. Today the only `DIFF` is `test/sketch-path.js`,
+caused by the math kernel accuracy item below.
 
 ## lamassu changes needed
 
@@ -90,7 +109,16 @@ that seems right. The host currently includes two internal headers (`js_bytecode
 6. **Finalizers (later).** Shapes are released in bulk per run, so this is not blocking, but a
    long-lived interactive session that keeps shapes between runs would need a per-object hook when
    the engine collects the wrapper.
-7. **Top-level `return` in the entry (nice to have).** main.js is wrapped in
+7. **Transcendental accuracy.** `js_mathkernel.c` is about 1e-10 off on ordinary inputs, not the
+   documented 1e-12: `Math.tan(Math.PI / 4)` gives 0.9999999998476966 and `Math.sin(Math.PI / 4)`
+   0.7071067810719247, where Node (fdlibm) is within one ulp. The geometry notices: arc segment
+   counts computed as `Math.ceil(sweep / step)` flip by one between the engines, so a filleted
+   outline has 12 points under lamassu and 13 under V8 and the volumes differ in the fourth
+   significant figure (`core/test/diff.mjs` on `test/sketch-path.js`). The fix that makes models
+   identical on every host is to use fdlibm's sin, cos, tan, asin, acos, atan, atan2, exp, log and
+   pow in the kernel, which is what V8 and musl derive from, so results agree with Node to the bit
+   in nearly every case; it is freestanding C with a permissive licence.
+8. **Top-level `return` in the entry (nice to have).** main.js is wrapped in
    `export default async function main() {}` with imports hoisted onto line 1, as the browser app
    does, which costs a one-line offset in every location. A compile flag allowing a top-level
    `return` in a module would remove the wrapping.

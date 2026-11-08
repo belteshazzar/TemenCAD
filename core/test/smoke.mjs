@@ -65,6 +65,41 @@ check('syntax error on line 1 of main.js', r.error?.file === 'main.js' && r.erro
 r = rt.run({ 'main.js': 'class A {}' });
 check('class is rejected', !r.ok, r.error?.message);
 
+// 4b. the 2D layer: areas and volumes with closed forms
+r = rt.run({ 'main.js': `
+  const c = circle(5, { segments: 360 });
+  echo('area', c.area());
+  const sq = rect(4, 6);
+  const ring = difference(circle(5, { segments: 360 }), circle(3, { segments: 360 }));
+  const tube = extrude(ring, 10);
+  const tor = torus(10, 2, { segments: 180, tubeSegments: 90 });
+  const hex = prism(6, 2, 5);
+  const rr = roundedRect(10, 6, 1, { segments: 32 });
+  const pen = sketch().moveTo(0, 0).lineTo(10, 0).lineTo(10, 4).lineTo(0, 4).close();
+  const cut = projection(box(4, 2, 6), { cut: true });
+  const sl = slot(10, 2, { segments: 360 });
+  echo('sq', sq.area(), 'rr', rr.area(), 'pen', pen.area(), 'cut', cut.area(), 'slot', sl.area());
+  return { tube, tor, hex, block: extrude(sq, 3), rev: revolve(rect(2, 4, { center: false }).translate(3, 0), { segments: 360 }) };
+` });
+check('2D scripts run', r.ok, r.error?.message);
+if (r.ok) {
+  const msgs = r.messages.map((m) => m.text).join('\n');
+  const area = +msgs.match(/"area", ([\d.]+)/)[1];
+  check('circle area ~ 25 pi', near(area, 25 * Math.PI, 1e-4), String(area));
+  const m = msgs.match(/"sq", ([\d.]+), "rr", ([\d.]+), "pen", ([\d.]+), "cut", ([\d.]+), "slot", ([\d.]+)/);
+  check('rect area 24', near(+m[1], 24));
+  check('roundedRect area 60 - (4 - pi)', near(+m[2], 60 - (4 - Math.PI), 1e-3), m[2]);
+  check('pen outline area 40', near(+m[3], 40));
+  check('projection cut area 24 (4 x 6 footprint)', near(+m[4], 24), m[4]);
+  check('slot area 2*2*10 + pi*4', near(+m[5], 40 + 4 * Math.PI, 1e-4), m[5]);
+  const byName = Object.fromEntries(r.parts.map((p) => [p.name, p]));
+  check('tube volume pi*(25-9)*10', near(byName.tube.volume, Math.PI * 16 * 10, 1e-4), String(byName.tube.volume));
+  check('torus volume 2 pi^2 R r^2', near(byName.tor.volume, 2 * Math.PI * Math.PI * 10 * 4, 2e-3), String(byName.tor.volume));
+  check('hex prism volume', near(byName.hex.volume, (3 * Math.sqrt(3) / 2) * 4 * 5, 1e-9), String(byName.hex.volume));
+  check('extruded rect volume 72, base on y=0', near(byName.block.volume, 72) && near(Math.min(...byName.block.positions.filter((_, i) => i % 3 === 1)), 0, 1e-9));
+  check('revolved rect: annulus 3..5 x height 4', near(byName.rev.volume, Math.PI * (25 - 9) * 4, 1e-4), String(byName.rev.volume));
+}
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);

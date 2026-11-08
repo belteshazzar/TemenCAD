@@ -10,6 +10,7 @@
 #include "temencad.h"
 
 typedef struct ManifoldManifold ManifoldManifold;
+typedef struct ManifoldCrossSection ManifoldCrossSection;
 
 /* A file handed to temen_run, kept for the duration of the run. */
 typedef struct TemenHostFile {
@@ -47,6 +48,8 @@ struct TemenCore {
     /* Manifold objects created during the run; all freed when it ends. */
     ManifoldManifold **objs;
     size_t n_objs, cap_objs;
+    ManifoldCrossSection **cs;
+    size_t n_cs, cap_cs;
 
     /* results */
     TemenPart *parts;
@@ -77,6 +80,8 @@ bool temen_where(TemenCore *core, const char **file, int *line);
 bool temen_install_cad(TemenCore *core);                        /* creates __cad on the globals */
 uint32_t temen_handle_new(TemenCore *core, ManifoldManifold *m); /* 1-based; 0 on failure */
 ManifoldManifold *temen_handle_get(TemenCore *core, double h);
+uint32_t temen_cs_new(TemenCore *core, ManifoldCrossSection *cs);
+ManifoldCrossSection *temen_cs_get(TemenCore *core, double h);
 void temen_handles_release(TemenCore *core);
 
 #endif
