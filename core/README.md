@@ -64,10 +64,15 @@ pen (`sketch().moveTo/lineTo/line/horizontal/vertical/arcTo/tangentArcTo/fillet/
 (centre, twist, scale, slices), `revolve`, `projection` (footprint or a cut). Booleans and `hull`
 dispatch to 2D when every argument is a sketch, as in the app.
 
+Screws and holes: `SCREWS`, `screw`, `screwHole` (clearance, tap, counterbore, countersunk, `bridge`),
+`nutPocket`, `heatInsert`, `hole` (teardrop, bridge, round; any axis). The printer profile: `printer`,
+`printProfile`, `wall`, `layers`, `fit`, `peg`, `FITS`; a declared profile compensates `hole()` and is
+returned to the host (`temen_profile`, `result.profile`).
+
 Each run gets a fresh engine context; Manifold objects are released in bulk after the run, as
 the browser app does with `releaseAll()`.
 
-Not yet: `text`/`text3d`/`emboss`/`engrave` (fonts), screws and holes and the printer profile,
+Not yet: `text`/`text3d`/`emboss`/`engrave` (fonts),
 placement (`Face`, `placeOn`, `alignTo`, anchors, patterns), measurements, paths and `sweep`,
 3D fillets and chamfers, `loft`/`shell`/`minkowski`/`polyhedron`/`roof`, images and mesh imports,
 printability. `npm run core:diff` says which test scripts the core already builds identically.

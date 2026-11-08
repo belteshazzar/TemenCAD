@@ -743,6 +743,138 @@ function grid(shape, counts = [], steps = [], opts = {}) {
   return out;
 }
 
+// ---- printer profile (print-profile.js) ----------------------------------------------
+//
+// Declared once at the top of a script; helpers derive printable dimensions from it, and hole()
+// oversizes by holeCompensation on its own once a profile is declared.
+
+const FITS = { press: -0.1, snug: 0, slide: 0.15, clearance: 0.3, loose: 0.6 };
+const PROFILE_DEFAULT = Object.freeze({ nozzle: 0.4, layer: 0.2, holeCompensation: 0.2, material: null, declared: false });
+let declaredProfile = null;
+/** The profile in force: the one the script declared, or the defaults. */
+const printProfile = () => (declaredProfile === null ? PROFILE_DEFAULT : declaredProfile);
+
+function printer(opts = {}) {
+  if (!opts || typeof opts !== 'object') throw new TypeError(`printer: expected { nozzle, layer, holeCompensation, material }, got ${describe(opts)}`);
+  const p = Object.assign({}, PROFILE_DEFAULT, opts, { declared: true });
+  checkPositive('printer', 'nozzle', p.nozzle); checkPositive('printer', 'layer', p.layer); checkNonNegative('printer', 'holeCompensation', p.holeCompensation);
+  if (p.material !== null && typeof p.material !== 'string') throw new TypeError(`printer: material must be a string, got ${describe(p.material)}`);
+  for (const k of Object.keys(opts)) if (!(k in PROFILE_DEFAULT)) throw new TypeError(`printer: unknown option "${k}"; use nozzle, layer, holeCompensation, material`);
+  declaredProfile = Object.freeze(p);
+  return declaredProfile;
+}
+const roundUp = (v, step) => { const n = Math.ceil(v / step - 1e-9); return +(n * step).toFixed(6); };
+/** Wall thickness rounded up to whole extrusion lines; opts: { lines } for a count instead. */
+function wall(t, opts = {}) {
+  const nozzle = printProfile().nozzle;
+  if (opts.lines !== undefined) { checkPositive('wall', 'lines', opts.lines); return +(Math.round(opts.lines) * nozzle).toFixed(6); }
+  checkPositive('wall', 't', t);
+  return roundUp(t, nozzle);
+}
+/** A height rounded up to whole layers; opts: { count } for a layer count instead. */
+function layers(h, opts = {}) {
+  const layer = printProfile().layer;
+  if (opts.count !== undefined) { checkPositive('layers', 'count', opts.count); return +(Math.round(opts.count) * layer).toFixed(6); }
+  checkPositive('layers', 'h', h);
+  return roundUp(h, layer);
+}
+function allowance(fn, kind) {
+  if (typeof kind === 'number') return checkNumber(fn, 'allowance', kind);
+  if (typeof kind !== 'string' || !(kind in FITS)) throw new TypeError(`${fn}: kind must be ${Object.keys(FITS).map((k) => `'${k}'`).join(' | ')} or a number in mm, got ${describe(kind)}`);
+  return FITS[kind];
+}
+/** The hole diameter to model so a part of diameter d fits it. */
+function fit(d, kind = 'clearance') { checkPositive('fit', 'd', d); return +(d + printProfile().holeCompensation + allowance('fit', kind)).toFixed(6); }
+/** The peg diameter to model so it fits an existing hole of diameter d the same way. */
+function peg(d, kind = 'clearance') { checkPositive('peg', 'd', d); return +(d - printProfile().holeCompensation / 2 - allowance('peg', kind)).toFixed(6); }
+
+// ---- screws and holes (cad.js) ------------------------------------------------------------
+// clearance: ISO 273 medium fit. head: ISO 4762 socket cap (dia, height). csk: ISO 10642 head dia (90°).
+// nut: ISO 4032 across-flats, thickness. insert: typical heat-set insert hole dia. tap: tap drill dia.
+
+const SCREWS = {
+  M2:   { d: 2,   clearance: 2.4, head: [3.8, 2.0],  csk: 3.8,  nut: [4.0, 1.6],  insert: 3.2,  tap: 1.6 },
+  M2_5: { d: 2.5, clearance: 2.9, head: [4.5, 2.5],  csk: 4.7,  nut: [5.0, 2.0],  insert: 3.5,  tap: 2.05 },
+  M3:   { d: 3,   clearance: 3.4, head: [5.5, 3.0],  csk: 6.7,  nut: [5.5, 2.4],  insert: 4.0,  tap: 2.5 },
+  M4:   { d: 4,   clearance: 4.5, head: [7.0, 4.0],  csk: 9.0,  nut: [7.0, 3.2],  insert: 5.6,  tap: 3.3 },
+  M5:   { d: 5,   clearance: 5.5, head: [8.5, 5.0],  csk: 11.2, nut: [8.0, 4.7],  insert: 6.4,  tap: 4.2 },
+  M6:   { d: 6,   clearance: 6.6, head: [10.0, 6.0], csk: 13.4, nut: [10.0, 5.2], insert: 8.0,  tap: 5.0 },
+  M8:   { d: 8,   clearance: 9.0, head: [13.0, 8.0], csk: 17.9, nut: [13.0, 6.8], insert: 10.0, tap: 6.8 },
+};
+const SCREW_KEYS = ['M2', 'M2_5', 'M3', 'M4', 'M5', 'M6', 'M8'];
+function screw(size) {
+  const key = String(size).toUpperCase().replace('.', '_');
+  const s = SCREWS[key] !== undefined ? SCREWS[key] : SCREWS['M' + key];
+  if (!s) throw new Error(`Unknown screw size "${size}". Known: ${SCREW_KEYS.join(', ').replace(/_/g, '.')}`);
+  return s;
+}
+const OVERSHOOT = 1; // cutters poke this far above y = 0 so subtractions cut cleanly through the top face
+
+/** A cutter for a screw hole: axis Y, top surface y = 0, shank going down `length`. */
+function screwHole(size, length = 10, opts = {}) {
+  const type = opts.type === undefined ? 'clearance' : opts.type;
+  const headDepth = opts.headDepth;
+  const tolerance = opts.tolerance === undefined ? 0.2 : opts.tolerance;
+  const segments = opts.segments === undefined ? 32 : opts.segments;
+  const bridge = opts.bridge === undefined ? 0 : opts.bridge;
+  const s = screw(size);
+  checkPositive('screwHole', 'length', length); checkNonNegative('screwHole', 'tolerance', tolerance); checkInt('screwHole', 'segments', segments, 3);
+  checkNonNegative('screwHole', 'bridge', bridge);
+  const shank = ((type === 'tap' ? s.tap : s.clearance) + tolerance) / 2;
+  const L = length, O = OVERSHOOT;
+  let profile;
+  if (type === 'clearance' || type === 'tap') {
+    profile = [[0, -L], [shank, -L], [shank, O], [0, O]];
+  } else if (type === 'counterbore') {
+    const hd = s.head[0], hh = s.head[1];
+    const head = (hd + tolerance) / 2, depth = headDepth === undefined ? hh : headDepth;
+    if (bridge > 0) return union(revolve(polygon2d([[0, -L], [shank, -L], [shank, -depth - bridge], [0, -depth - bridge]]), { segments }), revolve(polygon2d([[0, -depth], [head, -depth], [head, O], [0, O]]), { segments }));
+    profile = [[0, -L], [shank, -L], [shank, -depth], [head, -depth], [head, O], [0, O]];
+  } else if (type === 'countersunk') {
+    const top = (s.csk + tolerance) / 2;
+    const depth = top - shank;
+    if (bridge > 0) return union(revolve(polygon2d([[0, -L], [shank, -L], [shank, -depth - bridge], [0, -depth - bridge]]), { segments }), revolve(polygon2d([[0, -depth], [shank, -depth], [top, 0], [top, O], [0, O]]), { segments }));
+    profile = [[0, -L], [shank, -L], [shank, -depth], [top, 0], [top, O], [0, O]];
+  } else {
+    throw new Error(`screwHole: unknown type "${type}"`);
+  }
+  return revolve(polygon2d(profile), { segments });
+}
+/** A printable hole cutter along `axis`; horizontal holes get a teardrop (default), bridge or round section. */
+function hole(r = 1, length = 10, opts = {}) {
+  const axis = opts.axis === undefined ? 'z' : opts.axis;
+  const shape = opts.shape === undefined ? 'teardrop' : opts.shape;
+  const angle = opts.angle === undefined ? 45 : opts.angle;
+  const flat = opts.flat;
+  let tolerance = opts.tolerance;
+  const segments = opts.segments === undefined ? 48 : opts.segments;
+  if (tolerance === undefined) { const p = printProfile(); tolerance = p.declared ? p.holeCompensation : 0; }
+  checkPositive('hole', 'radius', r); checkPositive('hole', 'length', length); checkNonNegative('hole', 'tolerance', tolerance);
+  if (axis !== 'x' && axis !== 'y' && axis !== 'z') throw new TypeError(`hole: axis must be 'x', 'y' or 'z', got ${describe(axis)}`);
+  if (shape !== 'teardrop' && shape !== 'bridge' && shape !== 'round') throw new TypeError(`hole: shape must be 'teardrop', 'bridge' or 'round', got ${describe(shape)}`);
+  const R = r + tolerance / 2;
+  if (axis === 'y') return cylinder(R, length, { segments });
+  const section = shape === 'teardrop' ? teardrop(R, { angle, flat, segments }) : shape === 'bridge' ? bridgedCircle(R, { angle, segments }) : circle(R, { segments });
+  const s = extrude(section, length, { center: true }).rotate(90, 0, 0);
+  return axis === 'x' ? s.rotate(0, 90, 0) : s;
+}
+/** Hexagonal nut pocket cutter: axis Y, top at y = 0. opts: { depth, tolerance=0.2 } */
+function nutPocket(size, opts = {}) {
+  const tolerance = opts.tolerance === undefined ? 0.2 : opts.tolerance;
+  const nut = screw(size).nut;
+  const d = opts.depth === undefined ? nut[1] : opts.depth;
+  const r = (nut[0] + tolerance) / Math.sqrt(3);
+  return prism(6, r, d + OVERSHOOT).rotate(0, 30, 0).translate(0, OVERSHOOT / 2 - d / 2, 0);
+}
+/** Heat-set insert hole cutter: axis Y, top at y = 0. opts: { depth, tolerance=0, segments } */
+function heatInsert(size, opts = {}) {
+  const tolerance = opts.tolerance === undefined ? 0 : opts.tolerance;
+  const segments = opts.segments === undefined ? 32 : opts.segments;
+  const s = screw(size);
+  const d = opts.depth === undefined ? s.d * 2 : opts.depth;
+  return cylinder((s.insert + tolerance) / 2, d + OVERSHOOT, { segments }).translate(0, OVERSHOOT / 2 - d / 2, 0);
+}
+
 // ---- helpers --------------------------------------------------------------------
 
 const deg = (radians) => (radians * 180) / Math.PI;
@@ -821,6 +953,7 @@ const show = (...args) => {
 
 export async function run(main) {
   shown.length = 0;
+  declaredProfile = null;
   const result = await main();
   const shapes = collect(shown).concat(collect(result === undefined ? [] : [result]));
   const used = new Map();
@@ -834,7 +967,7 @@ export async function run(main) {
     if (s.isEmpty()) { cad.warn(`"${name}" is empty (no volume) and was skipped.`); continue; }
     parts.push({ h: s.h, name, named: s.meta.name !== undefined, color: s.colorValue, ghost: !!s.meta.ghost, hidden: !!s.meta.hidden });
   }
-  return parts;
+  return { parts, profile: declaredProfile };
 }
 
 export const api = {
@@ -842,5 +975,7 @@ export const api = {
   union, difference, intersect, hull, linearArray, polarArray, grid,
   Sketch, circle, ellipse, rect, square, roundedRect, regularPolygon, polygon2d, slot, teardrop, bridgedCircle,
   union2d, difference2d, intersect2d, hull2d, extrude, revolve, projection, sketch, SketchBuilder,
+  SCREWS, screw, screwHole, nutPocket, heatInsert, hole,
+  printer, printProfile, wall, layers, fit, peg, FITS,
   deg, rad, log, print: log, echo, assert, show,
 };

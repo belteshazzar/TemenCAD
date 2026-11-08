@@ -78,6 +78,12 @@ EXPORT const char *tw_msg_text(int i) { return g_msgs[i].text; }
 EXPORT const char *tw_msg_file(int i) { return g_msgs[i].file; }
 EXPORT int tw_msg_line(int i) { return g_msgs[i].line; }
 
+EXPORT int tw_profile_declared(void) { return temen_profile(g_core)->declared; }
+EXPORT double tw_profile_nozzle(void) { return temen_profile(g_core)->nozzle; }
+EXPORT double tw_profile_layer(void) { return temen_profile(g_core)->layer; }
+EXPORT double tw_profile_hole_compensation(void) { return temen_profile(g_core)->hole_compensation; }
+EXPORT const char *tw_profile_material(void) { return temen_profile(g_core)->material; }
+
 EXPORT int tw_part_count(void) { return g_core ? (int)temen_part_count(g_core) : 0; }
 EXPORT const char *tw_part_name(int i) { return temen_part(g_core, (size_t)i)->name; }
 EXPORT int tw_part_named(int i) { return temen_part(g_core, (size_t)i)->named; }

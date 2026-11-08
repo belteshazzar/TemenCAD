@@ -448,6 +448,7 @@ void temen_free(TemenCore *core) {
     temen_handles_release(core);
     free(core->objs);
     free(core->cs);
+    free((void *)core->profile.material);
     free(core->error); free(core->error_file);
     if (core->ctx) js_context_free(core->ctx);
     if (core->vm) js_vm_free(core->vm);
@@ -461,6 +462,7 @@ int temen_error_line(const TemenCore *core) { return core->error_line; }
 size_t temen_part_count(const TemenCore *core) { return core->n_parts; }
 const TemenPart *temen_part(const TemenCore *core, size_t i) { return i < core->n_parts ? &core->parts[i] : NULL; }
 double temen_last_run_ms(const TemenCore *core) { return core->last_ms; }
+const TemenProfile *temen_profile(const TemenCore *core) { return &core->profile; }
 const char *temen_version(void) { return "temencore 0.1 (lamassu-js, manifold " TEMEN_MANIFOLD_VERSION ")"; }
 
 /* ---------------------------------------------------------------- run */
@@ -553,6 +555,8 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
     temen_handles_release(core);
     free(core->error); free(core->error_file);
     core->error = core->error_file = NULL; core->error_line = 0;
+    free((void *)core->profile.material);
+    memset(&core->profile, 0, sizeof core->profile);
 
     core->files = calloc(n_files ? n_files : 1, sizeof *core->files);
     if (!core->files) { set_error(core, "out of memory", NULL, 0); return 2; }
@@ -581,11 +585,21 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
         core->slot_c = out; /* the promise run() returns */
         if (!js_is_promise(out)) { set_error(core, "prelude run() did not return a promise", NULL, 0); status = 2; goto done; }
         if (settle(core, out) != 1) { report_rejection(core, js_promise_result(out)); status = 1; goto done; }
-        JsValue list = js_promise_result(out);
-        core->slot_a = list;
+        JsValue res = js_promise_result(out);
+        core->slot_a = res;
+        JsValue list = js_object_get(core->vm, res, temen_atom(core, "parts"));
         uint32_t n = js_array_length(list);
         for (uint32_t i = 0; i < n; i++) {
             if (!collect_part(core, js_array_get(list, i))) { status = 2; goto done; }
+        }
+        JsValue prof = js_object_get(core->vm, res, temen_atom(core, "profile"));
+        if (js_is_object(prof)) {
+            core->profile.declared = 1;
+            core->profile.nozzle = js_get_number(js_object_get(core->vm, prof, temen_atom(core, "nozzle")));
+            core->profile.layer = js_get_number(js_object_get(core->vm, prof, temen_atom(core, "layer")));
+            core->profile.hole_compensation = js_get_number(js_object_get(core->vm, prof, temen_atom(core, "holeCompensation")));
+            JsValue mat = js_object_get(core->vm, prof, temen_atom(core, "material"));
+            core->profile.material = js_is_string(mat) ? temen_value_to_utf8(core, mat) : NULL;
         }
     }
 done:

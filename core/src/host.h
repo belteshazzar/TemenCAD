@@ -54,6 +54,7 @@ struct TemenCore {
     /* results */
     TemenPart *parts;
     size_t n_parts, cap_parts;
+    TemenProfile profile;
     char *error, *error_file;
     int error_line;
     double last_ms;

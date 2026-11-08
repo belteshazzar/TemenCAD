@@ -4,7 +4,8 @@
  *   import { createRuntime } from './index.js';
  *   const rt = await createRuntime();
  *   const result = rt.run({ 'main.js': 'return box(10)' });
- *   // result: { ok, error, messages: [{ kind, text, file, line }], parts: [{ name, positions, indices, volume, ... }], ms }
+ *   // result: { ok, error, messages: [{ kind, text, file, line }], parts: [{ name, positions, indices, volume, ... }], ms,
+ *   //           profile: null | { nozzle, layer, holeCompensation, material, declared } }
  *
  * `files` maps project paths to strings (scripts) or Uint8Array / ArrayBuffer (binary assets).
  * The same shape of result the browser worker produces today, so the app can swap runtimes.
@@ -42,7 +43,10 @@ export async function createRuntime(moduleOptions = {}) {
     for (let i = 0; i < M._tw_msg_count(); i++) {
       messages.push({ kind: M._tw_msg_kind(i) === 1 ? 'warn' : 'log', text: str(M._tw_msg_text(i)), file: str(M._tw_msg_file(i)), line: M._tw_msg_line(i) || null });
     }
-    const result = { ok: status === 0, status, error: null, messages, parts: [], ms: M._tw_last_ms() };
+    const result = { ok: status === 0, status, error: null, messages, parts: [], ms: M._tw_last_ms(), profile: null };
+    if (status === 0 && M._tw_profile_declared()) {
+      result.profile = { nozzle: M._tw_profile_nozzle(), layer: M._tw_profile_layer(), holeCompensation: M._tw_profile_hole_compensation(), material: str(M._tw_profile_material()), declared: true };
+    }
     if (status !== 0) {
       result.error = { message: str(M._tw_error()), file: str(M._tw_error_file()), line: M._tw_error_line() || null };
       return result;

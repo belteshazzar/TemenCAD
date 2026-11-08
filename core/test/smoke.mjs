@@ -100,6 +100,34 @@ if (r.ok) {
   check('revolved rect: annulus 3..5 x height 4', near(byName.rev.volume, Math.PI * (25 - 9) * 4, 1e-4), String(byName.rev.volume));
 }
 
+// 4c. screws, holes and the printer profile
+r = rt.run({ 'main.js': `
+  echo('fit', fit(5), 'wall', wall(1), 'layers', layers(3.1), 'hole0', hole(2, 10).bounds().size[0]);
+  printer({ nozzle: 0.6, layer: 0.3, holeCompensation: 0.3, material: 'PETG' });
+  echo('fit', fit(5, 'slide'), 'wall', wall(1.3), 'peg', peg(6, 'slide'), 'hole1', hole(2, 10).bounds().size[0]);
+  const blk = box(20, 10, 20).onPlate();
+  const plain = blk.subtract(screwHole('M4', 10, { type: 'counterbore' }).translate(0, 10, 0));
+  const bridged = blk.subtract(screwHole('M4', 10, { type: 'counterbore', bridge: 0.2 }).translate(0, 10, 0));
+  echo('membrane', bridged.volume() - plain.volume());
+  return { pocket: blk.subtract(nutPocket('M3').translate(0, 10, 0)), insert: blk.subtract(heatInsert('M3').translate(0, 10, 0)), tapped: blk.subtract(screwHole('M3', 8, { type: 'tap' }).translate(0, 10, 0)) };
+` });
+check('screw scripts run', r.ok, r.error?.message);
+if (r.ok) {
+  const t = r.messages.map((m) => m.text).join('\n');
+  check('profile defaults: fit 5.5, wall 1.2, layers 3.2, hole 4', /"fit", 5.5, "wall", 1.2, "layers", 3.2, "hole0", 4\b/.test(t), t.split('\n')[0]);
+  check('declared profile: fit 5.45, wall 1.8, peg 5.7, hole 4.3', /"fit", 5.45, "wall", 1.8, "peg", 5.7, "hole1", 4.3\b/.test(t), t.split('\n')[1]);
+  const membrane = +t.match(/"membrane", ([\d.]+)/)[1];
+  check('counterbore bridge leaves a 0.2 mm disc', near(membrane, Math.PI * ((4.5 + 0.2) / 2) ** 2 * 0.2, 0.03), String(membrane));
+  check('profile reported to the host', r.profile && r.profile.nozzle === 0.6 && r.profile.material === 'PETG' && r.profile.declared, JSON.stringify(r.profile));
+  const byName = Object.fromEntries(r.parts.map((p) => [p.name, p]));
+  check('nut pocket removes a hexagon x depth', near(4000 - byName.pocket.volume, (3 * Math.sqrt(3) / 2) * ((5.5 + 0.2) / Math.sqrt(3)) ** 2 * 2.4, 1e-6), String(4000 - byName.pocket.volume));
+  const poly = (n, r) => (n / 2) * Math.sin((2 * Math.PI) / n) * r * r; // area of the n-gon the cutter really is
+  check('heat insert removes a 32-gon x depth', near(4000 - byName.insert.volume, poly(32, 2) * 6, 1e-6), String(4000 - byName.insert.volume));
+  check('tap hole removes a 32-gon x length', near(4000 - byName.tapped.volume, poly(32, (2.5 + 0.2) / 2) * 8, 1e-6), String(4000 - byName.tapped.volume));
+}
+r = rt.run({ 'main.js': 'return box(2).subtract(hole(1, 4))' });
+check('profile is null when none declared', r.ok && r.profile === null, JSON.stringify(r.profile));
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);

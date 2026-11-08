@@ -50,6 +50,15 @@ typedef struct TemenPart {
     double volume;           /* mm^3 */
 } TemenPart;
 
+/* The printer profile the script declared with printer(); `declared` is 0 when it did not. */
+typedef struct TemenProfile {
+    int declared;
+    double nozzle;
+    double layer;
+    double hole_compensation;
+    const char *material; /* NULL when none */
+} TemenProfile;
+
 TemenCore *temen_new(void);
 void       temen_free(TemenCore *core);
 
@@ -70,6 +79,9 @@ int         temen_error_line(const TemenCore *core);
 
 size_t           temen_part_count(const TemenCore *core);
 const TemenPart *temen_part(const TemenCore *core, size_t index);
+
+/* The profile of the last run (declared == 0 when the script declared none). */
+const TemenProfile *temen_profile(const TemenCore *core);
 
 /* Milliseconds the last run took. */
 double temen_last_run_ms(const TemenCore *core);
