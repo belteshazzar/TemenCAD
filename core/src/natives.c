@@ -10,6 +10,7 @@
  * per-object free: the engine has no finalizer hook yet (see README).
  */
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -421,6 +422,71 @@ static bool n_hull_points(JsContext *ctx, JsValue this_val, const JsValue *args,
     return ret_handle(core, out, result);
 }
 
+/* meshFromTriangles(positions[], tris[]): a solid from raw triangles (merged first, so coincident
+ * vertices join). Throws naming Manifold's status when the mesh is not a closed, manifold solid. */
+static const char *STATUS_NAMES[] = {
+    "NoError", "NonFiniteVertex", "NotManifold", "VertexOutOfBounds", "PropertiesWrongLength", "MissingPositionProperties",
+    "MergeVectorsDifferentLengths", "MergeIndexOutOfBounds", "TransformWrongLength", "RunIndexWrongLength", "FaceIDWrongLength",
+    "InvalidConstruction", "ResultTooLarge",
+};
+static bool n_mesh_from_triangles(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val;
+    TemenCore *core = CORE();
+    if (argc < 2 || !js_is_array(args[0]) || !js_is_array(args[1])) THROW(temen_type_error(core, "__cad.meshFromTriangles: expected two arrays"));
+    uint32_t np = js_array_length(args[0]), nt = js_array_length(args[1]);
+    if (np % 3 || nt % 3) THROW(temen_type_error(core, "__cad.meshFromTriangles: lengths must be multiples of 3"));
+    float *pos = malloc((np ? np : 1) * sizeof *pos);
+    uint32_t *tri = malloc((nt ? nt : 1) * sizeof *tri);
+    if (!pos || !tri) { free(pos); free(tri); THROW(temen_range_error(core, "out of memory")); }
+    for (uint32_t i = 0; i < np; i++) { JsValue v = js_array_get(args[0], i); if (!js_is_number(v)) { free(pos); free(tri); THROW(temen_type_error(core, "__cad.meshFromTriangles: positions must be numbers")); } pos[i] = (float)js_get_number(v); }
+    for (uint32_t i = 0; i < nt; i++) {
+        JsValue v = js_array_get(args[1], i);
+        double d = js_is_number(v) ? js_get_number(v) : -1;
+        if (d < 0 || d >= np / 3 || d != floor(d)) { free(pos); free(tri); THROW(temen_range_error(core, "__cad.meshFromTriangles: triangle index out of range")); }
+        tri[i] = (uint32_t)d;
+    }
+    ManifoldMeshGL *raw = manifold_meshgl(malloc(manifold_meshgl_size()), pos, np / 3, 3, tri, nt / 3);
+    free(pos); free(tri);
+    ManifoldMeshGL *merged = manifold_meshgl_merge(malloc(manifold_meshgl_size()), raw);
+    manifold_delete_meshgl(raw);
+    ManifoldManifold *m = manifold_of_meshgl(mem(), merged);
+    manifold_delete_meshgl(merged);
+    ManifoldError st = manifold_status(m);
+    if (st != MANIFOLD_NO_ERROR) {
+        char msg[128];
+        snprintf(msg, sizeof msg, "mesh status %s", (size_t)st < sizeof STATUS_NAMES / sizeof *STATUS_NAMES ? STATUS_NAMES[st] : "unknown");
+        manifold_delete_manifold(m);
+        THROW(temen_range_error(core, msg));
+    }
+    return ret_handle(core, m, result);
+}
+
+/* triangulate(rings, epsilon) -> flat [i0, i1, i2, ...] over the rings' points in order */
+static bool n_triangulate(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val;
+    TemenCore *core = CORE();
+    if (argc < 1) THROW(temen_type_error(core, "__cad.triangulate: expected rings"));
+    ManifoldPolygons *polys = polygons_from_js(ctx, args[0], result);
+    if (!polys) return false;
+    ManifoldTriangulation *tr = manifold_triangulate(malloc(manifold_triangulation_size()), polys, NUM(1));
+    manifold_delete_polygons(polys);
+    size_t n = manifold_triangulation_num_tri(tr);
+    int *idx = malloc((n ? n : 1) * 3 * sizeof *idx);
+    if (!idx) { manifold_delete_triangulation(tr); THROW(temen_range_error(core, "out of memory")); }
+    manifold_triangulation_tri_verts(idx, tr);
+    manifold_delete_triangulation(tr);
+    JsValue arr = js_array_new(ctx, (uint32_t)(n * 3));
+    if (js_is_undefined(arr)) { free(idx); THROW(temen_range_error(core, "out of memory")); }
+    js_gc_protect(core->vm, &arr);
+    bool ok = true;
+    for (size_t i = 0; i < n * 3 && ok; i++) ok = js_array_push(core->vm, arr, js_number(idx[i]));
+    js_gc_unprotect(core->vm, &arr);
+    free(idx);
+    if (!ok) THROW(temen_range_error(core, "out of memory"));
+    *result = arr;
+    return true;
+}
+
 /* ------------------------------------------------------- transforms */
 
 static bool n_translate(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
@@ -545,7 +611,7 @@ static const Entry ENTRIES[] = {
     { "cube", n_cube }, { "cylinder", n_cylinder }, { "sphere", n_sphere },
     { "boolean", n_boolean }, { "batch", n_batch }, { "hull", n_hull }, { "hullPoints", n_hull_points },
     { "translate", n_translate }, { "rotate", n_rotate }, { "scale", n_scale }, { "mirror", n_mirror },
-    { "minGap", n_min_gap }, { "annotate", n_annotate },
+    { "minGap", n_min_gap }, { "annotate", n_annotate }, { "meshFromTriangles", n_mesh_from_triangles }, { "triangulate", n_triangulate },
     { "volume", n_volume }, { "area", n_area }, { "isEmpty", n_is_empty }, { "numTri", n_num_tri }, { "bounds", n_bounds },
     { "log", n_log }, { "warn", n_warn }, { "where", n_where },
     { "csCircle", n_cs_circle }, { "csSquare", n_cs_square }, { "csPolygons", n_cs_polygons },

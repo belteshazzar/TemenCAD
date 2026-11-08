@@ -155,6 +155,32 @@ if (r.ok) {
   check('annotations reach the host', r.annotations.length === 2 && r.annotations[0].type === 'dimension' && r.annotations[0].label === '6 mm' && r.annotations[1].type === 'mark' && r.annotations[1].text === 'tip', JSON.stringify(r.annotations));
 }
 
+// 4e. paths, sweep, polyhedron, loft
+r = rt.run({ 'main.js': `
+  const sq = rect(6, 4);
+  const v1 = sweep(sq, line([0, 0, 0], [0, 20, 0]));
+  const v2 = sweep(rect(4, 4), path([[0, 0, 0], [30, 0, 0], [30, 0, 30]]));
+  const ring = sweep(circle(3, { segments: 64 }), arc(20, 360, { segments: 128 }));
+  const tet = polyhedron([[0, 0, 0], [6, 0, 0], [0, 6, 0], [0, 0, 6]], [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]]);
+  const lf = loft([rect(10, 10), rect(10, 10)], 7, { segments: 4 });
+  const p7 = line([0, 0, 0], [20, 0, 0]).append(arc(10, 90));
+  echo('len', p7.length(), helix(10, 40, 5).points.length, p7.pointAt(0.25));
+  return { v1, v2, ring, tet, lf };
+` });
+check('sweep scripts run', r.ok, r.error?.message);
+if (r.ok) {
+  const byName = Object.fromEntries(r.parts.map((p) => [p.name, p]));
+  check('vertical sweep equals extrude: 6*4*20', near(byName.v1.volume, 480, 1e-6), String(byName.v1.volume));
+  check('mitred square tube: 16 * 60', near(byName.v2.volume, 960, 1e-6), String(byName.v2.volume));
+  check('swept ring ~ torus volume', near(byName.ring.volume, 2 * Math.PI * Math.PI * 20 * 9, 0.01), String(byName.ring.volume));
+  check('polyhedron tetrahedron volume 36', near(byName.tet.volume, 36, 1e-9), String(byName.tet.volume));
+  check('loft of equal squares is a prism: 700', near(byName.lf.volume, 700, 1e-6), String(byName.lf.volume));
+  const t = r.messages.map((m) => m.text).join('\n');
+  check('path length 20 + quarter arc chord sum', /"len", 3[0-9.]+, 241, \[8\.\d+, 0, 0\]/.test(t), t);
+}
+r = rt.run({ 'main.js': 'sweep(circle(5), path([[0, 0, 0], [3, 0, 0], [3, 0, 3]])); return box(1)' });
+check('tight bend warns with a line', r.ok && r.messages.some((m) => m.kind === 'warn' && /too tight/.test(m.text) && m.line === 1), JSON.stringify(r.messages));
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);

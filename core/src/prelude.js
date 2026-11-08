@@ -18,6 +18,7 @@ function describe(v) {
   if (isShape(v)) return 'a Shape';
   if (isSketch(v)) return 'a 2D sketch';
   if (isFace(v)) return `the ${v.name} face of a shape`;
+  if (isPath(v)) return 'a path';
   if (isAnchor(v)) return `the anchor '${v.name}'`;
   if (v === null) return 'null';
   if (Array.isArray(v)) return `an array [${v.slice(0, 4).map(describe).join(', ')}${v.length > 4 ? ', …' : ''}]`;
@@ -1111,6 +1112,433 @@ function mark(point, text = '') {
   return p;
 }
 
+// ---- solids from raw triangles (mesh.js) ------------------------------------------------
+
+/** Flip triangles as needed so every shared edge is traversed in opposite directions. */
+function orientConsistently(tris) {
+  const n = tris.length / 3;
+  const faces = [];
+  for (let i = 0; i < n; i++) faces.push([tris[i * 3], tris[i * 3 + 1], tris[i * 3 + 2]]);
+  const byEdge = new Map();
+  const key = (a, b) => (a < b ? `${a}_${b}` : `${b}_${a}`);
+  for (let i = 0; i < n; i++) { const f = faces[i]; for (let k = 0; k < 3; k++) { const e = key(f[k], f[(k + 1) % 3]); if (!byEdge.has(e)) byEdge.set(e, []); byEdge.get(e).push(i); } }
+  const hasDirected = (f, a, b) => (f[0] === a && f[1] === b) || (f[1] === a && f[2] === b) || (f[2] === a && f[0] === b);
+  const visited = [];
+  for (let i = 0; i < n; i++) visited.push(false);
+  for (let seed = 0; seed < n; seed++) {
+    if (visited[seed]) continue;
+    visited[seed] = true;
+    const stack = [seed];
+    while (stack.length) {
+      const i = stack.pop(), f = faces[i];
+      for (let k = 0; k < 3; k++) {
+        const a = f[k], b = f[(k + 1) % 3];
+        for (const j of byEdge.get(key(a, b))) {
+          if (j === i || visited[j]) continue;
+          if (hasDirected(faces[j], a, b)) faces[j] = [faces[j][0], faces[j][2], faces[j][1]];
+          visited[j] = true; stack.push(j);
+        }
+      }
+    }
+  }
+  const out = [];
+  for (const f of faces) out.push(f[0], f[1], f[2]);
+  return out;
+}
+function manifoldFromTriangles(fn, positions, tris) {
+  const oriented = orientConsistently(tris);
+  let h;
+  try { h = cad.meshFromTriangles(positions, oriented); }
+  catch (err) { throw new Error(`${fn}: mesh is not a closed, manifold solid (${err.message}). Check that every edge is shared by exactly two faces.`); }
+  if (cad.volume(h) < 0) {
+    const flipped = [];
+    for (let i = 0; i < oriented.length; i += 3) flipped.push(oriented[i], oriented[i + 2], oriented[i + 1]);
+    h = cad.meshFromTriangles(positions, flipped);
+  }
+  return h;
+}
+/** A solid from points and faces (index lists, any winding). */
+function polyhedron(points, faces) {
+  if (!Array.isArray(points) || points.length < 4) throw new TypeError(`polyhedron: points must be an array of at least 4 [x,y,z], got ${describe(points)}`);
+  if (!Array.isArray(faces) || faces.length < 4) throw new TypeError(`polyhedron: faces must be an array of at least 4 index lists, got ${describe(faces)}`);
+  for (let i = 0; i < points.length; i++) checkVec('polyhedron', `points[${i}]`, points[i]);
+  const tris = [];
+  for (let i = 0; i < faces.length; i++) {
+    const f = faces[i];
+    if (!Array.isArray(f) || f.length < 3) throw new TypeError(`polyhedron: faces[${i}] must list at least 3 point indices, got ${describe(f)}`);
+    for (const k of f) { checkInt('polyhedron', `faces[${i}] index`, k, 0); if (k >= points.length) throw new RangeError(`polyhedron: faces[${i}] refers to point ${k} but there are only ${points.length} points`); }
+    for (let k = 1; k < f.length - 1; k++) tris.push(f[0], f[k], f[k + 1]);
+  }
+  const flat = [];
+  for (const p of points) flat.push(p[0], p[1], p[2]);
+  return new Shape(manifoldFromTriangles('polyhedron', flat, tris));
+}
+/** Resample a closed ring to n points spaced evenly by arc length. */
+function resampleRing(ring, n) {
+  const l = []; let total = 0;
+  for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const d = Math.hypot(b[0] - a[0], b[1] - a[1]); l.push(d); total += d; }
+  const out = []; let seg = 0, acc = 0;
+  for (let k = 0; k < n; k++) {
+    const target = (k / n) * total;
+    while (seg < ring.length - 1 && acc + l[seg] < target) { acc += l[seg]; seg++; }
+    const a = ring[seg], b = ring[(seg + 1) % ring.length];
+    const t = l[seg] > 0 ? (target - acc) / l[seg] : 0;
+    out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+  }
+  return out;
+}
+/** Triangulate rings (outer + holes) into index triples over their points in order. */
+function triangulateRings(rings) {
+  const flat = cad.triangulate(rings, 1e-9);
+  const out = [];
+  for (let i = 0; i < flat.length; i += 3) out.push([flat[i], flat[i + 1], flat[i + 2]]);
+  return out;
+}
+/** Loft (skin) between 2D profiles stacked along Y. loft([a, b, c], 30) or loft([a, b], [0, 12]); opts: { segments=64 } */
+function loft(profiles, heights = 1, opts = {}) {
+  const segments = opts.segments === undefined ? 64 : opts.segments;
+  if (!Array.isArray(profiles) || profiles.length < 2) throw new TypeError(`loft: need an array of at least 2 sketches, got ${describe(profiles)}`);
+  for (let i = 0; i < profiles.length; i++) if (!isSketch(profiles[i])) throw new TypeError(`loft: profiles[${i}] must be a 2D sketch, got ${describe(profiles[i])}`);
+  checkInt('loft', 'segments', segments, 3);
+  let ys;
+  if (typeof heights === 'number') { checkPositive('loft', 'height', heights); ys = profiles.map((_, i) => (i / (profiles.length - 1)) * heights); }
+  else {
+    if (!Array.isArray(heights) || heights.length !== profiles.length) throw new TypeError('loft: heights must be a number or one height per profile');
+    for (let i = 0; i < heights.length; i++) checkNumber('loft', `heights[${i}]`, heights[i]);
+    for (let i = 1; i < heights.length; i++) if (heights[i] <= heights[i - 1]) throw new RangeError('loft: heights must increase');
+    ys = heights;
+  }
+  const rings = profiles.map((p, i) => {
+    const polys = p.toPolygons();
+    if (polys.length !== 1) throw new Error(`loft: profiles[${i}] must be a single outline without holes (it has ${polys.length} contours)`);
+    return resampleRing(polys[0], segments);
+  });
+  for (let i = 1; i < rings.length; i++) {
+    const prev = rings[i - 1], cur = rings[i];
+    let best = 0, bestD = Infinity;
+    for (let off = 0; off < segments; off++) {
+      let d = 0;
+      for (let k = 0; k < segments; k++) { const a = prev[k], b = cur[(k + off) % segments]; d += (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2; }
+      if (d < bestD) { bestD = d; best = off; }
+    }
+    rings[i] = cur.map((_, k) => cur[(k + best) % segments]);
+  }
+  const pos = [];
+  for (let i = 0; i < rings.length; i++) for (const p of rings[i]) pos.push(p[0], ys[i], -p[1]);
+  const tris = [];
+  for (let i = 0; i < rings.length - 1; i++) {
+    const a = i * segments, b = (i + 1) * segments;
+    for (let k = 0; k < segments; k++) { const k2 = (k + 1) % segments; tris.push(a + k, a + k2, b + k2, a + k, b + k2, b + k); }
+  }
+  const cap = triangulateRings([rings[0]]);
+  const top = (rings.length - 1) * segments;
+  for (const t of cap) { tris.push(t[0], t[2], t[1]); tris.push(top + t[0], top + t[1], top + t[2]); }
+  return new Shape(manifoldFromTriangles('loft', pos, tris));
+}
+
+// ---- paths and sweep (path.js) -----------------------------------------------------------
+//
+// Paths are 3D polylines in world space (Y up). A point may be [x, y, z], or [x, y] for a point on
+// the ground plane using the sketch convention (sketch y is world -Z).
+
+const vsub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const vadd = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const vmul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const vdot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const vcross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const vlen = (a) => Math.hypot(a[0], a[1], a[2]);
+const vnorm = (a) => { const l = vlen(a); return l > 0 ? vmul(a, 1 / l) : [0, 0, 0]; };
+
+function checkPathPoint(fn, p, i) {
+  if (!Array.isArray(p) || (p.length !== 2 && p.length !== 3)) throw new TypeError(`${fn}: point ${i} must be [x, y, z] or [x, y], got ${describe(p)}`);
+  for (let k = 0; k < p.length; k++) checkNumber(fn, `point ${i}[${k}]`, p[k]);
+  return p.length === 2 ? [p[0], 0, -p[1]] : [p[0], p[1], p[2]];
+}
+function checkPathPoints(fn, points) {
+  if (!Array.isArray(points) || points.length < 2) throw new TypeError(`${fn}: need an array of at least 2 points, got ${describe(points)}`);
+  const out = [];
+  for (let i = 0; i < points.length; i++) {
+    const q = checkPathPoint(fn, points[i], i);
+    if (out.length && vlen(vsub(q, out[out.length - 1])) < EPS) continue;
+    out.push(q);
+  }
+  if (out.length < 2) throw new RangeError(`${fn}: the points are all the same`);
+  return out;
+}
+/** Catmull-Rom spline through the points, `segments` samples per span. */
+function catmullRom(points, segments, closed) {
+  const n = points.length;
+  const at = (i) => (closed ? points[((i % n) + n) % n] : points[Math.max(0, Math.min(n - 1, i))]);
+  const out = [];
+  const spans = closed ? n : n - 1;
+  for (let i = 0; i < spans; i++) {
+    const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+    for (let k = 0; k < segments; k++) {
+      const t = k / segments, t2 = t * t, t3 = t2 * t;
+      out.push([0, 1, 2].map((a) => 0.5 * (2 * p1[a] + (-p0[a] + p2[a]) * t + (2 * p0[a] - 5 * p1[a] + 4 * p2[a] - p3[a]) * t2 + (-p0[a] + 3 * p1[a] - 3 * p2[a] + p3[a]) * t3)));
+    }
+  }
+  if (!closed) out.push(points[n - 1]);
+  return out;
+}
+
+/** A 3D polyline, open or closed. Immutable; every op returns a new Path. */
+function Path(points, closed) { this.points = points; this.closed = !!closed; Object.freeze(this); }
+function isPath(v) { return v !== null && typeof v === 'object' && Object.getPrototypeOf(v) === Path.prototype; }
+const T = Path.prototype;
+T._map = function (f) { return new Path(this.points.map(f), this.closed); };
+T.translate = function (x = 0, y = 0, z = 0) {
+  if (Array.isArray(x)) { const v = x; x = v[0]; y = v[1] === undefined ? 0 : v[1]; z = v[2] === undefined ? 0 : v[2]; }
+  checkNumber('translate', 'x', x); checkNumber('translate', 'y', y); checkNumber('translate', 'z', z);
+  return this._map((p) => [p[0] + x, p[1] + y, p[2] + z]);
+};
+T.rotate = function (x = 0, y = 0, z = 0) {
+  if (Array.isArray(x)) { const v = x; x = v[0]; y = v[1] === undefined ? 0 : v[1]; z = v[2] === undefined ? 0 : v[2]; }
+  checkNumber('rotate', 'x', x); checkNumber('rotate', 'y', y); checkNumber('rotate', 'z', z);
+  const m = rotationMatrix(x, y, z);
+  return this._map((p) => m.map((row) => vdot(row, p)));
+};
+T.scale = function (x = 1, y, z) {
+  if (y === undefined) y = x;
+  if (z === undefined) z = x;
+  checkNumber('scale', 'x', x); checkNumber('scale', 'y', y); checkNumber('scale', 'z', z);
+  if (x === 0 || y === 0 || z === 0) throw new RangeError('scale: factors must not be 0');
+  return this._map((p) => [p[0] * x, p[1] * y, p[2] * z]);
+};
+T.mirror = function (axis = 'x') {
+  const i = axis === 'x' ? 0 : axis === 'y' ? 1 : axis === 'z' ? 2 : undefined;
+  if (i === undefined) throw new Error("mirror: axis must be 'x', 'y' or 'z'");
+  return this._map((p) => { const q = [p[0], p[1], p[2]]; q[i] = -q[i]; return q; });
+};
+T.reverse = function () { return new Path(this.points.slice().reverse(), this.closed); };
+T.close = function () { return new Path(this.points, true); };
+T.smooth = function (opts = {}) {
+  const segments = opts.segments === undefined ? 8 : opts.segments;
+  checkInt('smooth', 'segments', segments, 1);
+  return new Path(catmullRom(this.points, segments, this.closed), this.closed);
+};
+T.append = function (other) {
+  if (!isPath(other)) throw new TypeError(`append: expected a path, got ${describe(other)}`);
+  if (this.closed) throw new Error('append: this path is already closed');
+  const d = vsub(this.points[this.points.length - 1], other.points[0]);
+  return new Path(checkPathPoints('append', this.points.concat(other.points.map((p) => vadd(p, d)))), false);
+};
+T.segments = function () {
+  const s = [];
+  for (let i = 0; i < this.points.length - 1; i++) s.push([this.points[i], this.points[i + 1]]);
+  if (this.closed) s.push([this.points[this.points.length - 1], this.points[0]]);
+  return s;
+};
+T.length = function () { let t = 0; for (const s of this.segments()) t += vlen(vsub(s[1], s[0])); return t; };
+T.pointAt = function (t) { return this._at(t).point; };
+T.tangentAt = function (t) { return this._at(t).tangent; };
+T._at = function (t) {
+  checkNumber('pointAt', 't', t);
+  const segs = this.segments(); const total = this.length();
+  let target = Math.min(Math.max(t, 0), 1) * total;
+  for (const s of segs) {
+    const a = s[0], b = s[1];
+    const l = vlen(vsub(b, a));
+    if (target <= l || segs[segs.length - 1][0] === a) return { point: vadd(a, vmul(vsub(b, a), l > 0 ? Math.min(target / l, 1) : 0)), tangent: vnorm(vsub(b, a)) };
+    target -= l;
+  }
+  return { point: this.points[0], tangent: vnorm(vsub(this.points[1], this.points[0])) };
+};
+T.bounds = function () {
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  for (const p of this.points) for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k], p[k]); max[k] = Math.max(max[k], p[k]); }
+  return { min, max, size: vsub(max, min), center: vmul(vadd(min, max), 0.5) };
+};
+T.sweep = function (profile, opts) { return sweep(profile, this, opts); };
+
+/** Polyline through points. opts: { closed, smooth } */
+function path(points, opts = {}) {
+  const closed = !!opts.closed, smooth = opts.smooth === undefined ? false : opts.smooth;
+  let p = new Path(checkPathPoints('path', points), closed);
+  if (smooth) p = p.smooth({ segments: smooth === true ? 8 : smooth });
+  return p;
+}
+function line(a, b) { return new Path(checkPathPoints('line', [a, b]), false); }
+/** Arc on the ground plane centred on the origin: from +X, `angle` degrees counter-clockwise seen from above. */
+function arc(r = 1, angle = 90, opts = {}) {
+  checkPositive('arc', 'radius', r); checkNumber('arc', 'angle', angle);
+  if (angle === 0) throw new RangeError('arc: angle must not be 0');
+  const n = opts.segments === undefined ? Math.max(2, Math.ceil((Math.abs(angle) / 360) * 64)) : opts.segments;
+  checkInt('arc', 'segments', n, 1);
+  const pts = [];
+  for (let i = 0; i <= n; i++) { const a = (angle * (i / n) * Math.PI) / 180; pts.push([r * Math.cos(a), 0, -r * Math.sin(a)]); }
+  return new Path(pts, Math.abs(Math.abs(angle) - 360) < EPS);
+}
+/** Helix around the Y axis, starting at [r, 0, 0], rising to `height` over `turns` turns. */
+function helix(r = 1, height = 1, turns = 1, opts = {}) {
+  const segments = opts.segments === undefined ? 48 : opts.segments;
+  checkPositive('helix', 'radius', r); checkNumber('helix', 'height', height); checkNumber('helix', 'turns', turns);
+  if (turns === 0) throw new RangeError('helix: turns must not be 0');
+  checkInt('helix', 'segments', segments, 3);
+  const n = Math.max(2, Math.ceil(Math.abs(turns) * segments));
+  const pts = [];
+  for (let i = 0; i <= n; i++) { const f = i / n, a = turns * f * 2 * Math.PI; pts.push([r * Math.cos(a), height * f, -r * Math.sin(a)]); }
+  return new Path(pts, false);
+}
+/** Cubic Bezier from p0 to p3 with control points p1, p2. */
+function bezier(p0, p1, p2, p3, opts = {}) {
+  const segments = opts.segments === undefined ? 32 : opts.segments;
+  const a = checkPathPoint('bezier', p0, 0), b = checkPathPoint('bezier', p1, 1), c = checkPathPoint('bezier', p2, 2), d = checkPathPoint('bezier', p3, 3);
+  checkInt('bezier', 'segments', segments, 1);
+  const pts = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments, u = 1 - t;
+    pts.push([0, 1, 2].map((k) => u * u * u * a[k] + 3 * u * u * t * b[k] + 3 * u * t * t * c[k] + t * t * t * d[k]));
+  }
+  return new Path(checkPathPoints('bezier', pts), false);
+}
+
+function defaultUp(t, up) { if (up) return up; return Math.abs(t[1]) > 0.999 ? [0, 0, -1] : [0, 1, 0]; }
+function frameFromUp(t, upHint) {
+  const up = defaultUp(t, upHint);
+  let u = vsub(up, vmul(t, vdot(up, t)));
+  if (vlen(u) < 1e-6) throw new Error('sweep: the up direction is parallel to the path; choose another { up }');
+  u = vnorm(u);
+  return { r: vcross(u, t), u };
+}
+/** Frames along a polyline: tangent, right and up per vertex; 'minimal' never twists, 'upright' keeps u near `up`. */
+function pathFrames(points, closed, mode, upHint) {
+  const n = points.length;
+  const dirs = [];
+  for (let i = 0; i < n - 1; i++) dirs.push(vnorm(vsub(points[i + 1], points[i])));
+  if (closed) dirs.push(vnorm(vsub(points[0], points[n - 1])));
+  const tangents = points.map((_, i) => {
+    const din = i === 0 ? (closed ? dirs[n - 1] : dirs[0]) : dirs[i - 1];
+    const dout = i === n - 1 ? (closed ? dirs[n - 1] : dirs[n - 2]) : dirs[i];
+    let t = vnorm(vadd(din, dout));
+    if (vlen(t) < 1e-9) t = din;
+    return { t, din, dout };
+  });
+  const out = [];
+  if (mode === 'upright') {
+    for (const tg of tangents) { const f = frameFromUp(tg.t, upHint); out.push({ r: f.r, u: f.u, t: tg.t, din: tg.din, dout: tg.dout }); }
+    return out;
+  }
+  const f0 = frameFromUp(tangents[0].t, upHint);
+  let r = f0.r, u = f0.u;
+  out.push({ r, u, t: tangents[0].t, din: tangents[0].din, dout: tangents[0].dout });
+  const steps = closed ? n : n - 1;
+  for (let i = 1; i <= steps; i++) {
+    const j = i % n;
+    const v1 = vsub(points[j], points[(i - 1) % n]);
+    const c1 = vdot(v1, v1);
+    const rL = vsub(r, vmul(v1, (2 / c1) * vdot(v1, r)));
+    const tL = vsub(out[i - 1].t, vmul(v1, (2 / c1) * vdot(v1, out[i - 1].t)));
+    const v2 = vsub(tangents[j].t, tL);
+    const c2 = vdot(v2, v2);
+    r = c2 < 1e-18 ? rL : vsub(rL, vmul(v2, (2 / c2) * vdot(v2, rL)));
+    r = vnorm(vsub(r, vmul(tangents[j].t, vdot(r, tangents[j].t))));
+    u = vcross(tangents[j].t, r);
+    if (i < n) out.push({ r, u, t: tangents[j].t, din: tangents[j].din, dout: tangents[j].dout });
+    else {
+      const first = out[0];
+      const ang = Math.atan2(vdot(vcross(r, first.r), first.t), vdot(r, first.r));
+      for (let k = 0; k < out.length; k++) {
+        const f = out[k];
+        const a = (ang * k) / n, c = Math.cos(a), s = Math.sin(a);
+        const nr = vadd(vmul(f.r, c), vmul(f.u, s));
+        f.r = nr; f.u = vcross(f.t, nr);
+      }
+    }
+  }
+  return out;
+}
+/** Sweep a 2D profile (or a function of t returning one) along a path. opts: { frame, up, twist, scale, segments } */
+function sweep(profile, p, opts = {}) {
+  const frame = opts.frame === undefined ? 'minimal' : opts.frame;
+  let up = opts.up;
+  const twist = opts.twist === undefined ? 0 : opts.twist;
+  const scale = opts.scale === undefined ? 1 : opts.scale;
+  const segments = opts.segments === undefined ? 32 : opts.segments;
+  if (!isPath(p)) throw new TypeError(`sweep: second argument must be a path, got ${describe(p)}`);
+  const varying = typeof profile === 'function';
+  if (!varying && !isSketch(profile)) throw new TypeError(`sweep: profile must be a 2D sketch or a function returning one, got ${describe(profile)}`);
+  if (frame !== 'minimal' && frame !== 'upright') throw new TypeError(`sweep: frame must be 'minimal' or 'upright', got ${describe(frame)}`);
+  if (up !== undefined) { if (!Array.isArray(up) || up.length !== 3) throw new TypeError('sweep: up must be [x, y, z]'); up = vnorm(up.map((v, i) => checkNumber('sweep', `up[${i}]`, v))); }
+  checkNumber('sweep', 'twist', twist);
+  const sx = Array.isArray(scale) ? scale[0] : scale, sy = Array.isArray(scale) ? scale[1] : scale;
+  checkPositive('sweep', 'scale', sx); checkPositive('sweep', 'scale', sy);
+  checkInt('sweep', 'segments', segments, 3);
+  const points = p.points, closed = p.closed;
+  if (closed && points.length < 3) throw new RangeError('sweep: a closed path needs at least 3 points');
+  const n = points.length;
+  const fr = pathFrames(points, closed, frame, up);
+  const cum = [0];
+  for (let i = 1; i < n; i++) cum.push(cum[i - 1] + vlen(vsub(points[i], points[i - 1])));
+  const total = closed ? cum[n - 1] + vlen(vsub(points[0], points[n - 1])) : cum[n - 1];
+  const tAt = (i) => cum[i] / total;
+  const ringsAt = (i) => {
+    const sk = varying ? profile(tAt(i)) : profile;
+    if (!isSketch(sk)) throw new TypeError(`sweep: profile(${tAt(i).toFixed(3)}) must return a 2D sketch, got ${describe(sk)}`);
+    const polys = sk.toPolygons();
+    if (!polys.length) throw new Error('sweep: the profile is empty');
+    return varying ? polys.map((ring) => resampleRing(ring, segments)) : polys;
+  };
+  const first = ringsAt(0);
+  const contours = first.length, counts = first.map((r) => r.length);
+  let maxR = 0;
+  for (const ring of first) for (const q of ring) maxR = Math.max(maxR, Math.hypot(q[0], q[1]));
+  for (let i = closed ? 0 : 1; i < (closed ? n : n - 1); i++) {
+    const din = fr[i].din, dout = fr[i].dout;
+    const cosHalf = vlen(vadd(din, dout)) / 2;
+    if (cosHalf > 0.9999) continue;
+    const tanHalf = Math.sqrt(Math.max(0, 1 - cosHalf * cosHalf)) / cosHalf;
+    const need = maxR * tanHalf;
+    const lin = vlen(vsub(points[i], points[(i - 1 + n) % n])), lout = vlen(vsub(points[(i + 1) % n], points[i]));
+    if (lin < need - 1e-6 || lout < need - 1e-6) { cad.warn(`sweep: the bend at point ${i} is too tight for the profile (segments of ${Math.min(lin, lout).toFixed(2)} mm, needs ${need.toFixed(2)} mm); the surface may fold into itself`); break; }
+  }
+  const pos = [];
+  const starts = [];
+  for (let i = 0; i < n; i++) {
+    const rings = i === 0 ? first : ringsAt(i);
+    if (rings.length !== contours || rings.some((r, c) => r.length !== counts[c])) throw new Error('sweep: every profile along the path must have the same contours');
+    const t = tAt(i);
+    const f = fr[i];
+    const a = (twist * t * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
+    const fx = 1 + (sx - 1) * t, fy = 1 + (sy - 1) * t;
+    const bis = vsub(f.din, f.dout); const bl = vlen(bis);
+    const cosHalf = vlen(vadd(f.din, f.dout)) / 2;
+    const stretchAxis = bl > 1e-9 && cosHalf > 1e-6 ? vnorm(bis) : null;
+    const k = stretchAxis ? 1 / cosHalf - 1 : 0;
+    const centre = points[i];
+    starts.push(pos.length / 3);
+    for (const ring of rings) for (const q0 of ring) {
+      const x = (q0[0] * ca - q0[1] * sa) * fx, y = (q0[0] * sa + q0[1] * ca) * fy;
+      let q = vadd(vmul(f.r, x), vmul(f.u, y));
+      if (stretchAxis) q = vadd(q, vmul(stretchAxis, k * vdot(q, stretchAxis)));
+      const w = vadd(centre, q);
+      pos.push(w[0], w[1], w[2]);
+    }
+  }
+  const tris = [];
+  const offsets = [0];
+  for (let c = 0; c < contours; c++) offsets.push(offsets[c] + counts[c]);
+  const spans = closed ? n : n - 1;
+  for (let i = 0; i < spans; i++) {
+    const a = starts[i], b = starts[(i + 1) % n];
+    for (let c = 0; c < contours; c++) {
+      const o = offsets[c], m = counts[c];
+      for (let kk = 0; kk < m; kk++) {
+        const k2 = (kk + 1) % m;
+        tris.push(a + o + kk, a + o + k2, b + o + k2, a + o + kk, b + o + k2, b + o + kk);
+      }
+    }
+  }
+  if (!closed) {
+    const last = ringsAt(n - 1);
+    for (const t of triangulateRings(first)) tris.push(t[0], t[2], t[1]);
+    const top = starts[n - 1];
+    for (const t of triangulateRings(last)) tris.push(top + t[0], top + t[1], top + t[2]);
+  }
+  return new Shape(manifoldFromTriangles('sweep', pos, tris));
+}
+Q.sweep = function (p, opts) { return sweep(this, p, opts); };
+
 // ---- helpers --------------------------------------------------------------------
 
 const deg = (radians) => (radians * 180) / Math.PI;
@@ -1212,6 +1640,7 @@ export const api = {
   Sketch, circle, ellipse, rect, square, roundedRect, regularPolygon, polygon2d, slot, teardrop, bridgedCircle,
   union2d, difference2d, intersect2d, hull2d, extrude, revolve, projection, sketch, SketchBuilder,
   SCREWS, screw, screwHole, nutPocket, heatInsert, hole,
+  Path, path, line, arc, helix, bezier, sweep, polyhedron, loft,
   Face, distance, rectPattern, gridPattern, intersects, interference, overlap, clearance, dimension, mark,
   printer, printProfile, wall, layers, fit, peg, FITS,
   deg, rad, log, print: log, echo, assert, show,

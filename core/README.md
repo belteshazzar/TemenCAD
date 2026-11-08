@@ -75,10 +75,15 @@ Placement and measurement: `s.face()`, `Face.point`, `placeOn`, `at()` on faces 
 `interference`, `overlap`, `clearance` (Manifold's min-gap), and the annotations `dimension` and
 `mark`, delivered to the host as JSON records (`temen_annotation`, `result.annotations`).
 
+Paths and sweeps: `Path` with transforms, `smooth`, `append`, `length`, `pointAt`, `tangentAt`;
+`path`, `line`, `arc`, `helix`, `bezier`; `sweep` with minimal or upright frames, twist, scale and a
+varying profile (and the tight-bend warning); `polyhedron` and `loft`, all through one native that
+builds a solid from raw triangles plus Manifold's polygon triangulation for caps.
+
 Each run gets a fresh engine context; Manifold objects are released in bulk after the run, as
 the browser app does with `releaseAll()`.
 
-Not yet: `text`/`text3d`/`emboss`/`engrave` (fonts), paths and `sweep`,
+Not yet: `text`/`text3d`/`emboss`/`engrave` (fonts),
 3D fillets and chamfers, `loft`/`shell`/`minkowski`/`polyhedron`/`roof`, images and mesh imports,
 printability. `npm run core:diff` says which test scripts the core already builds identically.
 
