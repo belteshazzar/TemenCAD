@@ -189,7 +189,7 @@ r = rt.run({ 'main.js': `
   const plate = box(50, 4, 50).onPlate(), boss = box(16, 14, 16).onPlate();
   const base = plate.add(boss);
   const c5 = base.fillet(2, { edges: 'concave', segments: 64 });
-  echo('concave', c5.volume() - base.volume(), 'edges', sharpEdges(box(10)).length, sharpEdges(cylinder(5, 10, { segments: 12 }), 30).length);
+  echo('concave', c5.volume() - base.volume(), 'edges', sharpEdges(box(10)).length, sharpEdges(cylinder(5, 10, { segments: 8 }), 30).length);
   return { c1, c2, c7: prism(6, 10, 10).chamfer(1.5, { edges: (e) => e.nA[1] > 0.9 || e.nB[1] > 0.9 }) };
 ` });
 check('fillet scripts run', r.ok, r.error?.message);
@@ -202,7 +202,7 @@ if (r.ok) {
   const t = r.messages.map((m) => m.text).join('\n');
   const m = t.match(/"concave", ([\d.]+), "edges", (\d+), (\d+)/);
   check('concave fillet adds the boss base ring', m && near(+m[1], f * 4 * 64 + 4 * 8 * (5 / 3 - Math.PI / 2), 0.002), t);
-  check('a box has 12 sharp edges, a 12-gon cylinder 24 at 30 degrees', m && +m[2] === 12 && +m[3] === 24, t);
+  check('a box has 12 sharp edges, an 8-gon cylinder 24 (two rings and eight 45-degree facets)', m && +m[2] === 12 && +m[3] === 24, t);
 }
 
 // 5. the runtime survives errors and runs again
