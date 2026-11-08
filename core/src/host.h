@@ -94,6 +94,12 @@ bool temen_locate(TemenCore *core, const JsStackFrame *frames, size_t n, const c
 /* Where the running script is right now (for a native: its caller's line in the user's file). */
 bool temen_where(TemenCore *core, const char **file, int *line);
 
+/* host.c: a project file by its path, or NULL */
+const TemenHostFile *temen_find_file(TemenCore *core, const char *name);
+
+/* image.c */
+bool temen_install_assets(TemenCore *core, JsValue ns);
+
 /* text.c */
 bool temen_fonts_init(TemenCore *core);
 void temen_fonts_set_project(TemenCore *core, const TemenHostFile *files, size_t n_files);

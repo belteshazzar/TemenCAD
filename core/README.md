@@ -92,6 +92,14 @@ points per curve. The five bundled fonts are embedded at build time; a project's
 files are registered for the run and named by their path, as in the app. Not covered: GSUB
 ligatures, which opentype.js applies to Latin text by default, so "fi" stays two glyphs here.
 
+Images and mesh imports: `import photo from './photo.png'` (PNG, JPEG and the other formats
+stb_image reads, in `src/image.c`) gives a `GrayImage` with `at`, `sample`, `invert`, `gamma`,
+`normalize`, `blur`, `crop`, `resize`, `flip`; `heightmap` and `lithophane` build reliefs from an
+image or a function; `import part from './part.stl'` reads binary or ASCII STL, welded and turned
+Y-up. PNG decoding is exact, so reliefs match the app; JPEG decoders round differently, so JPEG
+brightness can differ by a few 1/255. The image loops run in the prelude (test/images builds in
+2.3 s against 1.0 s on V8); a C fast path for resize and blur is the obvious speed-up if needed.
+
 Each run gets a fresh engine context; Manifold objects are released in bulk after the run, as
 the browser app does with `releaseAll()`.
 

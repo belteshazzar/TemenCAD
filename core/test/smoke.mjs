@@ -1,5 +1,6 @@
 // Smoke test for the WebAssembly build: node core/test/smoke.mjs [path/to/build/wasm]
 // Exact volumes where a closed form exists; exits 1 on any mismatch.
+import zlib from 'node:zlib';
 import { createRuntime } from '../wasm/index.js';
 
 const rt = await createRuntime();
@@ -229,6 +230,39 @@ if (r.ok) {
   const byName = Object.fromEntries(r.parts.map((p) => [p.name, p]));
   check('text3d in a bold rounded font has volume and height 3', byName.t3.volume > 50 && near(Math.max(...byName.t3.positions.filter((_, i) => i % 3 === 1)), 3, 1e-6), String(byName.t3.volume));
   check('font names match loosely (jetbrains-mono)', byName.mono.volume > 1);
+}
+
+// 4h. images and mesh imports
+// a 2x2 RGBA PNG: white, black / red, transparent
+const png = (() => { // written here with zlib, so the decoder is tested against a known-good file
+  const { deflateSync } = zlib;
+  const crcTable = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcTable.push(c >>> 0); }
+  const crc = (buf) => { let c = 0xffffffff; for (const b of buf) c = crcTable[(c ^ b) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type), data]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(2, 0); ihdr.writeUInt32BE(2, 4); ihdr[8] = 8; ihdr[9] = 6; // 2x2, 8-bit RGBA
+  const raw = Buffer.from([0, 255, 255, 255, 255, 0, 0, 0, 255, 0, 255, 0, 0, 255, 0, 0, 0, 0]); // row filter 0: white, black / red, transparent
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+})();
+const stl = 'solid t\n' + [[0,0,0, 6,0,0, 0,0,6], [0,0,0, 0,6,0, 6,0,0], [0,0,0, 0,0,6, 0,6,0], [6,0,0, 0,6,0, 0,0,6]].map((f) => `facet normal 0 0 0\n outer loop\n vertex ${f.slice(0,3).join(' ')}\n vertex ${f.slice(3,6).join(' ')}\n vertex ${f.slice(6,9).join(' ')}\n endloop\nendfacet\n`).join('') + 'endsolid t\n';
+r = rt.run({
+  'main.js': `import img from './pix.png'; import tet from './tet.stl';
+    echo('px', [img.width, img.height], img.at(0, 0), img.at(1, 0), img.at(0, 1).toFixed(4), img.at(1, 1));
+    const fn = heightmap((x, z) => 0.5, { width: 10, height: 2, base: 1, resolution: 4 });
+    const flat = heightmap(img.resize(4, 4).invert().invert(), { width: 8, height: 0, base: 1, resolution: 4 });
+    echo('ops', img.blur(1).gamma(0.5).normalize().crop(0, 0, 2, 1).resize(4).flip('y').width);
+    return { fn, flat, tet, litho: lithophane(img, { width: 10, border: 1, resolution: 4 }) };`,
+  'pix.png': png, 'tet.stl': stl,
+});
+check('image and mesh imports run', r.ok, r.error?.message);
+if (r.ok) {
+  const t = r.messages.map((m) => m.text).join('\n');
+  check('PNG decodes: white 1, black 0, red 0.2126, transparent 1', t.includes('"px", [2, 2], 1, 0, "0.2126", 1'), t.split('\n')[0]);
+  check('image ops chain', t.includes('"ops", 4'), t.split('\n')[1]);
+  const byName = Object.fromEntries(r.parts.map((p) => [p.name, p]));
+  check('function heightmap at 0.5: 10x10x(1+1)', near(byName.fn.volume, 200, 1e-6), String(byName.fn.volume));
+  check('zero-height relief is a plate', near(byName.flat.volume, 64, 1e-6), String(byName.flat.volume));
+  check('STL tetrahedron imported, volume 36, Z-up to Y-up', near(byName.tet.volume, 36, 1e-6) && near(Math.max(...byName.tet.positions.filter((_, i) => i % 3 === 1)), 6, 1e-6), String(byName.tet.volume));
+  check('lithophane with a border has a frame', byName.litho.volume > 0);
 }
 
 // 5. the runtime survives errors and runs again

@@ -161,6 +161,8 @@ static TemenHostFile *find_file(TemenCore *core, const char *name) {
     return NULL;
 }
 
+const TemenHostFile *temen_find_file(TemenCore *core, const char *name) { return find_file(core, name); }
+
 /* Remember the source a module was compiled from, so an offset in it can become a line. */
 static void remember_source(TemenHostFile *f, const char *utf8, size_t len, int line_offset) {
     free(f->src16);
@@ -378,9 +380,13 @@ static JsValue loader(void *ud, JsContext *ctx, const uint16_t *spec, size_t spe
         } else if (is_font(name)) {
             snprintf(msg, sizeof msg, "export default \"%s\";", name);
             result = fulfilled(core, temen_string(core, msg, strlen(msg)));
-        } else if (is_mesh(name) || is_image(name)) {
-            snprintf(msg, sizeof msg, "'%s': mesh and image imports are not supported by this runtime yet", name);
-            result = rejected(core, msg);
+        } else if (is_mesh(name)) {
+            /* the prelude's __temenMesh parses the STL (natively) into a Shape, as modules.js's loadMesh */
+            snprintf(msg, sizeof msg, "export default __temenMesh(\"%s\");", name);
+            result = fulfilled(core, temen_string(core, msg, strlen(msg)));
+        } else if (is_image(name)) {
+            snprintf(msg, sizeof msg, "export default __temenImage(\"%s\");", name);
+            result = fulfilled(core, temen_string(core, msg, strlen(msg)));
         } else {
             snprintf(msg, sizeof msg, "'%s' is not a script, font, mesh or image file", name);
             result = rejected(core, msg);
