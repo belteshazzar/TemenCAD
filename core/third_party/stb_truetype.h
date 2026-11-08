@@ -831,7 +831,9 @@ STBTT_DEF int  stbtt_GetKerningTable(const stbtt_fontinfo *info, stbtt_kerningen
 
 #ifndef stbtt_vertex // you can predefine this to use different values
                    // (we share this with other code at RAD)
+   #ifndef stbtt_vertex_type
    #define stbtt_vertex_type short // can't use stbtt_int16 because that's not visible in the header file
+   #endif
    typedef struct
    {
       stbtt_vertex_type x,y,cx,cy,cx1,cy1;
@@ -1591,13 +1593,13 @@ STBTT_DEF int stbtt_GetCodepointShape(const stbtt_fontinfo *info, int unicode_co
    return stbtt_GetGlyphShape(info, stbtt_FindGlyphIndex(info, unicode_codepoint), vertices);
 }
 
-static void stbtt_setvertex(stbtt_vertex *v, stbtt_uint8 type, stbtt_int32 x, stbtt_int32 y, stbtt_int32 cx, stbtt_int32 cy)
+static void stbtt_setvertex(stbtt_vertex *v, stbtt_uint8 type, stbtt_vertex_type x, stbtt_vertex_type y, stbtt_vertex_type cx, stbtt_vertex_type cy)
 {
    v->type = type;
-   v->x = (stbtt_int16) x;
-   v->y = (stbtt_int16) y;
-   v->cx = (stbtt_int16) cx;
-   v->cy = (stbtt_int16) cy;
+   v->x = (stbtt_vertex_type) x;
+   v->y = (stbtt_vertex_type) y;
+   v->cx = (stbtt_vertex_type) cx;
+   v->cy = (stbtt_vertex_type) cy;
 }
 
 static int stbtt__GetGlyfOffset(const stbtt_fontinfo *info, int glyph_index)
@@ -1656,11 +1658,11 @@ STBTT_DEF int stbtt_IsGlyphEmpty(const stbtt_fontinfo *info, int glyph_index)
 }
 
 static int stbtt__close_shape(stbtt_vertex *vertices, int num_vertices, int was_off, int start_off,
-    stbtt_int32 sx, stbtt_int32 sy, stbtt_int32 scx, stbtt_int32 scy, stbtt_int32 cx, stbtt_int32 cy)
+    stbtt_vertex_type sx, stbtt_vertex_type sy, stbtt_vertex_type scx, stbtt_vertex_type scy, stbtt_vertex_type cx, stbtt_vertex_type cy)
 {
    if (start_off) {
       if (was_off)
-         stbtt_setvertex(&vertices[num_vertices++], STBTT_vcurve, (cx+scx)>>1, (cy+scy)>>1, cx,cy);
+         stbtt_setvertex(&vertices[num_vertices++], STBTT_vcurve, ((cx+scx)/2), ((cy+scy)/2), cx,cy);
       stbtt_setvertex(&vertices[num_vertices++], STBTT_vcurve, sx,sy,scx,scy);
    } else {
       if (was_off)
@@ -1689,7 +1691,7 @@ static int stbtt__GetGlyphShapeTT(const stbtt_fontinfo *info, int glyph_index, s
    if (numberOfContours > 0) {
       stbtt_uint8 flags=0,flagcount;
       stbtt_int32 ins, i,j=0,m,n, next_move, was_off=0, off, start_off=0;
-      stbtt_int32 x,y,cx,cy,sx,sy, scx,scy;
+      stbtt_vertex_type x,y,cx,cy,sx,sy, scx,scy;
       stbtt_uint8 *points;
       endPtsOfContours = (data + g + 10);
       ins = ttUSHORT(data + g + 10 + numberOfContours * 2);
@@ -1776,8 +1778,8 @@ static int stbtt__GetGlyphShapeTT(const stbtt_fontinfo *info, int glyph_index, s
                scy = y;
                if (!(vertices[off+i+1].type & 1)) {
                   // next point is also a curve point, so interpolate an on-point curve
-                  sx = (x + (stbtt_int32) vertices[off+i+1].x) >> 1;
-                  sy = (y + (stbtt_int32) vertices[off+i+1].y) >> 1;
+                  sx = (x + vertices[off+i+1].x) / 2;
+                  sy = (y + vertices[off+i+1].y) / 2;
                } else {
                   // otherwise just use the next point as our start point
                   sx = (stbtt_int32) vertices[off+i+1].x;
@@ -1795,7 +1797,7 @@ static int stbtt__GetGlyphShapeTT(const stbtt_fontinfo *info, int glyph_index, s
          } else {
             if (!(flags & 1)) { // if it's a curve
                if (was_off) // two off-curve control points in a row means interpolate an on-curve midpoint
-                  stbtt_setvertex(&vertices[num_vertices++], STBTT_vcurve, (cx+x)>>1, (cy+y)>>1, cx, cy);
+                  stbtt_setvertex(&vertices[num_vertices++], STBTT_vcurve, ((cx+x)/2), ((cy+y)/2), cx, cy);
                cx = x;
                cy = y;
                was_off = 1;
@@ -1908,7 +1910,7 @@ typedef struct
 
 #define STBTT__CSCTX_INIT(bounds) {bounds,0, 0,0, 0,0, 0,0,0,0, NULL, 0}
 
-static void stbtt__track_vertex(stbtt__csctx *c, stbtt_int32 x, stbtt_int32 y)
+static void stbtt__track_vertex(stbtt__csctx *c, stbtt_vertex_type x, stbtt_vertex_type y)
 {
    if (x > c->max_x || !c->started) c->max_x = x;
    if (y > c->max_y || !c->started) c->max_y = y;
@@ -1917,7 +1919,7 @@ static void stbtt__track_vertex(stbtt__csctx *c, stbtt_int32 x, stbtt_int32 y)
    c->started = 1;
 }
 
-static void stbtt__csctx_v(stbtt__csctx *c, stbtt_uint8 type, stbtt_int32 x, stbtt_int32 y, stbtt_int32 cx, stbtt_int32 cy, stbtt_int32 cx1, stbtt_int32 cy1)
+static void stbtt__csctx_v(stbtt__csctx *c, stbtt_uint8 type, stbtt_vertex_type x, stbtt_vertex_type y, stbtt_vertex_type cx, stbtt_vertex_type cy, stbtt_vertex_type cx1, stbtt_vertex_type cy1)
 {
    if (c->bounds) {
       stbtt__track_vertex(c, x, y);
@@ -1927,8 +1929,8 @@ static void stbtt__csctx_v(stbtt__csctx *c, stbtt_uint8 type, stbtt_int32 x, stb
       }
    } else {
       stbtt_setvertex(&c->pvertices[c->num_vertices], type, x, y, cx, cy);
-      c->pvertices[c->num_vertices].cx1 = (stbtt_int16) cx1;
-      c->pvertices[c->num_vertices].cy1 = (stbtt_int16) cy1;
+      c->pvertices[c->num_vertices].cx1 = (stbtt_vertex_type) cx1;
+      c->pvertices[c->num_vertices].cy1 = (stbtt_vertex_type) cy1;
    }
    c->num_vertices++;
 }
@@ -1936,7 +1938,7 @@ static void stbtt__csctx_v(stbtt__csctx *c, stbtt_uint8 type, stbtt_int32 x, stb
 static void stbtt__csctx_close_shape(stbtt__csctx *ctx)
 {
    if (ctx->first_x != ctx->x || ctx->first_y != ctx->y)
-      stbtt__csctx_v(ctx, STBTT_vline, (int)ctx->first_x, (int)ctx->first_y, 0, 0, 0, 0);
+      stbtt__csctx_v(ctx, STBTT_vline, (stbtt_vertex_type)ctx->first_x, (stbtt_vertex_type)ctx->first_y, 0, 0, 0, 0);
 }
 
 static void stbtt__csctx_rmove_to(stbtt__csctx *ctx, float dx, float dy)
@@ -1944,14 +1946,14 @@ static void stbtt__csctx_rmove_to(stbtt__csctx *ctx, float dx, float dy)
    stbtt__csctx_close_shape(ctx);
    ctx->first_x = ctx->x = ctx->x + dx;
    ctx->first_y = ctx->y = ctx->y + dy;
-   stbtt__csctx_v(ctx, STBTT_vmove, (int)ctx->x, (int)ctx->y, 0, 0, 0, 0);
+   stbtt__csctx_v(ctx, STBTT_vmove, (stbtt_vertex_type)ctx->x, (stbtt_vertex_type)ctx->y, 0, 0, 0, 0);
 }
 
 static void stbtt__csctx_rline_to(stbtt__csctx *ctx, float dx, float dy)
 {
    ctx->x += dx;
    ctx->y += dy;
-   stbtt__csctx_v(ctx, STBTT_vline, (int)ctx->x, (int)ctx->y, 0, 0, 0, 0);
+   stbtt__csctx_v(ctx, STBTT_vline, (stbtt_vertex_type)ctx->x, (stbtt_vertex_type)ctx->y, 0, 0, 0, 0);
 }
 
 static void stbtt__csctx_rccurve_to(stbtt__csctx *ctx, float dx1, float dy1, float dx2, float dy2, float dx3, float dy3)
@@ -1962,7 +1964,7 @@ static void stbtt__csctx_rccurve_to(stbtt__csctx *ctx, float dx1, float dy1, flo
    float cy2 = cy1 + dy2;
    ctx->x = cx2 + dx3;
    ctx->y = cy2 + dy3;
-   stbtt__csctx_v(ctx, STBTT_vcubic, (int)ctx->x, (int)ctx->y, (int)cx1, (int)cy1, (int)cx2, (int)cy2);
+   stbtt__csctx_v(ctx, STBTT_vcubic, (stbtt_vertex_type)ctx->x, (stbtt_vertex_type)ctx->y, (stbtt_vertex_type)cx1, (stbtt_vertex_type)cy1, (stbtt_vertex_type)cx2, (stbtt_vertex_type)cy2);
 }
 
 static stbtt__buf stbtt__get_subr(stbtt__buf idx, int n)

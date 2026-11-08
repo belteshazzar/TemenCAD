@@ -286,6 +286,31 @@ if (r.ok) {
   check('problem text names the wall', /thinnest wall 0\.40 mm at \[.*\], under 0\.8 mm/.test(t), t.split('\n')[1]);
 }
 
+// 4j. shell, erode, minkowski, roof
+r = rt.run({ 'main.js': `
+  const cup = cylinder(10, 20, { segments: 64 }).onPlate().shell(1.2, { open: 'top' });
+  const shellBox = box(20, 10, 20).shell(2);
+  const eroded = box(20, 10, 20).erode(2);
+  const rounded = box(10).round(2, { segments: 16 });
+  const pyramid = roof(rect(10, 10), { angle: 45 });
+  const hip = roof(rect(20, 10), { angle: 45 });
+  echo('mink', minkowski(box(2), box(2)).volume(), eroded.volume());
+  return { cup, shellBox, rounded, pyramid, hip };
+` });
+check('shell/roof scripts run', r.ok, r.error?.message);
+if (r.ok) {
+  const byName = Object.fromEntries(r.parts.map((p) => [p.name, p]));
+  const poly = (n, rr) => (n / 2) * Math.sin((2 * Math.PI) / n) * rr * rr;
+  const apo = 10 * Math.cos(Math.PI / 64), inner = 64 * Math.tan(Math.PI / 64) * (apo - 1.2) ** 2; // erode trims each face plane by 1.2
+  check('shelled cup: outer 64-gon x 20 minus the open cavity', near(byName.cup.volume, poly(64, 10) * 20 - inner * (20 - 1.2), 1e-6), String(byName.cup.volume));
+  check('shelled box volume = outer - inner', near(byName.shellBox.volume, 20 * 10 * 20 - 16 * 6 * 16, 1e-6), String(byName.shellBox.volume));
+  check('rounded box grows by r', near(Math.max(...byName.rounded.positions.filter((_, i) => i % 3 === 0)), 7, 1e-6), String(byName.rounded.volume));
+  check('roof of a square is a pyramid: a^2 h / 3', near(byName.pyramid.volume, (100 * 5) / 3, 1e-3), String(byName.pyramid.volume));
+  check('hip roof volume', near(byName.hip.volume, (20 * 10 * 5) / 3 + (10 * 5 * 5) / 3 * 0 + ((20 - 10) * 10 * 5) / 6, 1e-3), String(byName.hip.volume));
+  const t = r.messages.map((m) => m.text).join('\n');
+  check('minkowski of two unit-ish boxes is a 4-box; erode 2 of 20x10x20 is 16x6x16', t.includes('"mink", 64, 1536'), t);
+}
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);

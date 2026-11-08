@@ -104,18 +104,31 @@ Printability: `overhangs`, `unsupported` (islands and bridges by casting rays do
 `minWallThickness` (rays cast inward from an area-weighted sample of faces), `printability` with
 its verdict and problem list, and the first-layer rule; all over the `mesh` native in the prelude.
 
+Minkowski and shells: `minkowski`, `s.round`, `s.erode` (exact plane trimming for convex solids,
+a Minkowski difference otherwise), `shell` with open sides, and `roof`, built Y-up with the same
+batching of cone cutters as the app.
+
 Each run gets a fresh engine context; Manifold objects are released in bulk after the run, as
 the browser app does with `releaseAll()`.
 
-Not yet: `shell`/`minkowski`/`roof` (test/print.js and the demo both call `shell`). `npm run core:diff` says which test scripts the
+Every script under `test/` and the demo script now build identically on both runtimes
+(`npm run core:diff`: 12 ok, 0 differ, 0 unsupported). Slower on the interpreter where a script
+does heavy per-triangle work in JavaScript: test/print.js takes 1.6 s against 0.09 s on V8 (ray
+casting in `minWallThickness`), test/images 2.3 s against 1.0 s; natives for those loops are the
+next performance step if the app needs them.
+
+Note on fonts: the vendored `stb_truetype.h` is patched to keep vertex coordinates as floats, so
+the implied on-curve point between two off-curve points is the exact midpoint. The stock header
+halves it with an integer shift, which moved TrueType outlines by half a font unit against
+opentype.js. With the patch, text outlines agree with the app to the last digit. `npm run core:diff` says which test scripts the
 core already builds identically.
 
 ## Differential test
 
 `core/test/diff.mjs` builds every script under `test/` and the demo script with both the
-JavaScript runner and the core, and compares part names, volumes and bounds. `ok` is parity,
-`UNSUPPORTED` means the core rejected the script (the port is incomplete there), `DIFF` means
-both built it and disagree — the one to look at. Every script the core can build today builds identically.
+JavaScript runner and the core, and compares part names, volumes, bounds, annotations and the
+printer profile. `ok` is parity, `UNSUPPORTED` means the core rejected the script, `DIFF` means
+both built it and disagree — the one to look at. Every script builds identically today.
 
 ## lamassu changes needed
 

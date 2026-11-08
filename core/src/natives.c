@@ -513,6 +513,20 @@ static bool n_mesh(JsContext *ctx, JsValue this_val, const JsValue *args, int ar
     return true;
 }
 
+static bool n_minkowski_sum(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val; ManifoldManifold *a = SHAPE(0), *b = SHAPE(1);
+    return ret_handle(CORE(), manifold_minkowski_sum(mem(), a, b), result);
+}
+static bool n_minkowski_difference(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val; ManifoldManifold *a = SHAPE(0), *b = SHAPE(1);
+    return ret_handle(CORE(), manifold_minkowski_difference(mem(), a, b), result);
+}
+/* trimByPlane(h, nx, ny, nz, offset): keeps the side the normal points to, of the plane n . p = offset */
+static bool n_trim_by_plane(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val; ManifoldManifold *m = SHAPE(0);
+    return ret_handle(CORE(), manifold_trim_by_plane(mem(), m, NUM(1), NUM(2), NUM(3), NUM(4)), result);
+}
+
 /* ------------------------------------------------------- transforms */
 
 static bool n_translate(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
@@ -637,7 +651,8 @@ static const Entry ENTRIES[] = {
     { "cube", n_cube }, { "cylinder", n_cylinder }, { "sphere", n_sphere },
     { "boolean", n_boolean }, { "batch", n_batch }, { "hull", n_hull }, { "hullPoints", n_hull_points },
     { "translate", n_translate }, { "rotate", n_rotate }, { "scale", n_scale }, { "mirror", n_mirror },
-    { "minGap", n_min_gap }, { "annotate", n_annotate }, { "meshFromTriangles", n_mesh_from_triangles }, { "triangulate", n_triangulate }, { "mesh", n_mesh },
+    { "minGap", n_min_gap }, { "annotate", n_annotate },
+    { "minkowskiSum", n_minkowski_sum }, { "minkowskiDifference", n_minkowski_difference }, { "trimByPlane", n_trim_by_plane }, { "meshFromTriangles", n_mesh_from_triangles }, { "triangulate", n_triangulate }, { "mesh", n_mesh },
     { "volume", n_volume }, { "area", n_area }, { "isEmpty", n_is_empty }, { "numTri", n_num_tri }, { "bounds", n_bounds },
     { "log", n_log }, { "warn", n_warn }, { "where", n_where },
     { "csCircle", n_cs_circle }, { "csSquare", n_cs_square }, { "csPolygons", n_cs_polygons },

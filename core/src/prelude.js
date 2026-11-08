@@ -2186,6 +2186,121 @@ P.unsupported = function (o) { return unsupported(this, o); };
 P.minWallThickness = function (o) { return minWallThickness(this, o); };
 P.printability = function (o) { return printability(this, o); };
 
+// ---- Minkowski, rounding, shell, roof (cad.js) ----------------------------------------------
+
+/** Minkowski sum: sweep b over every point of a. Rounds a when b is a sphere. */
+function minkowski(a, b) {
+  checkShape('minkowski', 'a', a); checkShape('minkowski', 'b', b);
+  return new Shape(cad.minkowskiSum(a.h, b.h), a.colorValue);
+}
+P.minkowski = function (b) { return minkowski(this, b); };
+/** Round all convex edges and corners with radius r (grows the shape by r). */
+P.round = function (r = 1, opts = {}) {
+  const segments = opts.segments === undefined ? 16 : opts.segments;
+  checkPositive('round', 'radius', r);
+  return minkowski(this, sphere(r, { segments }));
+};
+/** Unique face planes [nx, ny, nz, d] of a mesh (n . p = d), or null past `limit` planes. */
+function facePlanes(shape, limit) {
+  const m = cad.mesh(shape.h);
+  const P = m.positions, I = m.triangles;
+  const planes = new Map();
+  for (let i = 0; i < I.length; i += 3) {
+    const a = I[i] * 3, b = I[i + 1] * 3, c = I[i + 2] * 3;
+    const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2];
+    const vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const l = Math.hypot(nx, ny, nz);
+    if (l < 1e-12) continue;
+    nx /= l; ny /= l; nz /= l;
+    const d = nx * P[a] + ny * P[a + 1] + nz * P[a + 2];
+    const key = `${nx.toFixed(5)},${ny.toFixed(5)},${nz.toFixed(5)},${d.toFixed(4)}`;
+    if (!planes.has(key)) { planes.set(key, [nx, ny, nz, d]); if (planes.size > limit) return null; }
+  }
+  const out = [];
+  for (const v of planes.values()) out.push(v);
+  return out;
+}
+const isConvex = (shape) => Math.abs(hull(shape).volume() - shape.volume()) < 1e-6 * Math.max(1, shape.volume());
+/** Shrink the solid inward by t on every face: exact plane trimming for convex solids, a Minkowski difference otherwise. */
+P.erode = function (t = 1, opts = {}) {
+  const segments = opts.segments === undefined ? 16 : opts.segments;
+  checkPositive('erode', 'thickness', t);
+  const planes = isConvex(this) ? facePlanes(this, 128) : null;
+  if (planes) {
+    let h = this.h;
+    for (const p of planes) h = cad.trimByPlane(h, -p[0], -p[1], -p[2], -(p[3] - t));
+    return new Shape(h, this.colorValue);
+  }
+  const ball = sphere(t, { segments });
+  return new Shape(cad.minkowskiDifference(this.h, ball.h), this.colorValue);
+};
+const SIDES = { top: [0, 1, 0], bottom: [0, -1, 0], left: [-1, 0, 0], right: [1, 0, 0], front: [0, 0, 1], back: [0, 0, -1] };
+/** Hollow a solid to a wall thickness t. opts: { open: 'top' | ['top', 'front'], segments } */
+function shell(shape, t = 1, opts = {}) {
+  const open = opts.open === undefined ? [] : opts.open;
+  const segments = opts.segments === undefined ? 12 : opts.segments;
+  checkShape('shell', 'shape', shape); checkPositive('shell', 'thickness', t);
+  const opens = (Array.isArray(open) ? open : [open]).filter((o) => o);
+  for (const o of opens) if (!SIDES[o]) throw new TypeError(`shell: open must be one of ${Object.keys(SIDES).join(', ')}, got ${describe(o)}`);
+  const inner = shape.erode(t, { segments });
+  if (inner.isEmpty()) throw new RangeError(`shell: thickness ${t} leaves no interior; use a smaller value`);
+  const cutters = [inner];
+  const size = shape.bounds().size;
+  const convex = isConvex(inner);
+  for (const o of opens) {
+    const d = SIDES[o];
+    const L = Math.max(size[0], size[1], size[2]) + 2 * t;
+    const moved = inner.translate(d[0] * L, d[1] * L, d[2] * L);
+    if (convex) cutters.push(hull(inner, moved));
+    else {
+      const rod = box(1e-3 + Math.abs(d[0]) * L, 1e-3 + Math.abs(d[1]) * L, 1e-3 + Math.abs(d[2]) * L).translate((d[0] * L) / 2, (d[1] * L) / 2, (d[2] * L) / 2);
+      cutters.push(minkowski(inner, rod));
+    }
+  }
+  return difference(shape, ...cutters);
+}
+P.shell = function (t, opts) { return shell(this, t, opts); };
+/**
+ * Solid over a sketch whose height at each point is the distance to the nearest outline edge times
+ * tan(angle), like OpenSCAD's roof(). Built exactly: per outline edge, hull(cone at a, cone at b) is cut
+ * from the straight extrusion, in small batches with staggered cone heights. opts: { angle=45, segments=16, tolerance=0.01 }
+ */
+function roof(sk, opts = {}) {
+  const angle = opts.angle === undefined ? 45 : opts.angle;
+  const segments = opts.segments === undefined ? 16 : opts.segments;
+  const tolerance = opts.tolerance === undefined ? 0.01 : opts.tolerance;
+  if (!isSketch(sk)) throw new TypeError(`roof: first argument must be a 2D sketch, got ${describe(sk)}`);
+  checkNumber('roof', 'angle', angle); checkInt('roof', 'segments', segments, 3); checkNonNegative('roof', 'tolerance', tolerance);
+  if (!(angle > 0 && angle < 90)) throw new RangeError(`roof: angle must be between 0 and 90 degrees, got ${angle}`);
+  if (sk.isEmpty()) throw new RangeError('roof: the sketch is empty');
+  const cs = tolerance > 0 ? new Sketch(cad.csSimplify(sk.h, tolerance)) : sk;
+  const slope = Math.tan((angle * Math.PI) / 180);
+  const size = sk.bounds().size;
+  const R = (Math.min(size[0], size[1]) / 2) * 1.01 + 1e-6;
+  const H = R * slope;
+  // Everything here is built Y up (the app builds Z up and turns at the end): sketch (x, y) -> world (x, 0, -y).
+  const cones = [];
+  for (let k = 0; k < 7; k++) { const r = R * (1.05 + 0.03 * k); cones.push(cad.cylinder(r * slope, 0, r, segments, 0)); }
+  const cutters = [];
+  let k = 0;
+  for (const ring of cs.toPolygons()) {
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length], cone = cones[k++ % cones.length];
+      cutters.push(cad.hull([cad.translate(cone, a[0], 0, -a[1]), cad.translate(cone, b[0], 0, -b[1])]));
+    }
+  }
+  let h = cad.extrude(cs.h, H, 0, 0, 1, 1);
+  const CHUNK = 32;
+  for (let i = 0; i < cutters.length; i += CHUNK) {
+    const batch = cutters.slice(i, i + CHUNK);
+    h = cad.boolean(h, batch.length === 1 ? batch[0] : cad.batch(batch, 0), 1);
+    cad.numTri(h); // evaluate now; one lazy tree over every cutter is the slow path
+  }
+  return new Shape(h);
+}
+Q.roof = function (opts) { return roof(this, opts); };
+
 // ---- helpers --------------------------------------------------------------------
 
 const deg = (radians) => (radians * 180) / Math.PI;
@@ -2290,6 +2405,7 @@ export const api = {
   Path, path, line, arc, helix, bezier, sweep, polyhedron, loft, fillet, chamfer, sharpEdges,
   GrayImage, heightmap, lithophane, __temenImage, __temenMesh,
   overhangs, unsupported, minWallThickness, printability,
+  minkowski, shell, roof,
   Face, distance, rectPattern, gridPattern, intersects, interference, overlap, clearance, dimension, mark,
   printer, printProfile, wall, layers, fit, peg, FITS,
   deg, rad, log, print: log, echo, assert, show,

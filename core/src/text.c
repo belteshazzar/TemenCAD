@@ -16,6 +16,9 @@
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STBTT_STATIC
+/* float vertices, so the implied on-curve midpoint between two off-curve points is exact (opentype.js
+ * keeps it exact; the stock header halves with an integer shift, which moved outlines by half a unit) */
+#define stbtt_vertex_type float
 #define STBTT_ifloor(x) ((int)floor(x))
 #define STBTT_iceil(x) ((int)ceil(x))
 #define STBTT_sqrt(x) sqrt(x)
@@ -196,7 +199,9 @@ static bool n_text_outlines(JsContext *ctx, JsValue this_val, const JsValue *arg
     bool kerning = NUM(5) != 0;
     int steps = (int)NUM(6);
     if (steps < 1) steps = 1;
-    double scale = stbtt_ScaleForMappingEmToPixels(info, (float)size);
+    /* size / unitsPerEm in double, as opentype.js computes it (stb's helper returns a float) */
+    double units_per_em = floor(1.0 / stbtt_ScaleForMappingEmToPixels(info, 1.0f) + 0.5);
+    double scale = size / units_per_em;
 
     /* codepoints -> glyphs */
     size_t slen;
