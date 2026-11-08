@@ -1,0 +1,89 @@
+name: Core on every platform
+
+# The TemenCAD core (lamassu-js + Manifold + the API) built and tested on each target it ships for:
+#   native Linux and macOS (CMake, the temencore CLI over every test script and the demo)
+#   WebAssembly (Emscripten; the smoke test and the old-runner-vs-core differential test)
+#   Apple (TemenCore.xcframework for macOS, iOS and the simulator; the Swift package tests)
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  native:
+    name: native (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Configure and build
+        run: |
+          cmake -S core -B build/native -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/native -j4
+      - name: Version
+        run: build/native/temencore --version
+      - name: Every test script and the demo through the CLI
+        run: core/test/run-native.sh
+
+  wasm:
+    name: wasm (Emscripten) + parity with the JavaScript runner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.10
+      - run: npm ci
+      - name: Build the WebAssembly module
+        run: npm run core:wasm
+      - name: Smoke test (exact volumes)
+        run: npm run core:test
+      - name: Differential test (old runner vs core on every script)
+        run: npm run core:diff
+      - name: The command line on the core
+        run: npm test
+      - name: The site
+        run: npm run build
+
+  apple:
+    name: XCFramework + Swift package
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          cmake --version
+      - name: Build TemenCore.xcframework (macOS, iOS, simulator)
+        run: core/swift/build-xcframework.sh
+      - name: Slices
+        run: |
+          ls core/swift/TemenCore.xcframework
+          lipo -info core/swift/TemenCore.xcframework/*/libTemenCAD.a
+      - name: Swift tests
+        working-directory: core/swift
+        run: swift test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TemenCore.xcframework
+          path: core/swift/TemenCore.xcframework
+          if-no-files-found: error
