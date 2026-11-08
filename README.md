@@ -30,11 +30,9 @@ Then open the URL Vite prints (usually http://localhost:5173).
 ## Runtime
 
 Models build on the TemenCAD core: the script runs on the lamassu JavaScript engine and the geometry
-is Manifold, compiled together into one WebAssembly module (`core/`). The same library builds natively
-(`core/README.md`). The previous JavaScript modelling layer stays as a fallback: open the app with
-`?runtime=js` (or set `localStorage.temencad.runtime = 'js'`), or run the command line with
-`TEMENCAD_RUNTIME=js`. The command line also falls back to it when `core/wasm/dist` has not been built
-(`npm run core:wasm`, which needs the Emscripten SDK).
+is Manifold, compiled together into one WebAssembly module (`core/`). The same library builds natively,
+for Windows, and as a Swift package for macOS and iOS (`core/README.md`). The browser build and the
+command line need the module built first: `npm run core:wasm` (Emscripten SDK on the PATH).
 
 ## Command line
 

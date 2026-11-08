@@ -128,21 +128,21 @@ core already builds identically.
 
 ## In the app
 
-`src/core-runner.js` wraps `core/wasm/index.js` behind the same `runScript` contract as the JavaScript
-runner. The worker (`src/worker.js`) starts the core beside the old engine and builds on the core
-unless a run asks for `runtime: 'js'` (the app reads `?runtime=js` or `localStorage.temencad.runtime`)
-or the core failed to start, in which case it warns and falls back. The command line
-(`src/headless.js`) does the same with `TEMENCAD_RUNTIME=js`, and falls back automatically when
-`core/wasm/dist` is missing. CI installs the Emscripten SDK and runs `npm run core:wasm` before the
-tests and the site build. Retiring `runner.js`, `modules.js` and the `manifold-3d` package is the
-step after this, once the fallback has had its time.
+`src/core-runner.js` wraps `core/wasm/index.js` behind the `runScript` contract the app always used;
+the worker (`src/worker.js`) and the command line (`src/headless.js`) build on it, and nothing else.
+The JavaScript modelling layer that preceded the core (`runner.js`, `cad.js` and friends, the
+`manifold-3d` and `opentype.js` packages) is gone: `src/render.js` draws its labels with
+`temen_text_outlines` and cuts sections with `temen_cut_mesh`, both part of the C API, and the
+CLI's `--check` runs `src/mesh-check.js` over the built buffers. CI installs the Emscripten SDK and
+runs `npm run core:wasm` before the tests and the site build.
 
-## Differential test
+## Regression test
 
-`core/test/diff.mjs` builds every script under `test/` and the demo script with both the
-JavaScript runner and the core, and compares part names, volumes, bounds, annotations and the
-printer profile. `ok` is parity, `UNSUPPORTED` means the core rejected the script, `DIFF` means
-both built it and disagree — the one to look at. Every script builds identically today.
+`core/test/diff.mjs` builds every script under `test/` and the demo script on the core and compares
+part names, volumes, bounds, colours, flags, annotations and the printer profile with
+`core/test/golden.json`: what the JavaScript modelling layer produced, recorded when the two
+runtimes built every script identically, just before that layer was retired. `DIFF` means the core
+has moved from that reference.
 
 ## lamassu changes needed
 

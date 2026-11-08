@@ -607,6 +607,51 @@ static bool solid_from_arrays(JsContext *ctx, float *pos, size_t nv, uint32_t *t
     return ret_handle(core, m, result);
 }
 
+/* Host entry (temencad.h): the part of a closed mesh with coordinate[axis] <= value, cut face filled. */
+int temen_cut_mesh(TemenCore *core, const float *positions, size_t n_verts, const uint32_t *indices, size_t n_tris,
+                   int axis, double value, TemenPart *out) {
+    memset(out, 0, sizeof *out);
+    if (axis < 0 || axis > 2 || !n_tris) return 1;
+    float *pos = malloc(n_verts * 3 * sizeof *pos);
+    uint32_t *tri = malloc(n_tris * 3 * sizeof *tri);
+    if (!pos || !tri) { free(pos); free(tri); return 2; }
+    memcpy(pos, positions, n_verts * 3 * sizeof *pos);
+    memcpy(tri, indices, n_tris * 3 * sizeof *tri);
+    orient_consistently(tri, n_tris);
+    ManifoldError st;
+    ManifoldManifold *m = build_solid(pos, n_verts, tri, n_tris, &st);
+    free(pos); free(tri);
+    if (st != MANIFOLD_NO_ERROR) { manifold_delete_manifold(m); return 2; }
+    if (manifold_volume(m) < 0) { ManifoldManifold *f = manifold_scale(mem(), m, 1, 1, 1); manifold_delete_manifold(m); m = f; } /* sign is fixed below by the trim anyway */
+    ManifoldBox *box = manifold_bounding_box(malloc(manifold_box_size()), m);
+    ManifoldVec3 lo = manifold_box_min(box), hi = manifold_box_max(box);
+    manifold_delete_box(box);
+    double lo_k = axis == 0 ? lo.x : axis == 1 ? lo.y : lo.z, hi_k = axis == 0 ? hi.x : axis == 1 ? hi.y : hi.z;
+    if (value <= lo_k) { manifold_delete_manifold(m); return 1; }
+    ManifoldManifold *kept = m;
+    if (value < hi_k) {
+        kept = manifold_trim_by_plane(mem(), m, axis == 0 ? -1 : 0, axis == 1 ? -1 : 0, axis == 2 ? -1 : 0, -value);
+        manifold_delete_manifold(m);
+    }
+    if (manifold_is_empty(kept)) { manifold_delete_manifold(kept); return 1; }
+    ManifoldMeshGL *mesh = manifold_get_meshgl(malloc(manifold_meshgl_size()), kept);
+    manifold_delete_manifold(kept);
+    size_t nprop = manifold_meshgl_num_prop(mesh), nv = manifold_meshgl_num_vert(mesh), nt = manifold_meshgl_num_tri(mesh);
+    float *props = malloc((manifold_meshgl_vert_properties_length(mesh) + 1) * sizeof(float));
+    uint32_t *tv = malloc((manifold_meshgl_tri_length(mesh) + 1) * sizeof(uint32_t));
+    float *xyz = malloc((nv * 3 + 1) * sizeof(float));
+    if (!props || !tv || !xyz) { free(props); free(tv); free(xyz); manifold_delete_meshgl(mesh); return 2; }
+    manifold_meshgl_vert_properties(props, mesh);
+    manifold_meshgl_tri_verts(tv, mesh);
+    manifold_delete_meshgl(mesh);
+    for (size_t i = 0; i < nv; i++) for (int k = 0; k < 3; k++) xyz[i * 3 + k] = props[i * nprop + k];
+    free(props);
+    free(core->cut_positions); free(core->cut_indices);
+    core->cut_positions = xyz; core->cut_indices = tv;
+    out->positions = xyz; out->n_verts = nv; out->indices = tv; out->n_tris = nt;
+    return 0;
+}
+
 /* solidFromTriangles(positions[], tris[]) */
 static bool n_solid_from_triangles(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
     (void)this_val;

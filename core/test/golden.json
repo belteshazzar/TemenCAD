@@ -1,0 +1,1798 @@
+{
+ "test/anchors.js": {
+  "parts": [
+   {
+    "name": "Part 1",
+    "volume": 1631.2144515225807,
+    "bounds": {
+     "min": [
+      -10,
+      0,
+      -10
+     ],
+     "max": [
+      10,
+      14,
+      10
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [
+   {
+    "type": "dimension",
+    "a": [
+     0,
+     0,
+     0
+    ],
+    "b": [
+     0,
+     10,
+     0
+    ],
+    "label": "10 mm",
+    "length": 10
+   },
+   {
+    "type": "mark",
+    "p": [
+     0,
+     14,
+     0
+    ],
+    "text": "tip"
+   }
+  ],
+  "profile": null
+ },
+ "test/emboss.js": {
+  "parts": [
+   {
+    "name": "Part 1",
+    "volume": 24036,
+    "bounds": {
+     "min": [
+      -70,
+      0,
+      -15
+     ],
+     "max": [
+      -30,
+      21.5,
+      15
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 2",
+    "volume": 23991.335385205595,
+    "bounds": {
+     "min": [
+      -20,
+      0,
+      -15
+     ],
+     "max": [
+      20,
+      20,
+      15
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 3",
+    "volume": 24041.96176563145,
+    "bounds": {
+     "min": [
+      30,
+      0,
+      -15
+     ],
+     "max": [
+      70,
+      20,
+      16
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": null
+ },
+ "test/fillet.js": {
+  "parts": [
+   {
+    "name": "c1",
+    "volume": 23406,
+    "bounds": {
+     "min": [
+      -80,
+      -10,
+      -55
+     ],
+     "max": [
+      -40,
+      10,
+      -25
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "c2",
+    "volume": 23543.67272243645,
+    "bounds": {
+     "min": [
+      -20,
+      -10,
+      -55
+     ],
+     "max": [
+      20,
+      10,
+      -25
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "c3",
+    "volume": 23340.011003485233,
+    "bounds": {
+     "min": [
+      40,
+      -10,
+      -55
+     ],
+     "max": [
+      80,
+      10,
+      -25
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "c4",
+    "volume": 23328,
+    "bounds": {
+     "min": [
+      -80,
+      -10,
+      -5
+     ],
+     "max": [
+      -40,
+      10,
+      25
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "c5",
+    "volume": 12618.027945957825,
+    "bounds": {
+     "min": [
+      -25,
+      0,
+      -15
+     ],
+     "max": [
+      25,
+      14,
+      35
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "L",
+    "volume": 5426.715148064667,
+    "bounds": {
+     "min": [
+      45,
+      0,
+      -30
+     ],
+     "max": [
+      75,
+      10,
+      0
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "cyl",
+    "volume": 6149.598383498494,
+    "bounds": {
+     "min": [
+      -70,
+      -10,
+      50
+     ],
+     "max": [
+      -50,
+      10,
+      70
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "c7",
+    "volume": 2534.4733425234776,
+    "bounds": {
+     "min": [
+      -10,
+      -5,
+      51.339744567871094
+     ],
+     "max": [
+      10,
+      5,
+      68.6602554321289
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": null
+ },
+ "test/hole.js": {
+  "parts": [
+   {
+    "name": "Part 1",
+    "volume": 2722.8369148949478,
+    "bounds": {
+     "min": [
+      -15,
+      0,
+      -5
+     ],
+     "max": [
+      15,
+      12,
+      5
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 2",
+    "volume": 3738.2028341481623,
+    "bounds": {
+     "min": [
+      30,
+      0,
+      -10
+     ],
+     "max": [
+      50,
+      10,
+      10
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 3",
+    "volume": 3734.7551979217474,
+    "bounds": {
+     "min": [
+      -50,
+      0,
+      -10
+     ],
+     "max": [
+      -30,
+      10,
+      10
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": null
+ },
+ "test/images/main.js": {
+  "parts": [
+   {
+    "name": "relief",
+    "volume": 9912.091560730798,
+    "bounds": {
+     "min": [
+      -80,
+      0,
+      -22.5
+     ],
+     "max": [
+      -20,
+      7,
+      22.5
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "litho",
+    "volume": 7453.566437574036,
+    "bounds": {
+     "min": [
+      7,
+      0,
+      0
+     ],
+     "max": [
+      73,
+      51,
+      3
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "fn",
+    "volume": 3999.999998986327,
+    "bounds": {
+     "min": [
+      -20,
+      0,
+      40
+     ],
+     "max": [
+      20,
+      3.99174165725708,
+      80
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": null
+ },
+ "test/measure.js": {
+  "parts": [
+   {
+    "name": "Part 1",
+    "volume": 1000,
+    "bounds": {
+     "min": [
+      -5,
+      -5,
+      -5
+     ],
+     "max": [
+      5,
+      5,
+      5
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 2",
+    "volume": 1000,
+    "bounds": {
+     "min": [
+      10,
+      -5,
+      -5
+     ],
+     "max": [
+      20,
+      5,
+      5
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "ball",
+    "volume": 33.32109232067393,
+    "bounds": {
+     "min": [
+      -2,
+      18,
+      -2
+     ],
+     "max": [
+      2,
+      22,
+      2
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 4",
+    "volume": 1000,
+    "bounds": {
+     "min": [
+      0,
+      -5,
+      -5
+     ],
+     "max": [
+      10,
+      5,
+      5
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": true,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": null
+ },
+ "test/place.js": {
+  "parts": [
+   {
+    "name": "Part 1",
+    "volume": 7962.444192589146,
+    "bounds": {
+     "min": [
+      -15,
+      0,
+      -17
+     ],
+     "max": [
+      25,
+      14,
+      13
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 2",
+    "volume": 2400,
+    "bounds": {
+     "min": [
+      -15,
+      10,
+      -17
+     ],
+     "max": [
+      25,
+      12,
+      13
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": true,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": null
+ },
+ "test/print-profile.js": {
+  "parts": [
+   {
+    "name": "Part 1",
+    "volume": 3675.350195132961,
+    "bounds": {
+     "min": [
+      -10,
+      0,
+      -10
+     ],
+     "max": [
+      10,
+      10,
+      10
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 2",
+    "volume": 304.24725899059234,
+    "bounds": {
+     "min": [
+      27.149999618530273,
+      0,
+      -2.8499999046325684
+     ],
+     "max": [
+      32.849998474121094,
+      12,
+      2.8499999046325684
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": {
+   "nozzle": 0.6,
+   "layer": 0.3,
+   "holeCompensation": 0.3,
+   "material": "PETG",
+   "declared": true
+  }
+ },
+ "test/print.js": {
+  "parts": [
+   {
+    "name": "Part 1",
+    "volume": 3999.9999999999995,
+    "bounds": {
+     "min": [
+      -40,
+      0,
+      -10
+     ],
+     "max": [
+      -20,
+      10,
+      10
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 2",
+    "volume": 6360.722576129026,
+    "bounds": {
+     "min": [
+      20,
+      0,
+      -20
+     ],
+     "max": [
+      60,
+      23,
+      20
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 3",
+    "volume": 1708.185645906289,
+    "bounds": {
+     "min": [
+      -10,
+      0,
+      -10
+     ],
+     "max": [
+      10,
+      20,
+      10
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 4",
+    "volume": 79.99999999999972,
+    "bounds": {
+     "min": [
+      -10,
+      0,
+      29.799999237060547
+     ],
+     "max": [
+      10,
+      10,
+      30.200000762939453
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": null
+ },
+ "test/sketch-path.js": {
+  "parts": [
+   {
+    "name": "Part 1",
+    "volume": 883.6062599850229,
+    "bounds": {
+     "min": [
+      0,
+      0,
+      -10
+     ],
+     "max": [
+      30,
+      3,
+      0
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 2",
+    "volume": 834.9471459161146,
+    "bounds": {
+     "min": [
+      -5,
+      0,
+      15
+     ],
+     "max": [
+      25,
+      3,
+      25
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 3",
+    "volume": 534.9471459443174,
+    "bounds": {
+     "min": [
+      0,
+      0,
+      30
+     ],
+     "max": [
+      20,
+      3,
+      40
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 4",
+    "volume": 19738.046003992422,
+    "bounds": {
+     "min": [
+      36.03335952758789,
+      0,
+      -13.96664047241211
+     ],
+     "max": [
+      63.96664047241211,
+      40,
+      13.96664047241211
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": null
+ },
+ "test/sweep.js": {
+  "parts": [
+   {
+    "name": "v1",
+    "volume": 480.0000000000001,
+    "bounds": {
+     "min": [
+      -43,
+      0,
+      -2
+     ],
+     "max": [
+      -37,
+      20,
+      2
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "v2",
+    "volume": 960,
+    "bounds": {
+     "min": [
+      0,
+      -2,
+      -2
+     ],
+     "max": [
+      32,
+      2,
+      30
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "v3",
+    "volume": 3546.996580000602,
+    "bounds": {
+     "min": [
+      -23.000904083251953,
+      -3,
+      -83.00090026855469
+     ],
+     "max": [
+      23,
+      3,
+      -36.99909591674805
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "spring",
+    "volume": 2230.6315822690035,
+    "bounds": {
+     "min": [
+      48.49684524536133,
+      -1.4879703521728516,
+      -11.502031326293945
+     ],
+     "max": [
+      71.50316619873047,
+      41.487525939941406,
+      11.50225830078125
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "v5",
+    "volume": 2351.544453090002,
+    "bounds": {
+     "min": [
+      -94.97613525390625,
+      -0.15707071125507355,
+      -4.978611946105957
+     ],
+     "max": [
+      -57.976318359375,
+      60.062828063964844,
+      4.978611946105957
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "v6",
+    "volume": 2438.8905827665376,
+    "bounds": {
+     "min": [
+      -0.2467203587293625,
+      -3.4826130867004395,
+      53.03446960449219
+     ],
+     "max": [
+      81.07987213134766,
+      21.789535522460938,
+      106.96692657470703
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "v7",
+    "volume": 635.2678144137942,
+    "bounds": {
+     "min": [
+      0,
+      -2,
+      108.00082397460938
+     ],
+     "max": [
+      22.100666046142578,
+      15,
+      122
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "v8",
+    "volume": 2883.9450812367036,
+    "bounds": {
+     "min": [
+      92.49430847167969,
+      -2.5,
+      23.748199462890625
+     ],
+     "max": [
+      147.5056915283203,
+      2.5,
+      66.25180053710938
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": null
+ },
+ "src/default-script.js (demo)": {
+  "parts": [
+   {
+    "name": "print envelope",
+    "volume": 972000,
+    "bounds": {
+     "min": [
+      -90,
+      0,
+      -85
+     ],
+     "max": [
+      90,
+      30,
+      95
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": true,
+    "hidden": false
+   },
+   {
+    "name": "hidden marble",
+    "volume": 262.0940864504516,
+    "bounds": {
+     "min": [
+      -4,
+      0,
+      71
+     ],
+     "max": [
+      4,
+      8,
+      79
+     ]
+    },
+    "color": "#ff4d4d",
+    "ghost": false,
+    "hidden": true
+   },
+   {
+    "name": "Part 3",
+    "volume": 960,
+    "bounds": {
+     "min": [
+      -66,
+      0,
+      -65
+     ],
+     "max": [
+      -54,
+      8,
+      -55
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 4",
+    "volume": 884.5675417702736,
+    "bounds": {
+     "min": [
+      -46,
+      0,
+      -66
+     ],
+     "max": [
+      -34,
+      12,
+      -54
+     ]
+    },
+    "color": "#ff8f8f",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 5",
+    "volume": 780.3612880645135,
+    "bounds": {
+     "min": [
+      -25,
+      0,
+      -65
+     ],
+     "max": [
+      -15,
+      10,
+      -55
+     ]
+    },
+    "color": "#8fe3a8",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 6",
+    "volume": 374.5734182709663,
+    "bounds": {
+     "min": [
+      -6,
+      0,
+      -66
+     ],
+     "max": [
+      6,
+      10,
+      -54
+     ]
+    },
+    "color": "#ffd27f",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 7",
+    "volume": 467.0115530977635,
+    "bounds": {
+     "min": [
+      12,
+      0,
+      -68
+     ],
+     "max": [
+      28,
+      4,
+      -52
+     ]
+    },
+    "color": "#d3a6ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 8",
+    "volume": 748.2459493875502,
+    "bounds": {
+     "min": [
+      34,
+      0,
+      -65.19615173339844
+     ],
+     "max": [
+      46,
+      8,
+      -54.80384826660156
+     ]
+    },
+    "color": "#7fe0e0",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 9",
+    "volume": 1691.7058820227949,
+    "bounds": {
+     "min": [
+      -67,
+      0,
+      -42
+     ],
+     "max": [
+      -53,
+      10,
+      -28
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 10",
+    "volume": 1819.431224118532,
+    "bounds": {
+     "min": [
+      -47,
+      0,
+      -42
+     ],
+     "max": [
+      -33,
+      10,
+      -28
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 11",
+    "volume": 1237.8859479952102,
+    "bounds": {
+     "min": [
+      -21.5,
+      0,
+      -41.5
+     ],
+     "max": [
+      -8.5,
+      13,
+      -28.5
+     ]
+    },
+    "color": "#ffb366",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 12",
+    "volume": 113.23612781622182,
+    "bounds": {
+     "min": [
+      0,
+      0,
+      -40
+     ],
+     "max": [
+      10,
+      10,
+      -30
+     ]
+    },
+    "color": "#ffb366",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 13",
+    "volume": 886.7638721837782,
+    "bounds": {
+     "min": [
+      20,
+      0,
+      -40
+     ],
+     "max": [
+      30,
+      10,
+      -30
+     ]
+    },
+    "color": "#ffb366",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 14",
+    "volume": 971.6587346167728,
+    "bounds": {
+     "min": [
+      41,
+      0,
+      -39
+     ],
+     "max": [
+      63,
+      6,
+      -31
+     ]
+    },
+    "color": "#c2e86b",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 15",
+    "volume": 240,
+    "bounds": {
+     "min": [
+      65,
+      0,
+      -35
+     ],
+     "max": [
+      77,
+      12,
+      -25
+     ]
+    },
+    "color": "#c2e86b",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 16",
+    "volume": 630.2749157657059,
+    "bounds": {
+     "min": [
+      -70,
+      0,
+      -12
+     ],
+     "max": [
+      -50,
+      3,
+      2
+     ]
+    },
+    "color": "#8fe3a8",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 17",
+    "volume": 960.683328695835,
+    "bounds": {
+     "min": [
+      -40.55015182495117,
+      0,
+      -10.550151824951172
+     ],
+     "max": [
+      -29.449848175048828,
+      18,
+      0.5501519441604614
+     ]
+    },
+    "color": "#8fe3a8",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 18",
+    "volume": 423.20538156613594,
+    "bounds": {
+     "min": [
+      -17.281152725219727,
+      0,
+      -13.559508323669434
+     ],
+     "max": [
+      -1,
+      4,
+      3.5595085620880127
+     ]
+    },
+    "color": "#8fe3a8",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "drawn profile",
+    "volume": 1089.752984528506,
+    "bounds": {
+     "min": [
+      -63,
+      0,
+      10
+     ],
+     "max": [
+      -44,
+      14,
+      20
+     ]
+    },
+    "color": "#8fe3a8",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 20",
+    "volume": 835.9923076830439,
+    "bounds": {
+     "min": [
+      7,
+      0,
+      -13
+     ],
+     "max": [
+      23,
+      16,
+      3
+     ]
+    },
+    "color": "#d3a6ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 21",
+    "volume": 1129.9516968908918,
+    "bounds": {
+     "min": [
+      32.002410888671875,
+      0,
+      -12.997591018676758
+     ],
+     "max": [
+      48,
+      10,
+      3
+     ]
+    },
+    "color": "#d3a6ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 22",
+    "volume": 270,
+    "bounds": {
+     "min": [
+      -61.5,
+      0,
+      23.5
+     ],
+     "max": [
+      -38.5,
+      6,
+      26.5
+     ]
+    },
+    "color": "#ffd27f",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 23",
+    "volume": 511.91700497032065,
+    "bounds": {
+     "min": [
+      -40,
+      0,
+      15
+     ],
+     "max": [
+      -20,
+      2,
+      35
+     ]
+    },
+    "color": "#ffd27f",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 24",
+    "volume": 269.6928611550956,
+    "bounds": {
+     "min": [
+      -7.199999809265137,
+      0,
+      19.799999237060547
+     ],
+     "max": [
+      7.199999809265137,
+      5,
+      30.200000762939453
+     ]
+    },
+    "color": "#ffd27f",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 25",
+    "volume": 1154.9518925407735,
+    "bounds": {
+     "min": [
+      22,
+      0,
+      17
+     ],
+     "max": [
+      38,
+      21,
+      33
+     ]
+    },
+    "color": "#7fe0e0",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "mounting block",
+    "volume": 6254.138654683467,
+    "bounds": {
+     "min": [
+      33,
+      0,
+      17
+     ],
+     "max": [
+      77,
+      10,
+      33
+     ]
+    },
+    "color": "#ff8f8f",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "tray",
+    "volume": 4413.608409693587,
+    "bounds": {
+     "min": [
+      100,
+      0,
+      14
+     ],
+     "max": [
+      138,
+      14.699999809265137,
+      36
+     ]
+    },
+    "color": "#7fe0e0",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "socket + peg",
+    "volume": 2002.6766163892125,
+    "bounds": {
+     "min": [
+      127,
+      0,
+      17
+     ],
+     "max": [
+      150.75,
+      16,
+      33
+     ]
+    },
+    "color": "#ff8f8f",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "holes",
+    "volume": 2663.3862119151026,
+    "bounds": {
+     "min": [
+      80,
+      0,
+      20
+     ],
+     "max": [
+      110,
+      12,
+      30
+     ]
+    },
+    "color": "#ff8f8f",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 30",
+    "volume": 288,
+    "bounds": {
+     "min": [
+      -84,
+      0,
+      42
+     ],
+     "max": [
+      -56,
+      3,
+      50
+     ]
+    },
+    "color": "#c2e86b",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 31",
+    "volume": 528.3720254672626,
+    "bounds": {
+     "min": [
+      -52,
+      0,
+      45
+     ],
+     "max": [
+      -38,
+      4,
+      55
+     ]
+    },
+    "color": "#8fe3a8",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 32",
+    "volume": 437.87794216534957,
+    "bounds": {
+     "min": [
+      -32,
+      0,
+      45
+     ],
+     "max": [
+      -18,
+      4,
+      55
+     ]
+    },
+    "color": "#8fe3a8",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "name tag",
+    "volume": 1194.6089748902934,
+    "bounds": {
+     "min": [
+      -12,
+      0,
+      44
+     ],
+     "max": [
+      22,
+      3,
+      56
+     ]
+    },
+    "color": "#ffd27f",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 34",
+    "volume": 175.86647742936,
+    "bounds": {
+     "min": [
+      27.32421875,
+      0,
+      41.41999816894531
+     ],
+     "max": [
+      42.5359992980957,
+      3,
+      50.119998931884766
+     ]
+    },
+    "color": "#ff8f8f",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "lettered",
+    "volume": 1736.1409281896251,
+    "bounds": {
+     "min": [
+      56,
+      0,
+      44
+     ],
+     "max": [
+      74,
+      8,
+      56.79999923706055
+     ]
+    },
+    "color": "#ffd27f",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 36",
+    "volume": 1087.296798132392,
+    "bounds": {
+     "min": [
+      54,
+      0,
+      44
+     ],
+     "max": [
+      66,
+      16,
+      56
+     ]
+    },
+    "color": "#d3a6ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "cup",
+    "volume": 1015.8806177476117,
+    "bounds": {
+     "min": [
+      -77,
+      0,
+      68
+     ],
+     "max": [
+      -63,
+      14,
+      82
+     ]
+    },
+    "color": "#7fe0e0",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "hook",
+    "volume": 248.5506346828293,
+    "bounds": {
+     "min": [
+      3.060347080230713,
+      0,
+      73.5
+     ],
+     "max": [
+      18.940563201904297,
+      19.5595760345459,
+      76.5
+     ]
+    },
+    "color": "#c2e86b",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "spring",
+    "volume": 571.0416815166844,
+    "bounds": {
+     "min": [
+      23.797475814819336,
+      0,
+      68.79879760742188
+     ],
+     "max": [
+      36.20253372192383,
+      18.38059425354004,
+      81.20142364501953
+     ]
+    },
+    "color": "#c2e86b",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "relief",
+    "volume": 1440.0000005595118,
+    "bounds": {
+     "min": [
+      113,
+      0,
+      38
+     ],
+     "max": [
+      137,
+      3.998042106628418,
+      62
+     ]
+    },
+    "color": "#ffd27f",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 41",
+    "volume": 463.5530407518259,
+    "bounds": {
+     "min": [
+      -65,
+      0,
+      71
+     ],
+     "max": [
+      -55,
+      6,
+      79
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 42",
+    "volume": 421.2479957427979,
+    "bounds": {
+     "min": [
+      -50,
+      0,
+      71
+     ],
+     "max": [
+      -40,
+      6,
+      79
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "boss",
+    "volume": 570.9170956203197,
+    "bounds": {
+     "min": [
+      -37,
+      0,
+      68
+     ],
+     "max": [
+      -23,
+      8,
+      82
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 44",
+    "volume": 1222.2465640398138,
+    "bounds": {
+     "min": [
+      -51.5,
+      0,
+      84.5
+     ],
+     "max": [
+      -38.5,
+      9,
+      95.5
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "wedge",
+    "volume": 288,
+    "bounds": {
+     "min": [
+      -22,
+      0,
+      75
+     ],
+     "max": [
+      -10,
+      6,
+      83
+     ]
+    },
+    "color": "#ffb366",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [
+   {
+    "type": "mark",
+    "p": [
+     23,
+     4.898587196589413e-16,
+     0
+    ],
+    "text": "pin tip"
+   },
+   {
+    "type": "dimension",
+    "a": [
+     100,
+     12,
+     36
+    ],
+    "b": [
+     130,
+     12,
+     36
+    ],
+    "label": "tray 30 mm",
+    "length": 30
+   },
+   {
+    "type": "mark",
+    "p": [
+     115,
+     13,
+     25
+    ],
+    "text": "lid"
+   }
+  ],
+  "profile": {
+   "nozzle": 0.4,
+   "layer": 0.2,
+   "holeCompensation": 0.2,
+   "material": null,
+   "declared": true
+  }
+ }
+}

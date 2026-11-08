@@ -65,6 +65,9 @@ struct TemenCore {
     /* results */
     TemenPart *parts;
     size_t n_parts, cap_parts;
+    char *scratch_text;      /* temen_text_outlines result */
+    float *cut_positions;    /* temen_cut_mesh result */
+    uint32_t *cut_indices;
     TemenFont *fonts;
     size_t n_fonts, cap_fonts;
     TemenProfile profile;

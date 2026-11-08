@@ -1,57 +1,29 @@
 /**
- * Model-building worker. Loads the Manifold wasm and the bundled fonts, then builds projects sent as
- * { type: 'run', id, files } and posts back mesh buffers (transferred, not copied).
+ * Model-building worker. Starts the TemenCAD core (lamassu + Manifold, one wasm module), then builds
+ * projects sent as { type: 'run', id, files } and posts back mesh buffers (transferred, not copied).
+ * Renders ({ type: 'render' }) draw the labelled view sheet from meshes the main thread already has.
  */
-import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import coreWasmUrl from '../core/wasm/dist/temencore.wasm?url';
-import { init } from './engine.js';
-import { registerFont, FONTS } from './fonts.js';
-import { runScript } from './runner.js';
-import { initCore, runScriptCore, pickRuntime } from './core-runner.js';
+import { initCore, runScriptCore } from './core-runner.js';
 import { renderViews, sectionMeshes } from './render.js';
-
-// The lamassu core (core/) is the default runtime; the JavaScript modelling layer stays as a fallback,
-// chosen per run with runtime: 'js' (the app sets it from ?runtime=js or localStorage temencad.runtime).
-let coreError = null;
-const loadCore = initCore({ locateFile: () => coreWasmUrl }).catch((err) => { coreError = err; });
-
-// Vite resolves every bundled font to a hashed URL at build time.
-const fontUrls = import.meta.glob('./assets/*-subset.ttf', { query: '?url', import: 'default', eager: true });
-const loadFonts = Promise.all(FONTS.map(({ name, file }) =>
-  fetch(fontUrls[`./assets/${file}`]).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); })
-    .then((buf) => registerFont(name, buf))
-    .catch((err) => console.warn(`Font "${name}" failed to load: ${err.message}`))));
-
-// Project scripts become blob: module URLs, importable from a module worker.
-const env = {
-  makeUrl: (source) => URL.createObjectURL(new Blob([source], { type: 'text/javascript' })),
-  async decodeImage(bytes) {
-    const bmp = await createImageBitmap(new Blob([bytes]));
-    const c = new OffscreenCanvas(bmp.width, bmp.height), ctx = c.getContext('2d');
-    ctx.drawImage(bmp, 0, 0);
-    const { data } = ctx.getImageData(0, 0, bmp.width, bmp.height);
-    return { width: bmp.width, height: bmp.height, rgba: data };
-  },
-  revokeUrl: (url) => URL.revokeObjectURL(url),
-};
 
 const queue = [];
 let ready = false;
 
 self.onmessage = (e) => { if (ready) handle(e.data); else queue.push(e.data); };
 
-Promise.all([init({ locateFile: () => wasmUrl }), loadFonts, loadCore])
+initCore({ locateFile: () => coreWasmUrl })
   .then(() => {
     ready = true;
     self.postMessage({ type: 'ready' });
     for (const msg of queue.splice(0)) handle(msg);
   })
   .catch((err) => {
-    for (const msg of queue.splice(0)) self.postMessage({ type: 'error', id: msg.id, message: `Geometry engine failed to load: ${err?.message ?? err}` });
-    self.onmessage = (e) => self.postMessage({ type: 'error', id: e.data.id, message: `Geometry engine failed to load: ${err?.message ?? err}` });
+    for (const msg of queue.splice(0)) self.postMessage({ type: 'error', id: msg.id, message: `The TemenCAD core failed to load: ${err?.message ?? err}` });
+    self.onmessage = (e) => self.postMessage({ type: 'error', id: e.data.id, message: `The TemenCAD core failed to load: ${err?.message ?? err}` });
   });
 
-async function handle({ type, id, files, meshes, options, runtime }) {
+async function handle({ type, id, files, meshes, options }) {
   if (type === 'render') {
     try {
       const list = options.section ? sectionMeshes(meshes, options.section) : meshes;
@@ -64,10 +36,7 @@ async function handle({ type, id, files, meshes, options, runtime }) {
   }
   if (type !== 'run') return;
   try {
-    const post = (m) => self.postMessage({ ...m, id });
-    let which = pickRuntime(runtime);
-    if (which === 'core' && coreError) { post({ type: 'warn', text: `The core runtime failed to start (${coreError.message ?? coreError}); using the JavaScript runtime.`, file: null, line: null, trace: [] }); which = 'js'; }
-    const { meshes, tris, ms, annotations, profile } = which === 'core' ? await runScriptCore(files, post) : await runScript(files, post, env);
+    const { meshes, tris, ms, annotations, profile } = await runScriptCore(files, (m) => self.postMessage({ ...m, id }));
     const transfer = meshes.flatMap((m) => [m.positions.buffer, m.indices.buffer]);
     self.postMessage({ type: 'result', id, meshes, tris, ms, annotations, profile }, transfer);
   } catch (err) {

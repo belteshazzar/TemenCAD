@@ -466,6 +466,7 @@ void temen_free(TemenCore *core) {
     free(core->cs);
     for (size_t i = 0; i < core->n_annotations; i++) free(core->annotations[i]);
     free(core->annotations);
+    free(core->scratch_text); free(core->cut_positions); free(core->cut_indices);
     free((void *)core->profile.material);
     free(core->error); free(core->error_file);
     if (core->ctx) js_context_free(core->ctx);

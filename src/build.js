@@ -6,7 +6,7 @@
 export class Builder {
   /**
    * @param {object} h  callbacks:
-   *   getFiles() -> { name: string | ArrayBuffer }, runtime() -> 'core' | 'js' (optional), onStart(), onLog(text), onWarn(msg), onCancel(),
+   *   getFiles() -> { name: string | ArrayBuffer }, onStart(), onLog(text), onWarn(msg), onCancel(),
    *   onFinish(msg) -> report   (msg is the worker's 'result' or 'error' message)
    */
   constructor(h) {
@@ -33,7 +33,7 @@ export class Builder {
     if (this.current) { this.pending = true; return; }
     this.current = { id: ++this.runId };
     this.h.onStart?.();
-    this.worker.postMessage({ type: 'run', id: this.current.id, files: this.h.getFiles(), runtime: this.h.runtime?.() });
+    this.worker.postMessage({ type: 'run', id: this.current.id, files: this.h.getFiles() });
   }
 
   /** Trigger a build and resolve with its report when it finishes. */

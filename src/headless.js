@@ -1,67 +1,23 @@
 /**
  * Build projects in Node without a browser: used by the command-line tool and by the catalogue's CI.
- *   const { meshes, tris, ms } = await buildProject(project, { onLog, onWarn });
- * Loads the geometry engine and the bundled fonts once per process.
+ *   const { meshes, tris, ms, annotations, profile } = await buildProject(project, { onLog, onWarn });
+ * Runs on the TemenCAD core (core/wasm), started once per process; fonts are built into it.
  */
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { init } from './engine.js';
-import { registerFont, FONTS } from './fonts.js';
-import { runScript } from './runner.js';
-import { existsSync as coreBuilt } from 'node:fs';
+import { initCore, runScriptCore } from './core-runner.js';
 import { Project, ENTRY, PROJECT_EXT, ACCEPTED_EXT, extOf, findImports, resolveImport, isScript, isTextFile } from './project.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-let ready = null;
-/** Initialise the engine and fonts (idempotent). */
-export function initEngine() {
-  if (!ready) {
-    ready = init().then(() => {
-      for (const { name, file } of FONTS) {
-        const b = readFileSync(join(ROOT, 'src/assets', file)); // small files share a pooled buffer, so slice to this file's bytes
-        registerFont(name, b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
-      }
-    });
-  }
-  return ready;
-}
-
-/** Scripts become data: module URLs, which Node can import without touching the filesystem. */
-export const nodeEnv = {
-  makeUrl: (source) => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`,
-  async decodeImage(bytes, name) {
-    if (!/\.jpe?g$/i.test(name)) throw new Error('only PNG and JPEG images are supported on the command line');
-    const { decode } = await import('jpeg-js');
-    const { width, height, data } = decode(new Uint8Array(bytes), { useTArray: true, formatAsRGBA: true, maxMemoryUsageInMB: 512 });
-    return { width, height, rgba: data };
-  },
-};
-
-/**
- * Which runtime builds: the lamassu core (default) or the JavaScript modelling layer
- * (TEMENCAD_RUNTIME=js, or automatically when core/wasm/dist has not been built with `npm run core:wasm`).
- */
-let coreRunner = null, runtimeNotice = false;
-export function selectedRuntime() {
-  if (process.env.TEMENCAD_RUNTIME === 'js') return 'js';
-  if (!coreBuilt(join(ROOT, 'core/wasm/dist/temencore.mjs'))) {
-    if (!runtimeNotice) { runtimeNotice = true; console.error('note: core/wasm/dist is not built (npm run core:wasm); using the JavaScript runtime'); }
-    return 'js';
-  }
-  return 'core';
-}
+/** Start the core (idempotent). Kept under its old name for callers that initialised the engine themselves. */
+export function initEngine() { return initCore(); }
 
 /** Build a Project. Rejects with a ScriptError ({ message, file, line, trace }) on failure. */
 export async function buildProject(project, { onLog = () => {}, onWarn = () => {} } = {}) {
-  const post = (m) => { if (m.type === 'log') onLog(m.text); else if (m.type === 'warn') onWarn(m); };
-  if (selectedRuntime() === 'core') {
-    coreRunner ??= await import('./core-runner.js');
-    return coreRunner.runScriptCore(project.toFiles(), post);
-  }
-  await initEngine();
-  return runScript(project.toFiles(), post, nodeEnv);
+  await initCore();
+  return runScriptCore(project.toFiles(), (m) => { if (m.type === 'log') onLog(m.text); else if (m.type === 'warn') onWarn(m); });
 }
 
 /** A project from a script on disk: the script becomes main.js and its imports are read relative to it, recursively. */

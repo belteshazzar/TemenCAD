@@ -69,5 +69,28 @@ export async function createRuntime(moduleOptions = {}) {
     return result;
   };
 
-  return { run, version: str(M._tw_version()) };
+  /** Outlines of a string for drawing labels: { rings: [[[x, y], ...]], width }. Throws on an unknown font. */
+  const textOutlines = (text, { size = 10, font = 'Inter', align = 'left', letterSpacing = 0, kerning = true, curveSegments = 8 } = {}) => {
+    const alloc = (s) => { const n = M.lengthBytesUTF8(s) + 1; const p = M._malloc(n); M.stringToUTF8(s, p, n); return p; };
+    const t = alloc(text), f = alloc(font);
+    const p = M._tw_text_outlines(t, f, size, align === 'center' ? 1 : align === 'right' ? 2 : 0, letterSpacing, kerning ? 1 : 0, curveSegments);
+    M._free(t); M._free(f);
+    if (!p) throw new Error(str(M._tw_error()) ?? 'text outlines failed');
+    return JSON.parse(str(p));
+  };
+
+  /** The part of a closed mesh with coordinate[axis] <= value, cut face filled; null when nothing remains. */
+  const cutMesh = (positions, indices, axis, value) => {
+    const pp = M._malloc(positions.length * 4), ip = M._malloc(indices.length * 4);
+    M.HEAPF32.set(positions, pp >> 2); M.HEAPU32.set(indices, ip >> 2);
+    const status = M._tw_cut_mesh(pp, positions.length / 3, ip, indices.length / 3, 'xyz'.indexOf(axis), value);
+    M._free(pp); M._free(ip);
+    if (status === 1) return null;
+    if (status !== 0) throw new Error('mesh could not be cut');
+    const nv = M._tw_cut_nverts(), nt = M._tw_cut_ntris();
+    const po = M._tw_cut_positions() >> 2, io = M._tw_cut_indices() >> 2;
+    return { positions: Float32Array.from(M.HEAPF32.subarray(po, po + nv * 3)), indices: Uint32Array.from(M.HEAPU32.subarray(io, io + nt * 3)) };
+  };
+
+  return { run, textOutlines, cutMesh, version: str(M._tw_version()) };
 }

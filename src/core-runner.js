@@ -2,7 +2,7 @@
  * The lamassu core as a drop-in for runner.js: the same runScript(files, post, env) contract, the same
  * result ({ meshes, tris, ms, annotations, profile }), the same messages ({ type: 'log' | 'warn', text,
  * file, line, trace }) and the same ScriptError on failure, produced by core/wasm instead of the
- * JavaScript modelling layer. Pure module: the browser worker and the Node command line both use it.
+ * JavaScript modelling layer that preceded it. Pure module: the browser worker and the Node command line both use it.
  */
 import { createRuntime } from '../core/wasm/index.js';
 
@@ -12,11 +12,7 @@ export class ScriptError extends Error {
 }
 
 let runtime = null;
-/** Start the core once (idempotent). `moduleOptions` reach the Emscripten factory (e.g. locateFile for a bundler). */
-export function initCore(moduleOptions) {
-  if (!runtime) runtime = createRuntime(moduleOptions).catch((err) => { runtime = null; throw err; });
-  return runtime;
-}
+/* initCore (below): start the core once; `moduleOptions` reach the Emscripten factory (e.g. locateFile for a bundler). */
 
 /** Build a project on the core. `files` is { name: string | ArrayBuffer }; `post` receives log and warn messages during the run. */
 export async function runScriptCore(files, post) {
@@ -32,7 +28,14 @@ export async function runScriptCore(files, post) {
   return { meshes, tris, ms: r.ms, annotations: r.annotations, profile: r.profile };
 }
 
-/** Which runtime a request asks for: 'core' (default) or 'js' (the JavaScript modelling layer, kept as a fallback). */
-export function pickRuntime(requested) {
-  return requested === 'js' ? 'js' : 'core';
+let started = null;
+/** The started runtime, for synchronous callers (the renderer); throws when initCore() has not resolved yet. */
+export function coreRuntime() {
+  if (!started) throw new Error('the TemenCAD core has not started');
+  return started;
+}
+const remember = (p) => p.then((rt) => { started = rt; return rt; });
+export function initCore(moduleOptions) {
+  if (!runtime) runtime = remember(createRuntime(moduleOptions)).catch((err) => { runtime = null; throw err; });
+  return runtime;
 }

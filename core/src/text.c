@@ -175,46 +175,9 @@ static bool glyph_rings(stbtt_fontinfo *info, int glyph, double dx, double scale
 
 /* ---- natives ---- */
 
-/* textOutlines(str, font, size, align, letterSpacing, kerning, curveSegments) -> { rings: [[[x, y], ...]], width } */
-static bool n_text_outlines(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
-    (void)this_val;
-    TemenCore *core = CORE();
-    if (argc < 7 || !js_is_string(args[0]) || !js_is_string(args[1])) THROW(temen_type_error(core, "__cad.textOutlines: bad arguments"));
-    char *fname = temen_value_to_utf8(core, args[1]);
-    TemenFont *f = fname ? find_font(core, fname) : NULL;
-    if (!f) {
-        char msg[512]; size_t n = 0;
-        n += (size_t)snprintf(msg, sizeof msg, "Unknown font \"%s\". Available: ", fname ? fname : "");
-        for (size_t i = 0; i < core->n_fonts && n < sizeof msg - 1; i++) n += (size_t)snprintf(msg + n, sizeof msg - n, "%s%s", i ? ", " : "", core->fonts[i].name);
-        free(fname);
-        THROW(error_plain(core, msg));
-    }
-    free(fname);
-    stbtt_fontinfo *info = font_info(f);
-    if (!info) THROW(temen_range_error(core, "font file could not be parsed"));
-
-    double size = NUM(2);
-    int align = (int)NUM(3); /* 0 left, 1 centre, 2 right */
-    double letter_spacing = NUM(4);
-    bool kerning = NUM(5) != 0;
-    int steps = (int)NUM(6);
-    if (steps < 1) steps = 1;
-    /* size / unitsPerEm in double, as opentype.js computes it (stb's helper returns a float) */
-    double units_per_em = floor(1.0 / stbtt_ScaleForMappingEmToPixels(info, 1.0f) + 0.5);
-    double scale = size / units_per_em;
-
-    /* codepoints -> glyphs */
-    size_t slen;
-    const uint16_t *su = js_string_units(args[0], &slen);
-    int *glyphs = malloc((slen + 1) * sizeof *glyphs);
-    if (!glyphs) THROW(temen_range_error(core, "out of memory"));
-    size_t ng = 0;
-    for (size_t i = 0; i < slen; i++) {
-        uint32_t cp = su[i];
-        if (cp >= 0xD800 && cp < 0xDC00 && i + 1 < slen && su[i + 1] >= 0xDC00 && su[i + 1] < 0xE000) { cp = 0x10000 + ((cp - 0xD800) << 10) + (su[i + 1] - 0xDC00); i++; }
-        glyphs[ng++] = stbtt_FindGlyphIndex(info, (int)cp);
-    }
-    /* layout as opentype.js forEachGlyph: advance, then kerning to the next glyph, then letterSpacing * size */
+/* Lays out `glyphs` (already looked up) and collects rings; shared by the native and the host entry. */
+static bool layout(stbtt_fontinfo *info, const int *glyphs, size_t ng, double scale, double size, int align,
+                   double letter_spacing, bool kerning, int steps, Rings *rs, double *width_out) {
     double width = 0;
     for (size_t i = 0; i < ng; i++) {
         int adv, lsb;
@@ -224,28 +187,78 @@ static bool n_text_outlines(JsContext *ctx, JsValue this_val, const JsValue *arg
         if (letter_spacing != 0) width += letter_spacing * size;
     }
     double x = align == 1 ? -width / 2 : align == 2 ? -width : 0;
-    Rings rs = {0};
-    bool ok = true;
-    for (size_t i = 0; i < ng && ok; i++) {
-        ok = glyph_rings(info, glyphs[i], x, scale, steps, &rs);
+    for (size_t i = 0; i < ng; i++) {
+        if (!glyph_rings(info, glyphs[i], x, scale, steps, rs)) return false;
         int adv, lsb;
         stbtt_GetGlyphHMetrics(info, glyphs[i], &adv, &lsb);
         x += adv * scale;
         if (kerning && i + 1 < ng) x += stbtt_GetGlyphKernAdvance(info, glyphs[i], glyphs[i + 1]) * scale;
         if (letter_spacing != 0) x += letter_spacing * size;
     }
+    *width_out = width;
+    return true;
+}
+
+/* A ring is kept when, after dropping a closing duplicate, it has 3 or more points (fonts.js). */
+static size_t ring_points(const Ring *r) {
+    size_t np = r->n / 2;
+    if (np > 1 && r->pts[0] == r->pts[(np - 1) * 2] && r->pts[1] == r->pts[(np - 1) * 2 + 1]) np--;
+    return np < 3 ? 0 : np;
+}
+
+static int *glyphs_of_utf16(stbtt_fontinfo *info, const uint16_t *su, size_t slen, size_t *ng) {
+    int *glyphs = malloc((slen + 1) * sizeof *glyphs);
+    if (!glyphs) return NULL;
+    *ng = 0;
+    for (size_t i = 0; i < slen; i++) {
+        uint32_t cp = su[i];
+        if (cp >= 0xD800 && cp < 0xDC00 && i + 1 < slen && su[i + 1] >= 0xDC00 && su[i + 1] < 0xE000) { cp = 0x10000 + ((cp - 0xD800) << 10) + (su[i + 1] - 0xDC00); i++; }
+        glyphs[(*ng)++] = stbtt_FindGlyphIndex(info, (int)cp);
+    }
+    return glyphs;
+}
+
+static double font_scale(stbtt_fontinfo *info, double size) {
+    /* size / unitsPerEm in double, as opentype.js computes it (stb's helper returns a float) */
+    double units_per_em = floor(1.0 / stbtt_ScaleForMappingEmToPixels(info, 1.0f) + 0.5);
+    return size / units_per_em;
+}
+
+static void unknown_font_message(TemenCore *core, const char *fname, char *msg, size_t cap) {
+    size_t n = (size_t)snprintf(msg, cap, "Unknown font \"%s\". Available: ", fname ? fname : "");
+    for (size_t i = 0; i < core->n_fonts && n < cap - 1; i++) n += (size_t)snprintf(msg + n, cap - n, "%s%s", i ? ", " : "", core->fonts[i].name);
+}
+
+/* textOutlines(str, font, size, align, letterSpacing, kerning, curveSegments) -> { rings: [[[x, y], ...]], width } */
+static bool n_text_outlines(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val;
+    TemenCore *core = CORE();
+    if (argc < 7 || !js_is_string(args[0]) || !js_is_string(args[1])) THROW(temen_type_error(core, "__cad.textOutlines: bad arguments"));
+    char *fname = temen_value_to_utf8(core, args[1]);
+    TemenFont *f = fname ? find_font(core, fname) : NULL;
+    if (!f) { char msg[512]; unknown_font_message(core, fname, msg, sizeof msg); free(fname); THROW(error_plain(core, msg)); }
+    free(fname);
+    stbtt_fontinfo *info = font_info(f);
+    if (!info) THROW(temen_range_error(core, "font file could not be parsed"));
+    double size = NUM(2);
+    int align = (int)NUM(3);
+    int steps = (int)NUM(6); if (steps < 1) steps = 1;
+    size_t slen, ng;
+    const uint16_t *su = js_string_units(args[0], &slen);
+    int *glyphs = glyphs_of_utf16(info, su, slen, &ng);
+    if (!glyphs) THROW(temen_range_error(core, "out of memory"));
+    Rings rs = {0};
+    double width = 0;
+    bool ok = layout(info, glyphs, ng, font_scale(info, size), size, align, NUM(4), NUM(5) != 0, steps, &rs, &width);
     free(glyphs);
     if (!ok) { rings_free(&rs); THROW(temen_range_error(core, "out of memory")); }
-
-    /* -> JS: drop a closing duplicate point and rings with fewer than 3 points, as fonts.js does */
     JsValue obj = js_object_new(ctx), arr = js_array_new(ctx, (uint32_t)rs.n);
     ok = !js_is_undefined(obj) && !js_is_undefined(arr);
     js_gc_protect(core->vm, &obj); js_gc_protect(core->vm, &arr);
     for (size_t i = 0; i < rs.n && ok; i++) {
         Ring *r = &rs.rings[i];
-        size_t np = r->n / 2;
-        if (np > 1 && r->pts[0] == r->pts[(np - 1) * 2] && r->pts[1] == r->pts[(np - 1) * 2 + 1]) np--;
-        if (np < 3) continue;
+        size_t np = ring_points(r);
+        if (!np) continue;
         JsValue ring = js_array_new(ctx, (uint32_t)np);
         if (js_is_undefined(ring)) { ok = false; break; }
         js_gc_protect(core->vm, &ring);
@@ -265,6 +278,45 @@ static bool n_text_outlines(JsContext *ctx, JsValue this_val, const JsValue *arg
     if (!ok) THROW(temen_range_error(core, "out of memory"));
     *result = obj;
     return true;
+}
+
+/* Host entry (temencad.h): the same outlines as JSON, for a host drawing labels. */
+const char *temen_text_outlines(TemenCore *core, const char *text, const char *font, double size, int align,
+                                double letter_spacing, int kerning, int curve_segments) {
+    free(core->scratch_text); core->scratch_text = NULL;
+    TemenFont *f = find_font(core, font);
+    if (!f) { char msg[512]; unknown_font_message(core, font, msg, sizeof msg); free(core->error); core->error = strdup(msg); return NULL; }
+    stbtt_fontinfo *info = font_info(f);
+    if (!info) { free(core->error); core->error = strdup("font file could not be parsed"); return NULL; }
+    size_t slen, ng;
+    uint16_t *su = temen_utf8_to_utf16(text, strlen(text), &slen);
+    int *glyphs = su ? glyphs_of_utf16(info, su, slen, &ng) : NULL;
+    free(su);
+    if (!glyphs) return NULL;
+    Rings rs = {0};
+    double width = 0;
+    bool ok = layout(info, glyphs, ng, font_scale(info, size), size, align, letter_spacing, kerning != 0, curve_segments < 1 ? 1 : curve_segments, &rs, &width);
+    free(glyphs);
+    if (!ok) { rings_free(&rs); return NULL; }
+    /* JSON: 17 significant digits round-trip exactly */
+    size_t cap = 64, len = 0;
+    char *out = malloc(cap);
+    #define APPEND(...) do { int need_ = snprintf(NULL, 0, __VA_ARGS__); if (len + (size_t)need_ + 1 > cap) { cap = (cap + (size_t)need_ + 1) * 2; char *n_ = realloc(out, cap); if (!n_) { free(out); rings_free(&rs); return NULL; } out = n_; } len += (size_t)snprintf(out + len, cap - len, __VA_ARGS__); } while (0)
+    if (!out) { rings_free(&rs); return NULL; }
+    APPEND("{\"rings\":[");
+    bool first_ring = true;
+    for (size_t i = 0; i < rs.n; i++) {
+        size_t np = ring_points(&rs.rings[i]);
+        if (!np) continue;
+        APPEND("%s[", first_ring ? "" : ","); first_ring = false;
+        for (size_t k = 0; k < np; k++) APPEND("%s[%.17g,%.17g]", k ? "," : "", rs.rings[i].pts[k * 2], rs.rings[i].pts[k * 2 + 1]);
+        APPEND("]");
+    }
+    APPEND("],\"width\":%.17g}", width);
+    #undef APPEND
+    rings_free(&rs);
+    core->scratch_text = out;
+    return out;
 }
 
 /* fontNames() -> ['Inter', ...] bundled and project fonts */

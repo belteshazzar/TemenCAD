@@ -87,6 +87,18 @@ EXPORT const char *tw_profile_material(void) { return temen_profile(g_core)->mat
 EXPORT int tw_annotation_count(void) { return (int)temen_annotation_count(g_core); }
 EXPORT const char *tw_annotation(int i) { return temen_annotation(g_core, (size_t)i); }
 
+EXPORT const char *tw_text_outlines(const char *text, const char *font, double size, int align, double letter_spacing, int kerning, int curve_segments) {
+    return temen_text_outlines(g_core, text, font, size, align, letter_spacing, kerning, curve_segments);
+}
+static TemenPart g_cut;
+EXPORT int tw_cut_mesh(const float *positions, int n_verts, const uint32_t *indices, int n_tris, int axis, double value) {
+    return temen_cut_mesh(g_core, positions, (size_t)n_verts, indices, (size_t)n_tris, axis, value, &g_cut);
+}
+EXPORT const float *tw_cut_positions(void) { return g_cut.positions; }
+EXPORT int tw_cut_nverts(void) { return (int)g_cut.n_verts; }
+EXPORT const uint32_t *tw_cut_indices(void) { return g_cut.indices; }
+EXPORT int tw_cut_ntris(void) { return (int)g_cut.n_tris; }
+
 EXPORT int tw_part_count(void) { return g_core ? (int)temen_part_count(g_core) : 0; }
 EXPORT const char *tw_part_name(int i) { return temen_part(g_core, (size_t)i)->name; }
 EXPORT int tw_part_named(int i) { return temen_part(g_core, (size_t)i)->named; }

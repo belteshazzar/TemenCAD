@@ -149,11 +149,8 @@ let lastAnnotations = [];
 let runDiagnostics = [];    // warnings collected during the current build
 let framedOnce = false;
 
-/** ?runtime=js (or localStorage temencad.runtime = 'js') builds with the JavaScript modelling layer instead of the core. */
-const chosenRuntime = () => { try { return new URLSearchParams(location.search).get('runtime') ?? localStorage.getItem('temencad.runtime') ?? 'core'; } catch { return 'core'; } };
 const builder = new Builder({
   getFiles: () => project.toFiles(),
-  runtime: chosenRuntime,
   onStart: () => {
     consoleEl.textContent = '';
     tabs.clearDiagnostics();

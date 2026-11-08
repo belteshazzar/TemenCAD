@@ -88,6 +88,23 @@ const char *temen_annotation(const TemenCore *core, size_t index);
 /* The profile of the last run (declared == 0 when the script declared none). */
 const TemenProfile *temen_profile(const TemenCore *core);
 
+/*
+ * Outlines of a string in a bundled or project font, for a host that draws labels (the render sheet):
+ * JSON {"rings":[[[x,y],...],...],"width":w} in millimetres, baseline at y = 0, or NULL with the reason
+ * in temen_error(). align: 0 left, 1 centre, 2 right. The string is owned by the core until the next call.
+ */
+const char *temen_text_outlines(TemenCore *core, const char *text, const char *font, double size, int align,
+                                double letter_spacing, int kerning, int curve_segments);
+
+/*
+ * The part of a mesh on one side of an axis-aligned plane (axis 0 = x, 1 = y, 2 = z, keeping coordinates
+ * <= value), as a closed mesh with the cut face filled, for section renders. Returns 0 and fills *out,
+ * 1 when nothing remains (out is zeroed), 2 on failure (temen_error). Buffers belong to the core until
+ * the next call. The mesh must be closed, as a part's mesh is.
+ */
+int temen_cut_mesh(TemenCore *core, const float *positions, size_t n_verts, const uint32_t *indices, size_t n_tris,
+                   int axis, double value, TemenPart *out);
+
 /* Milliseconds the last run took. */
 double temen_last_run_ms(const TemenCore *core);
 

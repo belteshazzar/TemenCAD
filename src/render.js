@@ -9,8 +9,7 @@
  * Labels (part names, view title with the size, a scale bar, an axis triad) need a registered font; without one they are skipped.
  */
 import { zlibSync } from 'fflate';
-import { textOutlines } from './fonts.js';
-import { polyhedronFromMesh, box } from './cad.js';
+import { coreRuntime } from './core-runner.js';
 import { colorHex as cssToHex } from './export.js';
 
 const norm = (v) => { const l = Math.hypot(...v) || 1; return v.map((x) => x / l); };
@@ -81,11 +80,11 @@ class Canvas {
   /** Text at (x, y) = baseline start; size in pixels. Silently skipped when no font is registered. */
   text(str, x, y, size, col = INK, { align = 'left', weight = 'Inter' } = {}) {
     let out;
-    try { out = textOutlines(str, { size, font: weight, align, curveSegments: 4 }); } catch { return 0; }
+    try { out = coreRuntime().textOutlines(str, { size, font: weight, align, curveSegments: 4 }); } catch { return 0; }
     this.fillRings(out.rings.map((r) => r.map(([px, py]) => [x + px, y - py])), col);
     return out.width;
   }
-  textWidth(str, size, weight = 'Inter') { try { return textOutlines(str, { size, font: weight }).width; } catch { return 0; } }
+  textWidth(str, size, weight = 'Inter') { try { return coreRuntime().textOutlines(str, { size, font: weight }).width; } catch { return 0; } }
 }
 
 /** Draw one view into a region of the canvas. */
@@ -218,19 +217,10 @@ function drawView(cv, region, meshes, viewName, { colorHex, labels, section, gho
 
 /** Cut every mesh with a half-space so a picture shows the inside: keeps the side below `value` (y) or the negative side (x, z). */
 export function sectionMeshes(meshes, { axis, value }) {
-  const k = 'xyz'.indexOf(axis);
   const out = [];
   for (const m of meshes) {
-    const s = polyhedronFromMesh(m.name ?? 'part', m.positions, m.indices);
-    const { min, max } = s.bounds();
-    if (value <= min[k]) continue;
-    if (value >= max[k]) { out.push(m); continue; }
-    const big = 2 * Math.max(...max.map(Math.abs), ...min.map(Math.abs), Math.abs(value)) + 10;
-    const keep = box(big, big, big).translate(k === 0 ? value - big / 2 : 0, k === 1 ? value - big / 2 : 0, k === 2 ? value - big / 2 : 0);
-    const cut = s.intersect(keep);
-    if (cut.isEmpty()) continue;
-    const { positions, indices } = cut.toMesh();
-    out.push({ ...m, positions, indices });
+    const cut = coreRuntime().cutMesh(m.positions, m.indices, axis, value); // the core fills the cut face
+    if (cut) out.push({ ...m, positions: cut.positions, indices: cut.indices });
   }
   return out;
 }
