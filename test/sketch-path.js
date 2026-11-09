@@ -25,8 +25,18 @@ assert(vase.volume() > 0 && vase.bounds().size[1] === 40, 'revolved profile');
 // fillet clamps when the corner is too short
 const tiny = sketch().moveTo(0, 0).lineTo(2, 0).fillet(50).lineTo(2, 2).lineTo(0, 2).close();
 assert(tiny.area() > 0 && tiny.area() < 4, 'clamped fillet');
+// curves: a parabola under its base is 2/3 of base x height (the curve peaks halfway to the control point)
+const para = sketch().moveTo(0, 0).lineTo(10, 0).quadTo(5, 10, 0, 0, { segments: 128 }).close();
+close(para.area(), (2 / 3) * 10 * 5, 1e-3, 'quadratic Bezier area');
+// a cubic with the circle constant 0.5523 is a quarter circle to within 0.03%
+const k = 0.5522847 * 10;
+const quarter = sketch().moveTo(0, 0).lineTo(10, 0).bezierTo(10, k, k, 10, 0, 10, { segments: 128 }).close();
+close(quarter.area(), Math.PI * 25, 3e-4, 'cubic Bezier quarter circle');
+// curves meet the other pen moves: a tangent arc carries on from the curve's end direction, fillets still apply
+const blend = sketch().moveTo(0, 0).lineTo(20, 0).bezierTo(26, 0, 30, 4, 30, 10).tangentArcTo(20, 20).lineTo(0, 20).fillet(3).close();
+assert(blend.area() > 400 && blend.area() < 600 && blend.bounds().max[0] <= 30.0001 + 5, 'curve then tangent arc');
 // errors
-for (const f of [() => sketch().moveTo(0, 0).arcTo(10, 0, { r: 2 }), () => sketch().lineTo(1, 1).close(), () => sketch().moveTo(0, 0).tangentArcTo(1, 1)]) {
+for (const f of [() => sketch().moveTo(0, 0).arcTo(10, 0, { r: 2 }), () => sketch().lineTo(1, 1).close(), () => sketch().moveTo(0, 0).tangentArcTo(1, 1), () => sketch().quadTo(1, 1, 2, 0), () => sketch().moveTo(0, 0).bezierTo(1, 1, 2, 'x', 3, 0)]) {
   let threw = false; try { f(); } catch { threw = true; } assert(threw, 'error cases throw');
 }
 return [extrude(r1, 3), extrude(slotLike, 3).translate(0, 0, 20), extrude(tang, 3).translate(0, 0, 40), vase.translate(50, 0, 0)];

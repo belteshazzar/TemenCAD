@@ -82,6 +82,8 @@ b.lineTo(x, y)                                    // segment to a point
 b.moveTo(x, y)                                    // where the outline starts
 b.points()                                        // the points so far, for inspection
 b.tangentArcTo(x, y, { segments })                // arc tangent to the previous segment, ending at (x, y)
+b.quadTo(cx, cy, x, y, { segments })              // quadratic Bézier to (x, y), pulled toward the control point (cx, cy)
+b.bezierTo(c1x, c1y, c2x, c2y, x, y, { segments })  // cubic Bézier to (x, y) with two control points (16 segments by default)
 // sketch().moveTo(0, 0).lineTo(30, 0).arcTo(30, 10, { r: 5 }).lineTo(0, 10).fillet(2).close().extrude(3)
 // revolve(sketch().moveTo(0, 0).lineTo(12, 0).lineTo(14, 20).fillet(3).lineTo(10, 40).lineTo(0, 40).close())</pre>
       <h3>2D → 3D and back</h3>

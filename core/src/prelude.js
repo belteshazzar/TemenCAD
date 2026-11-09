@@ -723,6 +723,31 @@ B.tangentArcTo = function (x, y, opts = {}) {
   const cx = c[0] + n[0] * t, cy = c[1] + n[1] * t, r = Math.abs(t);
   return this._arc(cx, cy, r, Math.atan2(c[1] - cy, c[0] - cx), Math.atan2(y - cy, x - cx), t > 0, segments);
 };
+/** A quadratic Bézier from the current point to (x, y), pulled toward the control point (cx, cy). opts: { segments = 16 } */
+B.quadTo = function (cx, cy, x, y, opts = {}) {
+  const segments = opts.segments === undefined ? 16 : opts.segments;
+  checkNumber('quadTo', 'cx', cx); checkNumber('quadTo', 'cy', cy); checkNumber('quadTo', 'x', x); checkNumber('quadTo', 'y', y);
+  checkInt('quadTo', 'segments', segments, 1);
+  const c = this.current(); if (!c) throw new Error('quadTo: moveTo first');
+  for (let i = 1; i <= segments; i++) {
+    const t = i / segments, u = 1 - t;
+    this._push(u * u * c[0] + 2 * u * t * cx + t * t * x, u * u * c[1] + 2 * u * t * cy + t * t * y);
+  }
+  return this;
+};
+/** A cubic Bézier from the current point to (x, y) with control points (c1x, c1y) and (c2x, c2y). opts: { segments = 16 } */
+B.bezierTo = function (c1x, c1y, c2x, c2y, x, y, opts = {}) {
+  const segments = opts.segments === undefined ? 16 : opts.segments;
+  checkNumber('bezierTo', 'c1x', c1x); checkNumber('bezierTo', 'c1y', c1y); checkNumber('bezierTo', 'c2x', c2x); checkNumber('bezierTo', 'c2y', c2y);
+  checkNumber('bezierTo', 'x', x); checkNumber('bezierTo', 'y', y); checkInt('bezierTo', 'segments', segments, 1);
+  const c = this.current(); if (!c) throw new Error('bezierTo: moveTo first');
+  for (let i = 1; i <= segments; i++) {
+    const t = i / segments, u = 1 - t;
+    const a = u * u * u, b = 3 * u * u * t, d = 3 * u * t * t, e = t * t * t;
+    this._push(a * c[0] + b * c1x + d * c2x + e * x, a * c[1] + b * c1y + d * c2y + e * y);
+  }
+  return this;
+};
 B._arc = function (cx, cy, r, a0, a1, ccw, segments) {
   let sweep = a1 - a0;
   if (ccw) { while (sweep <= 1e-12) sweep += 2 * Math.PI; } else { while (sweep >= -1e-12) sweep -= 2 * Math.PI; }

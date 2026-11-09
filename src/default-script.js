@@ -159,6 +159,10 @@ place(prism(6, 7.5, 6.5, { center: false }).subtract(thread({ size: 'M8', length
 const longBar = roundedBox(40, 8, 12, 2, { edges: 'vertical' }).onPlate();
 place(union(split(longBar, { x: 0 }, { dowels: 1, dowelDiameter: 3, dowelLength: 8, layout: true })), -40, 145, '#ffb366', 'split bar');
 
+// 12f. Free curves in the pen: a vase profile with a cubic Bézier waist, revolved
+const vaseProfile = sketch().moveTo(0, 0).lineTo(8, 0).bezierTo(14, 6, 3, 14, 7, 22).lineTo(5.5, 22).quadTo(1.5, 14, 0, 2).close();
+place(revolve(vaseProfile, { segments: 48 }), 35, 145, '#d3a6ff', 'vase');
+
 // 13. Loft between profiles, and a shelled cup (hollow with an open top)
 place(loft([circle(6), rect(8, 8).fillet(2), regularPolygon(6, 4)], [0, 8, 16]), 60, 50, '#d3a6ff');
 place(cylinder(7, 14).shell(CUP_WALL, { open: 'top' }), -70, 75, '#7fe0e0', 'cup');

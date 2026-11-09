@@ -33,7 +33,7 @@ export const GLOBALS = [
   fn('regularPolygon', 'regularPolygon(${sides}, ${r})', '(sides, r)', 'Regular polygon with circumradius r.'),
   fn('polygon2d', 'polygon2d([${points}])', '(points, { holes })', 'Arbitrary 2D polygon from [[x, y], ...]; pass { holes: [[...]] } for holes.'),
   fn('text', "text('${text}', { size: ${10} })", "(str, { size, font, align, letterSpacing })", "2D text outline, baseline at y = 0. Fonts: 'Inter', 'Inter Bold', 'Nunito Bold', 'Source Serif 4', 'JetBrains Mono'."),
-  fn('sketch', 'sketch().moveTo(${0}, ${0}).lineTo(${x}, ${y}).close()', '() | ([[x, y], ...])', 'Draw a profile step by step: moveTo, lineTo, line, horizontal, vertical, arcTo, tangentArcTo, fillet, close.'),
+  fn('sketch', 'sketch().moveTo(${0}, ${0}).lineTo(${x}, ${y}).close()', '() | ([[x, y], ...])', 'Draw a profile step by step: moveTo, lineTo, line, horizontal, vertical, quadTo, bezierTo, arcTo, tangentArcTo, fillet, close.'),
   fn('extrude', 'extrude(${sketch}, ${h})', '(sketch, h, { center, twist, scale })', 'Extrude a sketch up along Y; twist in degrees, scale at the top.'),
   fn('revolve', 'revolve(${sketch})', '(sketch, { angle, segments })', 'Revolve a sketch around Y; sketch x is the radius.'),
   fn('roof', 'roof(${sketch})', '(sketch, { angle, segments, tolerance })', 'Solid whose height is the distance to the outline: pyramid from a square, hip roof from a rectangle.'),
@@ -181,6 +181,8 @@ export const METHODS = [
   method('vertical', 'vertical(${dy})', '(dy)', 'Vertical relative segment.', 'builder'),
   method('arcTo', 'arcTo(${x}, ${y}, { r: ${r} })', "(x, y, { r, side: 'left' | 'right', large, segments })", 'Circular arc of radius r to a point.', 'builder'),
   method('tangentArcTo', 'tangentArcTo(${x}, ${y})', '(x, y, { segments })', 'Arc tangent to the previous segment, ending at a point.', 'builder'),
+  method('quadTo', 'quadTo(${cx}, ${cy}, ${x}, ${y})', '(cx, cy, x, y, { segments })', 'Quadratic Bézier curve to a point, pulled toward one control point.', 'builder'),
+  method('bezierTo', 'bezierTo(${c1x}, ${c1y}, ${c2x}, ${c2y}, ${x}, ${y})', '(c1x, c1y, c2x, c2y, x, y, { segments })', 'Cubic Bézier curve to a point with two control points.', 'builder'),
   method('close', 'close()', "({ mirror: 'x' | 'y', segments })", 'Finish the outline as a Sketch; mirror appends the mirror image.', 'builder'),
   // Paths
   method('append', 'append(${path})', '(path)', 'Continue with another path, moved to start where this one ends.', 'path'),
