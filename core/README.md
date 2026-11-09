@@ -211,9 +211,9 @@ that seems right. The core builds against `lamassu.h` alone.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
-`instanceof`, `Array.from({ length })`, `flatMap`. Object key order follows hash order, which the
-runner relies on for part order from `return { body, lid }`; the planned "shapes" work in lamassu
-fixes that.
+`instanceof`, `Array.from({ length })`, `flatMap`. Object keys enumerate in the language's order
+(array-index names ascending, then insertion order), so parts from `return { body, lid }` come out
+as body, lid in every runtime.
 
 ## Swift and native use
 

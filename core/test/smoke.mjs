@@ -402,6 +402,10 @@ r = rt.run({ 'main.js': 'const s = box(10, 10, 10);\nreturn s.filet(2);' });
 check('typo fails', !r.ok);
 check('error names the method and line', r.error?.message === 'TypeError: s.filet is not a function' && r.error?.line === 2, JSON.stringify(r.error));
 
+// 4p. parts come out in the order the object lists them (index names first, as in JavaScript)
+r = rt.run({ 'main.js': 'const lid = box(1), body = box(2), base = box(3);\nreturn { lid, body, 2: base, base, 1: box(4) };' });
+check('part order follows the object', r.ok && r.parts.map((p) => p.name).join() === '1,2,lid,body,base', r.error?.message ?? r.parts?.map((p) => p.name).join());
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);
