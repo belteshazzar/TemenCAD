@@ -2549,6 +2549,124 @@ function thread(opts = {}) {
   return body;
 }
 
+// ---- splitting parts for printing ------------------------------------------------------------
+//
+// Work happens with the cut normal turned onto +Y (so every cut is a horizontal plane, slices come from
+// projection's cut, and laying a piece on its cut face is a flip about X), then the pieces turn back.
+
+const SPLIT_TURN = { x: { to: [0, 0, 90], back: [0, 0, -90] }, y: { to: [0, 0, 0], back: [0, 0, 0] }, z: { to: [-90, 0, 0], back: [90, 0, 0] } };
+
+/** Up to n points of a region, spread as far apart as possible (farthest-point sampling over its outline). */
+function spreadPoints(region, n) {
+  const cand = [];
+  for (const ring of region.toPolygons()) for (const p of ring) cand.push(p);
+  if (!cand.length || n <= 0) return [];
+  // start from the two candidates farthest apart, then keep adding the one farthest from those chosen
+  let a = 0, b = 0, best = -1;
+  for (let i = 0; i < cand.length; i++) for (let j = i + 1; j < cand.length; j++) {
+    const d = Math.hypot(cand[i][0] - cand[j][0], cand[i][1] - cand[j][1]);
+    if (d > best) { best = d; a = i; b = j; }
+  }
+  const out = n === 1 ? [region.bounds().center] : [cand[a], cand[b]];
+  if (n === 1) {
+    // one dowel: the region's centre if it is inside, else the candidate nearest to it
+    const c = out[0];
+    if (!region.intersect(circle(1e-3, { segments: 8 }).translate(c[0], c[1])).area()) {
+      let k = 0, kd = Infinity;
+      for (let i = 0; i < cand.length; i++) { const d = Math.hypot(cand[i][0] - c[0], cand[i][1] - c[1]); if (d < kd) { kd = d; k = i; } }
+      out[0] = cand[k];
+    }
+    return out;
+  }
+  while (out.length < n && out.length < cand.length) {
+    let k = -1, kd = -1;
+    for (let i = 0; i < cand.length; i++) {
+      let d = Infinity;
+      for (const q of out) d = Math.min(d, Math.hypot(cand[i][0] - q[0], cand[i][1] - q[1]));
+      if (d > kd) { kd = d; k = i; }
+    }
+    if (kd < 1e-6) break;
+    out.push(cand[k]);
+  }
+  return out;
+}
+
+/**
+ * Cut a shape into pieces with planes across one axis: split(s, { y: 40 }) or split(s, { x: [-30, 30] }).
+ * Returns the pieces in order along the axis (named after the shape, 'part 1', 'part 2', ...), then any dowels.
+ * opts: { dowels = 0 (per cut, placed inside the cut face), dowelDiameter = 4, dowelLength = 2.5 × diameter,
+ *         tolerance = 0.2 (added to the dowel holes' diameter), wall = 1.5 (least material around a hole),
+ *         layout = false (turn every piece onto a cut face, side by side on the plate, gap = 5) }
+ */
+function split(shape, at, opts = {}) {
+  checkShape('split', 'shape', shape);
+  if (!at || typeof at !== 'object' || Array.isArray(at)) throw new TypeError(`split: expected a plane like { y: 40 } or { x: [-30, 30] }, got ${describe(at)}`);
+  const keys = Object.keys(at);
+  if (keys.length !== 1 || !SPLIT_TURN[keys[0]]) throw new TypeError(`split: give exactly one axis, x, y or z, got ${describe(at)}`);
+  const axis = keys[0];
+  const values = (Array.isArray(at[axis]) ? at[axis] : [at[axis]]).map((v, i) => checkNumber('split', `${axis}[${i}]`, v)).sort((p, q) => p - q);
+  if (!values.length) throw new TypeError('split: give at least one position');
+  const dowels = opts.dowels === undefined ? 0 : opts.dowels;
+  const dd = opts.dowelDiameter === undefined ? 4 : opts.dowelDiameter;
+  const dl = opts.dowelLength === undefined ? 2.5 * dd : opts.dowelLength;
+  const tolerance = opts.tolerance === undefined ? 0.2 : opts.tolerance;
+  const wall = opts.wall === undefined ? 1.5 : opts.wall;
+  const gap = opts.gap === undefined ? 5 : opts.gap;
+  checkInt('split', 'dowels', dowels, 0); checkPositive('split', 'dowelDiameter', dd); checkPositive('split', 'dowelLength', dl);
+  checkNonNegative('split', 'tolerance', tolerance); checkNonNegative('split', 'wall', wall); checkNonNegative('split', 'gap', gap);
+  const turn = SPLIT_TURN[axis];
+  const s = shape.rotate(turn.to[0], turn.to[1], turn.to[2]);
+  const b = s.bounds();
+  for (const v of values) if (!(v > b.min[1] + 1e-9 && v < b.max[1] - 1e-9)) throw new RangeError(`split: ${axis} = ${v} does not cut the shape (it spans ${axis} ${b.min[1].toFixed(2)} to ${b.max[1].toFixed(2)})`);
+  for (let i = 1; i < values.length; i++) if (values[i] - values[i - 1] < 1e-6) throw new RangeError(`split: two cuts at ${axis} = ${values[i]}`);
+  // the slabs between cuts
+  const base = shape.meta.name === undefined ? 'part' : shape.meta.name;
+  const meta = Object.assign({}, s.meta); // the turned shape's, so anchors travel with the pieces
+  delete meta.name;
+  const pieces = [];
+  for (let i = 0; i <= values.length; i++) {
+    let h = s.h;
+    if (i > 0) h = cad.trimByPlane(h, 0, 1, 0, values[i - 1]);
+    if (i < values.length) h = cad.trimByPlane(h, 0, -1, 0, -values[i]);
+    if (cad.isEmpty(h)) throw new RangeError(`split: nothing of the shape lies between ${axis} = ${i > 0 ? values[i - 1] : '-∞'} and ${i < values.length ? values[i] : '∞'}`);
+    pieces.push(new Shape(h, shape.colorValue, meta));
+  }
+  // dowel holes across each cut, and the dowels themselves
+  const pins = [];
+  if (dowels > 0) {
+    const R = (dd + tolerance) / 2, depth = dl / 2 + 0.25; // each hole a little deeper than half a dowel
+    for (let c = 0; c < values.length; c++) {
+      const v = values[c];
+      const below = v - (c > 0 ? values[c - 1] : b.min[1]), above = (c + 1 < values.length ? values[c + 1] : b.max[1]) - v;
+      if (Math.min(below, above) < depth + wall) {
+        cad.warn(`split: no dowels at ${axis} = ${v}: a piece there is only ${Math.min(below, above).toFixed(2)} mm thick, and a ${dl} mm dowel needs ${(depth + wall).toFixed(2)} on each side`);
+        continue;
+      }
+      const room = projection(s, { cut: v }).offset(-(R + wall), { join: 'miter' });
+      const at2 = room.isEmpty() ? [] : spreadPoints(room, dowels);
+      if (at2.length < dowels) cad.warn(`split: room for ${at2.length} of ${dowels} dowels at ${axis} = ${v}; the cut face is too small for ${dd} mm dowels with a ${wall} mm wall`);
+      for (const p of at2) {
+        const hole = cylinder(R, 2 * depth, { segments: 32 }).translate(p[0], v, -p[1]); // sketch y is world -Z
+        pieces[c] = pieces[c].subtract(hole);
+        pieces[c + 1] = pieces[c + 1].subtract(hole);
+        pins.push(cylinder(dd / 2, dl, { segments: 32 }).translate(p[0], v, -p[1]));
+      }
+    }
+  }
+  let out;
+  if (opts.layout) {
+    // every piece on a cut face: the first one flips its top cut face down, the others already sit on one
+    const laid = pieces.map((p, i) => (i === 0 ? p.rotate(180, 0, 0) : p).onPlate());
+    for (const p of pins) laid.push(p.onPlate());
+    let x = 0;
+    out = laid.map((p) => { const pb = p.bounds(); const placed = p.translate(x - pb.min[0], 0, -pb.center[2]); x += pb.size[0] + gap; return placed; });
+  } else {
+    out = pieces.concat(pins).map((p) => p.rotate(turn.back[0], turn.back[1], turn.back[2]));
+  }
+  return out.map((p, i) => p.name(i < pieces.length ? `${base} ${i + 1}` : `dowel ${i - pieces.length + 1}`));
+}
+P.split = function (at, opts) { return split(this, at, opts); };
+
 // ---- helpers --------------------------------------------------------------------
 
 const deg = (radians) => (radians * 180) / Math.PI;
@@ -2650,7 +2768,7 @@ export const api = {
   Sketch, circle, ellipse, rect, square, roundedRect, regularPolygon, polygon2d, slot, teardrop, bridgedCircle,
   union2d, difference2d, intersect2d, hull2d, extrude, revolve, projection, sketch, SketchBuilder, text, text3d, emboss, engrave,
   SCREWS, screw, screwHole, nutPocket, heatInsert, hole,
-  gear, gear2d, gearPair, gearDistance, rack, ringGear, ringAddendum, planetary, thread,
+  gear, gear2d, gearPair, gearDistance, rack, ringGear, ringAddendum, planetary, thread, split,
   Path, path, line, arc, helix, bezier, sweep, polyhedron, loft, fillet, chamfer, sharpEdges,
   GrayImage, heightmap, lithophane, __temenImage, __temenMesh,
   overhangs, unsupported, minWallThickness, printability,

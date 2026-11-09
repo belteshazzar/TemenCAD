@@ -354,6 +354,20 @@ if (r.ok) {
   check('M8 rod 8 across, fits its 0.4-tolerance hole, Tr8x8(P2) builds', m && near(+m[1], 8, 0.002) && m[2] === 'false' && +m[3] === 4, m && m[0]);
 }
 
+// 4n. split
+r = rt.run({ 'main.js': `
+  const beam = box(100, 20, 30).onPlate();
+  const [a, b] = split(beam, { x: 10 });
+  const laid = split(beam, { x: 0 }, { dowels: 2, layout: true });
+  echo('split', a.volume() + b.volume(), a.bounds().max[0], laid.length, laid.every((p) => Math.abs(p.bounds().min[1]) < 1e-9));
+  return laid;
+` });
+check('split scripts run', r.ok, r.error?.message);
+if (r.ok) {
+  const m = r.messages.map((x) => x.text).join('\n').match(/"split", ([\d.]+), ([\d.-]+), (\d+), (true|false)/);
+  check('pieces add up to 60000, cut at x = 10, two pieces and two dowels laid on the plate', m && near(+m[1], 60000, 1e-9) && near(+m[2], 10, 1e-9) && +m[3] === 4 && m[4] === 'true', m && m[0]);
+}
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);

@@ -155,6 +155,10 @@ const head = prism(6, 7.5, 5, { center: false });
 place(union(head, thread({ size: 'M8', length: 12, segments: 24 }).translate(0, 5, 0)), 115, 115, '#c8c8d0', 'bolt');
 place(prism(6, 7.5, 6.5, { center: false }).subtract(thread({ size: 'M8', length: 6.5, internal: true, tolerance: 0.4, segments: 24 })), 135, 115, '#c8c8d0', 'nut');
 
+// 12e. Too long for the plate? split() cuts it, drills dowel holes in both faces and lays the pieces cut-face-down
+const longBar = roundedBox(40, 8, 12, 2, { edges: 'vertical' }).onPlate();
+place(union(split(longBar, { x: 0 }, { dowels: 1, dowelDiameter: 3, dowelLength: 8, layout: true })), -40, 145, '#ffb366', 'split bar');
+
 // 13. Loft between profiles, and a shelled cup (hollow with an open top)
 place(loft([circle(6), rect(8, 8).fillet(2), regularPolygon(6, 4)], [0, 8, 16]), 60, 50, '#d3a6ff');
 place(cylinder(7, 14).shell(CUP_WALL, { open: 'top' }), -70, 75, '#7fe0e0', 'cup');

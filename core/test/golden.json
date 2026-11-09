@@ -1657,7 +1657,26 @@
     "hidden": false
    },
    {
-    "name": "Part 41",
+    "name": "split bar",
+    "volume": 3800.1496112682585,
+    "bounds": {
+     "min": [
+      -40,
+      0,
+      139
+     ],
+     "max": [
+      -11,
+      20,
+      151
+     ]
+    },
+    "color": "#ffb366",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 42",
     "volume": 1087.296798132392,
     "bounds": {
      "min": [
@@ -1752,7 +1771,7 @@
     "hidden": false
    },
    {
-    "name": "Part 46",
+    "name": "Part 47",
     "volume": 463.5530407518259,
     "bounds": {
      "min": [
@@ -1771,7 +1790,7 @@
     "hidden": false
    },
    {
-    "name": "Part 47",
+    "name": "Part 48",
     "volume": 421.2479957427979,
     "bounds": {
      "min": [
@@ -1809,7 +1828,7 @@
     "hidden": false
    },
    {
-    "name": "Part 49",
+    "name": "Part 50",
     "volume": 1222.2465640398138,
     "bounds": {
      "min": [
@@ -2179,5 +2198,182 @@
    "material": null,
    "declared": true
   }
+ },
+ "test/split.js": {
+  "parts": [
+   {
+    "name": "beam 1",
+    "volume": 71644.60831840249,
+    "bounds": {
+     "min": [
+      0,
+      0,
+      -20
+     ],
+     "max": [
+      30,
+      60,
+      20
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "beam 2",
+    "volume": 71644.60831840249,
+    "bounds": {
+     "min": [
+      35,
+      0,
+      -20
+     ],
+     "max": [
+      65,
+      60,
+      20
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "dowel 1",
+    "volume": 124.85780609032219,
+    "bounds": {
+     "min": [
+      70,
+      0,
+      -2
+     ],
+     "max": [
+      74,
+      10,
+      2
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "dowel 2",
+    "volume": 124.8578060903222,
+    "bounds": {
+     "min": [
+      79,
+      0,
+      -2
+     ],
+     "max": [
+      83,
+      10,
+      2
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "part 1",
+    "volume": 31176.694253805705,
+    "bounds": {
+     "min": [
+      -30,
+      0,
+      50
+     ],
+     "max": [
+      30,
+      20,
+      110
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "part 2",
+    "volume": 31176.694253805716,
+    "bounds": {
+     "min": [
+      -30,
+      20,
+      50
+     ],
+     "max": [
+      30,
+      40,
+      110
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "dowel 1 (2)",
+    "volume": 124.85780609032197,
+    "bounds": {
+     "min": [
+      16.666255950927734,
+      15,
+      96.66625213623047
+     ],
+     "max": [
+      20.666255950927734,
+      25,
+      100.66625213623047
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "dowel 2 (2)",
+    "volume": 124.85780609032201,
+    "bounds": {
+     "min": [
+      -20.666255950927734,
+      15,
+      59.333744049072266
+     ],
+     "max": [
+      -16.666255950927734,
+      25,
+      63.333744049072266
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "dowel 3",
+    "volume": 124.85780609032201,
+    "bounds": {
+     "min": [
+      16.666255950927734,
+      15,
+      59.333744049072266
+     ],
+     "max": [
+      20.666255950927734,
+      25,
+      63.333744049072266
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": null
  }
 }

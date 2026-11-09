@@ -238,6 +238,13 @@ screwHole(size, length, { type, tolerance, bridge })  // type 'clearance' | 'tap
 SCREWS                                            // the table those come from
 // sizes 'M2' 'M2.5' 'M3' 'M4' 'M5' 'M6' 'M8'. Translate a cutter to the part's top face, then subtract it.
 // Horizontal round holes sag when printed; use hole() with its teardrop, or clip the point with flat when the hole is near a surface.</pre>
+      <h3>Splitting for printing</h3>
+      <pre>split(s, { y: 40 })                               // cut across one axis: [part 1, part 2] in order along the axis
+split(s, { x: [-30, 30] }, { dowels, dowelDiameter, dowelLength, tolerance, wall, layout, gap })  // several cuts: three pieces
+s.split({ z: 0 }, { dowels: 2, layout: true })    // method form
+// dowels: per cut, holes in both faces placed as far apart as the cut face allows (wall: least material around them);
+//   the dowels come after the pieces in the result, to print separately. tolerance: added to the hole diameter (0.2).
+// layout: true turns every piece onto a cut face and lines them up on the plate, ready to print without supports.</pre>
       <h3>Printer profile and fits</h3>
       <pre>printer({ nozzle, layer, holeCompensation, material })  // declare the printer once at the top (defaults 0.4, 0.2, 0.2); returns the profile
 printProfile()                                    // the profile in force
