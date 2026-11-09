@@ -190,10 +190,13 @@ that seems right. The core builds against `lamassu.h` alone.
    property on a primitive value", so the app's statics on constructor functions (`Sketch.fromPoints`,
    `GrayImage.fromRGBA`) cannot be written in the subset; the prelude keeps them as plain functions.
    With classes out, properties on functions are the natural home for statics.
-9. **Number to string is not always the canonical shortest form.** For about 1% of doubles the
-   printed digits differ from V8 in the last place while naming the same value
-   (0.09983341664682816 for what V8 prints as 0.09983341664682815). Harmless for geometry; it
-   shows in `echo()` text compared across runtimes.
+9. **Number to string — done.** Printing rounded a 17-digit, already rounded string a second time,
+   so about 1% of doubles came out with the last digit one too high or a needless 17th digit
+   (0.09983341664682816 where V8 prints 0.09983341664682815). It now rounds from a 26-digit
+   expansion, asks the C library for the exact digits in the one case that can mislead (an exact
+   "5000…" tail), and tries the neighbouring candidate at a power of two, where the round-trip
+   interval is lopsided. 1.6 million doubles (random bit patterns, computed values, every power
+   of two, subnormals) now print exactly as Node does, against 0.86% differing before.
 10. **Top-level `return` in the entry (nice to have).** main.js is wrapped in
    `export default async function main() {}` with imports hoisted onto line 1, as the browser app
    does, which costs a one-line offset in every location. A compile flag allowing a top-level
