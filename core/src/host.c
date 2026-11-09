@@ -431,6 +431,8 @@ TemenCore *temen_new(void) {
     if (!core) return NULL;
     JsVmConfig cfg = {0};
     cfg.gc_stress = getenv("TEMEN_GC_STRESS") != NULL; /* collect at every safe point: shakes out unrooted values in the natives */
+    const char *thr = getenv("TEMEN_GC_THRESHOLD"); /* bytes of engine + host memory before a collection (floor after each) */
+    if (thr) cfg.gc_threshold = (size_t)strtoull(thr, NULL, 10);
     core->vm = js_vm_new(&cfg);
     if (!core->vm) { temen_free(core); return NULL; }
     core->cad_ns = core->api_run = core->slot_a = core->slot_b = core->slot_c = js_undefined();
@@ -467,10 +469,7 @@ void temen_free(TemenCore *core) {
     free_parts(core);
     free(core->parts);
     free_files(core);
-    temen_handles_release(core);
     temen_fonts_free(core);
-    free(core->objs);
-    free(core->cs);
     for (size_t i = 0; i < core->n_annotations; i++) free(core->annotations[i]);
     free(core->annotations);
     free(core->scratch_text); free(core->cut_positions); free(core->cut_indices);
@@ -597,7 +596,6 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
     double t0 = now_ms();
     free_parts(core);
     free_files(core);
-    temen_handles_release(core);
     free(core->error); free(core->error_file);
     core->error = core->error_file = NULL; core->error_line = 0;
     free((void *)core->profile.material);
@@ -653,6 +651,9 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
     }
 done:
     core->slot_a = core->slot_b = core->slot_c = js_undefined();
+    /* the run's geometry is garbage now except what modules still hold at top level: free it
+     * (Manifold objects are released by their finalizers) rather than wait for the next build */
+    js_gc_collect(core->vm);
     core->last_ms = now_ms() - t0;
     return status;
 }
@@ -662,7 +663,7 @@ done:
 static bool collect_part(TemenCore *core, JsValue desc) {
     if (!js_is_object(desc)) return true;
     JsValue h = js_object_get(core->vm, desc, temen_atom(core, "h"));
-    ManifoldManifold *m = temen_handle_get(core, js_is_number(h) ? js_get_number(h) : 0);
+    ManifoldManifold *m = temen_handle_get(core, h);
     if (!m) { set_error(core, "part descriptor has no shape", NULL, 0); return false; }
     if (core->n_parts == core->cap_parts) {
         size_t cap = core->cap_parts ? core->cap_parts * 2 : 8;

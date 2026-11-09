@@ -166,12 +166,20 @@ that seems right. The core builds against `lamassu.h` alone.
    the registry. The host keeps one context for the life of the core and evicts the previous
    project's modules before each run, so the prelude stays compiled: fifty small builds went from
    269 ms to 19 ms. The longer-lived context exposed four natives that created several engine
-   values before rooting them (fixed; `TEMEN_GC_STRESS=1` and `TEMEN_GC_THRESHOLD=<bytes>` make the
-   collector run constantly to shake out such bugs).
+   values before rooting them (fixed; `TEMEN_GC_STRESS=1` makes the collector run at every safe
+   point to shake out such bugs, and `TEMEN_GC_THRESHOLD=<bytes>` sets how much engine and host
+   memory may build up before a collection).
 5. **Line and column helper — done.** `js_source_line_col` moved into the runtime and `lamassu.h`.
-6. **Finalizers (later).** Shapes are released in bulk per run, so this is not blocking, but a
-   long-lived interactive session that keeps shapes between runs would need a per-object hook when
-   the engine collects the wrapper.
+6. **Finalizers — done.** `js_host_object_new` makes an ordinary object that owns a host pointer,
+   with a per-class finalizer the collector runs when the object becomes unreachable (or the VM is
+   freed); `js_host_object_ptr` checks the class. Shapes and sketches are now such objects owning
+   their Manifold object, so geometry lives as long as the script can reach it rather than until
+   the run ends. `external_bytes` lets host memory pace the collector: each object claims 64 KB
+   (sketches 8 KB), raised to about 240 bytes a triangle wherever the mesh already exists
+   (primitives, extrusions, hulls, imported meshes, and after volume/bounds/mesh queries). 300
+   measured 8192-triangle spheres now peak at 17 MB instead of 576 MB, at the same speed. Running
+   startup under `TEMEN_GC_STRESS=1` found the installers passing fresh, unrooted atoms to
+   `js_object_set` (fixed); `test/test_host.c` in lamassu covers the API.
 7. **Transcendental accuracy — done.** The kernel is now musl's fdlibm-derived code
    (`src/runtime/fdlibm/` in lamassu), < 1 ulp, built with `-ffp-contract=off` so native and wasm
    agree to the bit. `test/sketch-path.js` now matches the JavaScript runner. V8 itself has moved on

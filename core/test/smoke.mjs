@@ -382,6 +382,21 @@ if (r.ok) {
   check('svg warns about <text> and names the file', t.includes('art/logo.svg: svg: <text> elements are not imported'), t);
 }
 
+// 4n. shapes are freed by the collector when unreachable: a kept shape (and a sketch) survives
+// collections triggered by hundreds of large throwaway meshes, and the run after still works
+r = rt.run({ 'main.js': `
+  const keep = cube(5), outline = circle(3);
+  let total = 0;
+  for (let i = 0; i < 150; i++) total += sphere(10, { segments: 96 }).volume();
+  echo('kept', keep.volume(), outline.area() === circle(3).area(), total > 0);
+  return keep.add(extrude(outline, 8));
+` });
+check('collected shapes run', r.ok, r.error?.message);
+if (r.ok) {
+  const t = r.messages.map((x) => x.text).join('\n');
+  check('kept shape and sketch intact after collections', t.includes('"kept", 125, true, true'), t);
+}
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);

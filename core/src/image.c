@@ -197,7 +197,7 @@ bool temen_install_assets(TemenCore *core, JsValue ns) {
         JsValue fn = js_native_new(core->ctx, entries[i].name, entries[i].fn, NULL);
         if (js_is_undefined(fn)) return false;
         core->slot_a = fn;
-        if (!js_object_set(core->vm, ns, temen_atom(core, entries[i].name), fn)) return false;
+        if (!temen_object_set(core, ns, entries[i].name, fn)) return false;
     }
     return true;
 }

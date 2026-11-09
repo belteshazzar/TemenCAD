@@ -56,12 +56,6 @@ struct TemenCore {
     size_t n_files;
     uint16_t canon_buf[1024];
 
-    /* Manifold objects created during the run; all freed when it ends. */
-    ManifoldManifold **objs;
-    size_t n_objs, cap_objs;
-    ManifoldCrossSection **cs;
-    size_t n_cs, cap_cs;
-
     /* results */
     TemenPart *parts;
     size_t n_parts, cap_parts;
@@ -113,10 +107,11 @@ bool temen_install_text(TemenCore *core, JsValue ns);
 
 /* natives.c */
 bool temen_install_cad(TemenCore *core);                        /* creates __cad on the globals */
-uint32_t temen_handle_new(TemenCore *core, ManifoldManifold *m); /* 1-based; 0 on failure */
-ManifoldManifold *temen_handle_get(TemenCore *core, double h);
-uint32_t temen_cs_new(TemenCore *core, ManifoldCrossSection *cs);
-ManifoldCrossSection *temen_cs_get(TemenCore *core, double h);
-void temen_handles_release(TemenCore *core);
+/* Shapes and sketches are host objects owning their Manifold object (freed by the collector);
+ * _new adopts the object (deleting it and returning undefined on OOM), _get is NULL for anything else. */
+JsValue temen_handle_new(TemenCore *core, ManifoldManifold *m);
+ManifoldManifold *temen_handle_get(TemenCore *core, JsValue h);
+JsValue temen_cs_new(TemenCore *core, ManifoldCrossSection *cs);
+ManifoldCrossSection *temen_cs_get(TemenCore *core, JsValue h);
 
 #endif

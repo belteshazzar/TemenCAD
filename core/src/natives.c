@@ -1,13 +1,9 @@
 /*
  * The __cad namespace: flat natives over Manifold's C binding. Shapes cross
- * the boundary as numeric handles into a per-run table; the JavaScript
+ * the boundary as host objects that own their Manifold object; the JavaScript
  * prelude wraps them in Shape objects and does the argument checking, so
  * these functions assume well-formed arguments and only guard against
  * misuse that would be memory-unsafe.
- *
- * Every Manifold object made during a run is released when the run ends
- * (the browser app does the same with releaseAll), which is why there is no
- * per-object free: the engine has no finalizer hook yet (see README).
  */
 #include <math.h>
 #include <stdio.h>
@@ -19,45 +15,46 @@
 
 /* ---------------------------------------------------------- handles */
 
-uint32_t temen_handle_new(TemenCore *core, ManifoldManifold *m) {
-    if (!m) return 0;
-    if (core->n_objs == core->cap_objs) {
-        size_t cap = core->cap_objs ? core->cap_objs * 2 : 64;
-        ManifoldManifold **n = realloc(core->objs, cap * sizeof *n);
-        if (!n) { manifold_delete_manifold(m); return 0; }
-        core->objs = n; core->cap_objs = cap;
-    }
-    core->objs[core->n_objs++] = m;
-    return (uint32_t)core->n_objs;
+/*
+ * A shape or sketch crosses into the script as a lamassu host object that owns its Manifold
+ * object: the class finalizer deletes it once the script can no longer reach it, so memory follows
+ * the script's own lifetimes (a long loop of booleans frees its intermediates as it goes, and an
+ * app that keeps a core between builds keeps exactly what is still referenced).
+ *
+ * The engine cannot see how big a Manifold object is without forcing its lazy boolean tree, so each
+ * one claims a fixed estimate of external memory: enough that collections keep pace with geometry
+ * rather than with the small script objects wrapped around it.
+ */
+#define SHAPE_EXTERNAL_BYTES ((size_t)64 * 1024)
+#define SKETCH_EXTERNAL_BYTES ((size_t)8 * 1024)
+
+static void finalize_shape(void *ptr, void *ud) { (void)ud; manifold_delete_manifold(ptr); }
+static void finalize_sketch(void *ptr, void *ud) { (void)ud; manifold_delete_cross_section(ptr); }
+static const JsHostClass SHAPE_CLASS = { "Shape", finalize_shape, NULL };
+static const JsHostClass SKETCH_CLASS = { "Sketch", finalize_sketch, NULL };
+
+JsValue temen_handle_new(TemenCore *core, ManifoldManifold *m) {
+    if (!m) return js_undefined();
+    JsValue v = js_host_object_new(core->ctx, &SHAPE_CLASS, m, SHAPE_EXTERNAL_BYTES);
+    if (js_is_undefined(v)) manifold_delete_manifold(m); /* not adopted: still ours */
+    return v;
 }
 
-ManifoldManifold *temen_handle_get(TemenCore *core, double h) {
-    if (!(h >= 1) || h > (double)core->n_objs || h != floor(h)) return NULL;
-    return core->objs[(size_t)h - 1];
+ManifoldManifold *temen_handle_get(TemenCore *core, JsValue h) {
+    (void)core;
+    return js_host_object_ptr(h, &SHAPE_CLASS);
 }
 
-uint32_t temen_cs_new(TemenCore *core, ManifoldCrossSection *cs) {
-    if (!cs) return 0;
-    if (core->n_cs == core->cap_cs) {
-        size_t cap = core->cap_cs ? core->cap_cs * 2 : 64;
-        ManifoldCrossSection **n = realloc(core->cs, cap * sizeof *n);
-        if (!n) { manifold_delete_cross_section(cs); return 0; }
-        core->cs = n; core->cap_cs = cap;
-    }
-    core->cs[core->n_cs++] = cs;
-    return (uint32_t)core->n_cs;
+JsValue temen_cs_new(TemenCore *core, ManifoldCrossSection *cs) {
+    if (!cs) return js_undefined();
+    JsValue v = js_host_object_new(core->ctx, &SKETCH_CLASS, cs, SKETCH_EXTERNAL_BYTES);
+    if (js_is_undefined(v)) manifold_delete_cross_section(cs);
+    return v;
 }
 
-ManifoldCrossSection *temen_cs_get(TemenCore *core, double h) {
-    if (!(h >= 1) || h > (double)core->n_cs || h != floor(h)) return NULL;
-    return core->cs[(size_t)h - 1];
-}
-
-void temen_handles_release(TemenCore *core) {
-    for (size_t i = 0; i < core->n_objs; i++) manifold_delete_manifold(core->objs[i]);
-    core->n_objs = 0;
-    for (size_t i = 0; i < core->n_cs; i++) manifold_delete_cross_section(core->cs[i]);
-    core->n_cs = 0;
+ManifoldCrossSection *temen_cs_get(TemenCore *core, JsValue h) {
+    (void)core;
+    return js_host_object_ptr(h, &SKETCH_CLASS);
 }
 
 /* --------------------------------------------------------- helpers */
@@ -69,30 +66,45 @@ void temen_handles_release(TemenCore *core) {
 static void *mem(void) { return malloc(manifold_manifold_size()); }
 
 static bool ret_handle(TemenCore *core, ManifoldManifold *m, JsValue *result) {
-    uint32_t h = temen_handle_new(core, m);
-    if (!h) THROW(temen_range_error(core, "geometry kernel: out of memory"));
-    *result = js_number(h);
+    JsValue h = temen_handle_new(core, m);
+    if (js_is_undefined(h)) THROW(temen_range_error(core, "geometry kernel: out of memory"));
+    *result = h;
     return true;
 }
 
 static ManifoldManifold *arg_shape(JsContext *ctx, const JsValue *args, int argc, int i, JsValue *result) {
-    ManifoldManifold *m = temen_handle_get(CORE(), NUM(i));
+    ManifoldManifold *m = (i) < argc ? temen_handle_get(CORE(), args[i]) : NULL;
     if (!m) *result = temen_type_error(CORE(), "__cad: not a shape handle");
     return m;
 }
 #define SHAPE(i) ({ ManifoldManifold *m_ = arg_shape(ctx, args, argc, (i), result); if (!m_) return false; m_; })
 
+/* What a shape whose mesh exists really holds: about 240 bytes a triangle in Manifold's half-edge
+ * form (measured). Recorded only where the mesh is already built (constructors that build it, and
+ * queries that force it), since asking a lazy boolean its size would evaluate it early. */
+#define BYTES_PER_TRIANGLE ((size_t)240)
+static void measure(TemenCore *core, JsValue h, ManifoldManifold *m) {
+    size_t b = manifold_num_tri(m) * BYTES_PER_TRIANGLE;
+    js_host_object_set_external(core->vm, h, &SHAPE_CLASS, b > SHAPE_EXTERNAL_BYTES ? b : SHAPE_EXTERNAL_BYTES);
+}
+/* ret_handle for a result Manifold builds eagerly (primitives, extrusions, hulls, meshes) */
+static bool ret_solid(TemenCore *core, ManifoldManifold *m, JsValue *result) {
+    if (!ret_handle(core, m, result)) return false;
+    measure(core, *result, m); /* m is the host object's now, alive as long as *result */
+    return true;
+}
+
 static void *cs_mem(void) { return malloc(manifold_cross_section_size()); }
 
 static bool ret_cs(TemenCore *core, ManifoldCrossSection *cs, JsValue *result) {
-    uint32_t h = temen_cs_new(core, cs);
-    if (!h) THROW(temen_range_error(core, "geometry kernel: out of memory"));
-    *result = js_number(h);
+    JsValue h = temen_cs_new(core, cs);
+    if (js_is_undefined(h)) THROW(temen_range_error(core, "geometry kernel: out of memory"));
+    *result = h;
     return true;
 }
 
 static ManifoldCrossSection *arg_cs(JsContext *ctx, const JsValue *args, int argc, int i, JsValue *result) {
-    ManifoldCrossSection *cs = temen_cs_get(CORE(), NUM(i));
+    ManifoldCrossSection *cs = (i) < argc ? temen_cs_get(CORE(), args[i]) : NULL;
     if (!cs) *result = temen_type_error(CORE(), "__cad: not a sketch handle");
     return cs;
 }
@@ -196,7 +208,7 @@ static ManifoldCrossSectionVec *cs_vec_from_js(JsContext *ctx, JsValue list, JsV
     ManifoldCrossSectionVec *vec = manifold_cross_section_vec(malloc(manifold_cross_section_vec_size()), n);
     for (uint32_t i = 0; i < n; i++) {
         JsValue h = js_array_get(list, i);
-        ManifoldCrossSection *cs = temen_cs_get(core, js_is_number(h) ? js_get_number(h) : 0);
+        ManifoldCrossSection *cs = temen_cs_get(core, h);
         if (!cs) { manifold_delete_cross_section_vec(vec); *result = temen_type_error(core, "__cad: not a sketch handle"); return NULL; }
         manifold_cross_section_vec_set(vec, i, cs);
     }
@@ -288,7 +300,7 @@ static bool n_extrude(JsContext *ctx, JsValue this_val, const JsValue *args, int
     manifold_delete_polygons(polys);
     ManifoldManifold *y = manifold_rotate(mem(), z, -90, 0, 0);
     manifold_delete_manifold(z);
-    return ret_handle(CORE(), y, result);
+    return ret_solid(CORE(), y, result);
 }
 /* revolve(cs, segments, degrees) -> Y-up solid around the Y axis */
 static bool n_revolve(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
@@ -299,7 +311,7 @@ static bool n_revolve(JsContext *ctx, JsValue this_val, const JsValue *args, int
     manifold_delete_polygons(polys);
     ManifoldManifold *y = manifold_rotate(mem(), z, -90, 0, 0);
     manifold_delete_manifold(z);
-    return ret_handle(CORE(), y, result);
+    return ret_solid(CORE(), y, result);
 }
 /* project(shape) -> footprint sketch; slice(shape, y) -> the section at height y */
 static bool project_or_slice(JsContext *ctx, const JsValue *args, int argc, bool slice, JsValue *result) {
@@ -319,7 +331,7 @@ static bool n_slice(JsContext *ctx, JsValue this_val, const JsValue *args, int a
 
 static bool n_cube(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
     (void)this_val;
-    return ret_handle(CORE(), manifold_cube(mem(), NUM(0), NUM(1), NUM(2), NUM(3) != 0), result);
+    return ret_solid(CORE(), manifold_cube(mem(), NUM(0), NUM(1), NUM(2), NUM(3) != 0), result);
 }
 
 /* cylinder(h, r1, r2, segments, center): Manifold builds along Z; TemenCAD is Y up, so turn it as cad.js does. */
@@ -328,12 +340,12 @@ static bool n_cylinder(JsContext *ctx, JsValue this_val, const JsValue *args, in
     ManifoldManifold *z = manifold_cylinder(mem(), NUM(0), NUM(1), NUM(2), (int)NUM(3), NUM(4) != 0);
     ManifoldManifold *y = manifold_rotate(mem(), z, -90, 0, 0);
     manifold_delete_manifold(z);
-    return ret_handle(CORE(), y, result);
+    return ret_solid(CORE(), y, result);
 }
 
 static bool n_sphere(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
     (void)this_val;
-    return ret_handle(CORE(), manifold_sphere(mem(), NUM(0), (int)NUM(1)), result);
+    return ret_solid(CORE(), manifold_sphere(mem(), NUM(0), (int)NUM(1)), result);
 }
 
 /* ---------------------------------------------------------- booleans */
@@ -356,7 +368,7 @@ static bool n_batch(JsContext *ctx, JsValue this_val, const JsValue *args, int a
     ManifoldManifoldVec *vec = manifold_manifold_vec(malloc(manifold_manifold_vec_size()), n);
     for (uint32_t i = 0; i < n; i++) {
         JsValue h = js_array_get(args[0], i);
-        ManifoldManifold *m = temen_handle_get(core, js_is_number(h) ? js_get_number(h) : 0);
+        ManifoldManifold *m = temen_handle_get(core, h);
         if (!m) { manifold_delete_manifold_vec(vec); THROW(temen_type_error(core, "__cad.batch: not a shape handle")); }
         manifold_manifold_vec_set(vec, i, m);
     }
@@ -375,13 +387,13 @@ static bool n_hull(JsContext *ctx, JsValue this_val, const JsValue *args, int ar
     ManifoldManifoldVec *vec = manifold_manifold_vec(malloc(manifold_manifold_vec_size()), n);
     for (uint32_t i = 0; i < n; i++) {
         JsValue h = js_array_get(args[0], i);
-        ManifoldManifold *m = temen_handle_get(core, js_is_number(h) ? js_get_number(h) : 0);
+        ManifoldManifold *m = temen_handle_get(core, h);
         if (!m) { manifold_delete_manifold_vec(vec); THROW(temen_type_error(core, "__cad.hull: not a shape handle")); }
         manifold_manifold_vec_set(vec, i, m);
     }
     ManifoldManifold *out = manifold_batch_hull(mem(), vec);
     manifold_delete_manifold_vec(vec);
-    return ret_handle(core, out, result);
+    return ret_solid(core, out, result);
 }
 
 /* hullPoints(handles[], xyz[]) : the convex hull of the shapes' vertices together with raw points */
@@ -393,14 +405,14 @@ static bool n_hull_points(JsContext *ctx, JsValue this_val, const JsValue *args,
     size_t cap = np, n = 0;
     for (uint32_t i = 0; i < nh; i++) {
         JsValue h = js_array_get(args[0], i);
-        ManifoldManifold *m = temen_handle_get(core, js_is_number(h) ? js_get_number(h) : 0);
+        ManifoldManifold *m = temen_handle_get(core, h);
         if (!m) THROW(temen_type_error(core, "__cad.hullPoints: not a shape handle"));
         cap += manifold_num_vert(m);
     }
     ManifoldVec3 *pts = malloc((cap ? cap : 1) * sizeof *pts);
     if (!pts) THROW(temen_range_error(core, "out of memory"));
     for (uint32_t i = 0; i < nh; i++) {
-        ManifoldManifold *m = temen_handle_get(core, js_get_number(js_array_get(args[0], i)));
+        ManifoldManifold *m = temen_handle_get(core, js_array_get(args[0], i));
         ManifoldMeshGL *mesh = manifold_get_meshgl(malloc(manifold_meshgl_size()), m);
         size_t nv = manifold_meshgl_num_vert(mesh), nprop = manifold_meshgl_num_prop(mesh);
         float *props = malloc(manifold_meshgl_vert_properties_length(mesh) * sizeof(float));
@@ -418,7 +430,7 @@ static bool n_hull_points(JsContext *ctx, JsValue this_val, const JsValue *args,
     }
     ManifoldManifold *out = manifold_hull_pts(mem(), pts, n);
     free(pts);
-    return ret_handle(core, out, result);
+    return ret_solid(core, out, result);
 }
 
 /* meshFromTriangles(positions[], tris[]): a solid from raw triangles (merged first, so coincident
@@ -457,7 +469,7 @@ static bool n_mesh_from_triangles(JsContext *ctx, JsValue this_val, const JsValu
         manifold_delete_manifold(m);
         THROW(temen_range_error(core, msg));
     }
-    return ret_handle(core, m, result);
+    return ret_solid(core, m, result);
 }
 
 /* triangulate(rings, epsilon) -> flat [i0, i1, i2, ...] over the rings' points in order */
@@ -492,6 +504,7 @@ static bool n_mesh(JsContext *ctx, JsValue this_val, const JsValue *args, int ar
     TemenCore *core = CORE();
     ManifoldManifold *m = SHAPE(0);
     ManifoldMeshGL *mesh = manifold_get_meshgl(malloc(manifold_meshgl_size()), m);
+    measure(core, args[0], m);
     size_t nprop = manifold_meshgl_num_prop(mesh), nv = manifold_meshgl_num_vert(mesh), nt = manifold_meshgl_num_tri(mesh);
     float *props = malloc((manifold_meshgl_vert_properties_length(mesh) + 1) * sizeof(float));
     uint32_t *tv = malloc((manifold_meshgl_tri_length(mesh) + 1) * sizeof(uint32_t));
@@ -961,16 +974,16 @@ static bool n_annotate(JsContext *ctx, JsValue this_val, const JsValue *args, in
 /* -------------------------------------------------------- queries */
 
 static bool n_volume(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
-    (void)this_val; *result = js_number(manifold_volume(SHAPE(0))); return true;
+    (void)this_val; ManifoldManifold *m = SHAPE(0); *result = js_number(manifold_volume(m)); measure(CORE(), args[0], m); return true;
 }
 static bool n_area(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
-    (void)this_val; *result = js_number(manifold_surface_area(SHAPE(0))); return true;
+    (void)this_val; ManifoldManifold *m = SHAPE(0); *result = js_number(manifold_surface_area(m)); measure(CORE(), args[0], m); return true;
 }
 static bool n_is_empty(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
     (void)this_val; *result = js_bool(manifold_is_empty(SHAPE(0)) != 0); return true;
 }
 static bool n_num_tri(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
-    (void)this_val; *result = js_number((double)manifold_num_tri(SHAPE(0))); return true;
+    (void)this_val; ManifoldManifold *m = SHAPE(0); *result = js_number((double)manifold_num_tri(m)); measure(CORE(), args[0], m); return true;
 }
 
 /* bounds(h) -> [minx, miny, minz, maxx, maxy, maxz] */
@@ -979,6 +992,7 @@ static bool n_bounds(JsContext *ctx, JsValue this_val, const JsValue *args, int 
     TemenCore *core = CORE();
     ManifoldManifold *m = SHAPE(0);
     ManifoldBox *box = manifold_bounding_box(malloc(manifold_box_size()), m);
+    measure(core, args[0], m);
     ManifoldVec3 lo = manifold_box_min(box), hi = manifold_box_max(box);
     manifold_delete_box(box);
     JsValue arr = js_array_new(ctx, 6);
@@ -1059,10 +1073,10 @@ bool temen_install_cad(TemenCore *core) {
         JsValue fn = js_native_new(core->ctx, ENTRIES[i].name, ENTRIES[i].fn, NULL);
         if (js_is_undefined(fn)) return false;
         core->slot_a = fn;
-        if (!js_object_set(core->vm, core->cad_ns, temen_atom(core, ENTRIES[i].name), fn)) return false;
+        if (!temen_object_set(core, core->cad_ns, ENTRIES[i].name, fn)) return false;
     }
     if (!temen_install_text(core, core->cad_ns)) return false;
     if (!temen_install_assets(core, core->cad_ns)) return false;
     core->slot_a = js_undefined();
-    return js_object_set(core->vm, js_context_globals(core->ctx), temen_atom(core, "__cad"), core->cad_ns);
+    return temen_object_set(core, js_context_globals(core->ctx), "__cad", core->cad_ns);
 }
