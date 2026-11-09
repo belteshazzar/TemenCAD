@@ -397,6 +397,11 @@ if (r.ok) {
   check('kept shape and sketch intact after collections', t.includes('"kept", 125, true, true'), t);
 }
 
+// 4o. a misspelt method names itself and its line
+r = rt.run({ 'main.js': 'const s = box(10, 10, 10);\nreturn s.filet(2);' });
+check('typo fails', !r.ok);
+check('error names the method and line', r.error?.message === 'TypeError: s.filet is not a function' && r.error?.line === 2, JSON.stringify(r.error));
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);

@@ -198,6 +198,12 @@ that seems right. The core builds against `lamassu.h` alone.
    `export default async function main() {}` with imports hoisted onto line 1, as the browser app
    does, which costs a one-line offset in every location. A compile flag allowing a top-level
    `return` in a module would remove the wrapping.
+11. **Failed calls name their callee — done.** "value is not a function" now reads as V8 words it:
+   `s.filet is not a function`, `cube(...).translate(...).rotat is not a function`,
+   `a[0] is not a function`, `n is not a constructor`. The compiler records each call site's
+   callee as text in a per-function side table read only when a call fails (and carried in
+   bytecode caches, format version 4); an expression with no readable name still says "value".
+   `test/test_callee.c` in lamassu covers it.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
