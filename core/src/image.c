@@ -72,11 +72,11 @@ static bool n_decode_image(JsContext *ctx, JsValue this_val, const JsValue *args
         gray[i] = (float)(lum * a + (1 - a));
     }
     stbi_image_free(rgba);
-    JsValue obj = js_object_new(ctx), arr = js_array_new(ctx, (uint32_t)n);
+    JsValue obj = js_object_new(ctx); js_gc_protect(core->vm, &obj); /* rooted before the next allocation */
+    JsValue arr = js_array_new(ctx, (uint32_t)n); js_gc_protect(core->vm, &arr);
     bool ok = !js_is_undefined(obj) && !js_is_undefined(arr);
-    js_gc_protect(core->vm, &obj); js_gc_protect(core->vm, &arr);
     if (ok) ok = push_numbers(core, arr, gray, n);
-    if (ok) ok = js_object_set(core->vm, obj, temen_atom(core, "width"), js_number(w)) && js_object_set(core->vm, obj, temen_atom(core, "height"), js_number(h)) && js_object_set(core->vm, obj, temen_atom(core, "gray"), arr);
+    if (ok) ok = temen_object_set(core, obj, "width", js_number(w)) && temen_object_set(core, obj, "height", js_number(h)) && temen_object_set(core, obj, "gray", arr);
     js_gc_unprotect(core->vm, &arr); js_gc_unprotect(core->vm, &obj);
     free(gray);
     if (!ok) THROW(temen_range_error(core, "out of memory"));
@@ -166,11 +166,12 @@ static bool n_parse_stl(JsContext *ctx, JsValue this_val, const JsValue *args, i
         tri[i] = id;
     }
     free(raw); free(slots);
-    JsValue obj = js_object_new(ctx), parr = js_array_new(ctx, (uint32_t)(np * 3)), tarr = js_array_new(ctx, (uint32_t)nv);
+    JsValue obj = js_object_new(ctx); js_gc_protect(core->vm, &obj); /* rooted before the next allocation */
+    JsValue parr = js_array_new(ctx, (uint32_t)(np * 3)); js_gc_protect(core->vm, &parr);
+    JsValue tarr = js_array_new(ctx, (uint32_t)nv); js_gc_protect(core->vm, &tarr);
     bool ok = !js_is_undefined(obj) && !js_is_undefined(parr) && !js_is_undefined(tarr);
-    js_gc_protect(core->vm, &obj); js_gc_protect(core->vm, &parr); js_gc_protect(core->vm, &tarr);
     if (ok) ok = push_numbers(core, parr, pos, np * 3) && push_numbers(core, tarr, tri, nv);
-    if (ok) ok = js_object_set(core->vm, obj, temen_atom(core, "positions"), parr) && js_object_set(core->vm, obj, temen_atom(core, "triangles"), tarr);
+    if (ok) ok = temen_object_set(core, obj, "positions", parr) && temen_object_set(core, obj, "triangles", tarr);
     js_gc_unprotect(core->vm, &tarr); js_gc_unprotect(core->vm, &parr); js_gc_unprotect(core->vm, &obj);
     free(pos); free(tri);
     if (!ok) THROW(temen_range_error(core, "out of memory"));

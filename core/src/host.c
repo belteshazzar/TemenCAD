@@ -100,6 +100,17 @@ JsValue temen_string(TemenCore *core, const char *utf8, size_t len) {
     return s;
 }
 
+bool temen_object_set(TemenCore *core, JsValue obj, const char *name, JsValue value) {
+    JsValue key = temen_atom(core, name);
+    if (!js_is_string(key)) return false;
+    js_gc_protect(core->vm, &key);
+    js_gc_protect(core->vm, &value);
+    bool ok = js_object_set(core->vm, obj, key, value);
+    js_gc_unprotect(core->vm, &value);
+    js_gc_unprotect(core->vm, &key);
+    return ok;
+}
+
 /* Error values to throw from a native; the messages are ASCII or UTF-8 that happens to be ASCII (file names, numbers). */
 JsValue temen_type_error(TemenCore *core, const char *msg) { return js_error_new_ascii(core->ctx, JS_ERROR_TYPE, msg); }
 JsValue temen_range_error(TemenCore *core, const char *msg) { return js_error_new_ascii(core->ctx, JS_ERROR_RANGE, msg); }
@@ -392,11 +403,10 @@ static JsValue loader(void *ud, JsContext *ctx, const uint16_t *spec, size_t spe
 static bool load_prelude(TemenCore *core);
 
 /*
- * Every run gets a fresh context: the engine keeps evaluated modules in a
- * per-context registry with no way to evict main.js, so re-running in the
- * same context would hand back the previous graph (see README). The VM, and
- * with it the GC roots, persists; only the realm is rebuilt, which costs one
- * compile of the prelude.
+ * The context is built once (natives, prelude) and kept for the life of the
+ * core; each run evicts the previous project's modules from the engine's
+ * registry (js_context_evict_module) so main.js loads afresh while the
+ * prelude stays compiled. Rebuilt only if an eviction is refused.
  */
 static bool fresh_context(TemenCore *core) {
     core->cad_ns = core->api_run = core->slot_a = core->slot_b = core->slot_c = js_undefined();
@@ -415,6 +425,7 @@ TemenCore *temen_new(void) {
     TemenCore *core = calloc(1, sizeof *core);
     if (!core) return NULL;
     JsVmConfig cfg = {0};
+    cfg.gc_stress = getenv("TEMEN_GC_STRESS") != NULL; /* collect at every safe point: shakes out unrooted values in the natives */
     core->vm = js_vm_new(&cfg);
     if (!core->vm) { temen_free(core); return NULL; }
     core->cad_ns = core->api_run = core->slot_a = core->slot_b = core->slot_c = js_undefined();
@@ -553,6 +564,27 @@ static bool load_prelude(TemenCore *core) {
     return true;
 }
 
+/*
+ * Forget last run's project modules so main.js and its imports load afresh, while the prelude
+ * (temencad:prelude) stays compiled. Evicting a module takes its importers with it, so this loops
+ * until only the prelude is left.
+ */
+static void evict_project_modules(TemenCore *core) {
+    for (;;) {
+        size_t n = js_context_module_count(core->ctx), i = 0;
+        for (; i < n; i++) {
+            size_t sl;
+            const uint16_t *su = js_string_units(js_context_module_specifier(core->ctx, i), &sl);
+            if (!su) continue;
+            static const uint16_t prelude[] = { 't','e','m','e','n','c','a','d',':','p','r','e','l','u','d','e' };
+            if (sl == 16 && memcmp(su, prelude, sizeof prelude) == 0) continue;
+            if (!js_context_evict_module(core->ctx, su, sl)) { fresh_context(core); return; } /* in flight: start over */
+            break;
+        }
+        if (i == n) return;
+    }
+}
+
 /* Reads one part descriptor { h, name, named, color, ghost, hidden } into a TemenPart with its mesh. */
 static bool collect_part(TemenCore *core, JsValue desc);
 
@@ -579,7 +611,8 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
     temen_fonts_set_project(core, core->files, core->n_files);
     if (!find_file(core, ENTRY)) { set_error(core, "The project has no " ENTRY, NULL, 0); return 1; }
 
-    if (!fresh_context(core)) return 2;
+    if (!core->ctx) { if (!fresh_context(core)) return 2; }
+    else evict_project_modules(core);
 
     int status = 0;
     static const uint16_t entry[] = { 'm', 'a', 'i', 'n', '.', 'j', 's' };

@@ -161,10 +161,13 @@ that seems right. The core builds against `lamassu.h` alone.
    them; a compile error in a module carries a one-frame trace naming the module. The host walks a
    trace to the first frame in one of the project's files, which skips the prelude, so an `assert()`
    or an argument error points at the script. `test/test_stack.c` in lamassu covers it.
-4. **Evicting a module from the registry.** Modules stay in a context's registry, so running
-   main.js twice in one context returns the first evaluation. The host rebuilds the context per run
-   (cheap: one prelude compile). A `js_context_reset_modules(ctx)` or per-module eviction would let
-   the prelude stay compiled across runs.
+4. **Evicting a module from the registry — done.** `js_context_evict_module` forgets a module and
+   every module that imports it; `js_context_module_count` / `js_context_module_specifier` enumerate
+   the registry. The host keeps one context for the life of the core and evicts the previous
+   project's modules before each run, so the prelude stays compiled: fifty small builds went from
+   269 ms to 19 ms. The longer-lived context exposed four natives that created several engine
+   values before rooting them (fixed; `TEMEN_GC_STRESS=1` and `TEMEN_GC_THRESHOLD=<bytes>` make the
+   collector run constantly to shake out such bugs).
 5. **Line and column helper — done.** `js_source_line_col` moved into the runtime and `lamassu.h`.
 6. **Finalizers (later).** Shapes are released in bulk per run, so this is not blocking, but a
    long-lived interactive session that keeps shapes between runs would need a per-object hook when

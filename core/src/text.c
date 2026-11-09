@@ -251,9 +251,9 @@ static bool n_text_outlines(JsContext *ctx, JsValue this_val, const JsValue *arg
     bool ok = layout(info, glyphs, ng, font_scale(info, size), size, align, NUM(4), NUM(5) != 0, steps, &rs, &width);
     free(glyphs);
     if (!ok) { rings_free(&rs); THROW(temen_range_error(core, "out of memory")); }
-    JsValue obj = js_object_new(ctx), arr = js_array_new(ctx, (uint32_t)rs.n);
+    JsValue obj = js_object_new(ctx); js_gc_protect(core->vm, &obj); /* rooted before the next allocation */
+    JsValue arr = js_array_new(ctx, (uint32_t)rs.n); js_gc_protect(core->vm, &arr);
     ok = !js_is_undefined(obj) && !js_is_undefined(arr);
-    js_gc_protect(core->vm, &obj); js_gc_protect(core->vm, &arr);
     for (size_t i = 0; i < rs.n && ok; i++) {
         Ring *r = &rs.rings[i];
         size_t np = ring_points(r);
@@ -271,7 +271,7 @@ static bool n_text_outlines(JsContext *ctx, JsValue this_val, const JsValue *arg
         if (ok) ok = js_array_push(core->vm, arr, ring);
         js_gc_unprotect(core->vm, &ring);
     }
-    if (ok) ok = js_object_set(core->vm, obj, temen_atom(core, "rings"), arr) && js_object_set(core->vm, obj, temen_atom(core, "width"), js_number(width));
+    if (ok) ok = temen_object_set(core, obj, "rings", arr) && temen_object_set(core, obj, "width", js_number(width));
     js_gc_unprotect(core->vm, &arr); js_gc_unprotect(core->vm, &obj);
     rings_free(&rs);
     if (!ok) THROW(temen_range_error(core, "out of memory"));
@@ -326,7 +326,12 @@ static bool n_font_names(JsContext *ctx, JsValue this_val, const JsValue *args, 
     if (js_is_undefined(arr)) THROW(temen_range_error(core, "out of memory"));
     js_gc_protect(core->vm, &arr);
     bool ok = true;
-    for (size_t i = 0; i < core->n_fonts && ok; i++) ok = js_array_push(core->vm, arr, temen_string(core, core->fonts[i].name, strlen(core->fonts[i].name)));
+    for (size_t i = 0; i < core->n_fonts && ok; i++) {
+        JsValue name = temen_string(core, core->fonts[i].name, strlen(core->fonts[i].name));
+        js_gc_protect(core->vm, &name); /* rooted across the push, which may grow the array */
+        ok = js_is_string(name) && js_array_push(core->vm, arr, name);
+        js_gc_unprotect(core->vm, &name);
+    }
     js_gc_unprotect(core->vm, &arr);
     if (!ok) THROW(temen_range_error(core, "out of memory"));
     *result = arr;

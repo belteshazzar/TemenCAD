@@ -88,6 +88,8 @@ char *temen_utf16_to_utf8(const uint16_t *u, size_t len);
 char *temen_value_to_utf8(TemenCore *core, JsValue v);           /* ToString; malloc'd */
 JsValue temen_atom(TemenCore *core, const char *ascii);
 JsValue temen_string(TemenCore *core, const char *utf8, size_t len);
+/* obj[name] = value with key and value rooted across the set (a safe point); false on OOM */
+bool temen_object_set(TemenCore *core, JsValue obj, const char *name, JsValue value);
 JsValue temen_type_error(TemenCore *core, const char *msg);      /* a TypeError value to throw */
 JsValue temen_range_error(TemenCore *core, const char *msg);
 JsValue temen_plain_error(TemenCore *core, const char *msg);           /* a plain Error */

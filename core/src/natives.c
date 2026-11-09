@@ -499,12 +499,14 @@ static bool n_mesh(JsContext *ctx, JsValue this_val, const JsValue *args, int ar
     manifold_meshgl_vert_properties(props, mesh);
     manifold_meshgl_tri_verts(tv, mesh);
     manifold_delete_meshgl(mesh);
-    JsValue obj = js_object_new(ctx), pos = js_array_new(ctx, (uint32_t)(nv * 3)), tri = js_array_new(ctx, (uint32_t)(nt * 3));
+    /* each value is rooted before the next allocation: creating one is a safe point that could take the other */
+    JsValue obj = js_object_new(ctx); js_gc_protect(core->vm, &obj);
+    JsValue pos = js_array_new(ctx, (uint32_t)(nv * 3)); js_gc_protect(core->vm, &pos);
+    JsValue tri = js_array_new(ctx, (uint32_t)(nt * 3)); js_gc_protect(core->vm, &tri);
     bool ok = !js_is_undefined(obj) && !js_is_undefined(pos) && !js_is_undefined(tri);
-    js_gc_protect(core->vm, &obj); js_gc_protect(core->vm, &pos); js_gc_protect(core->vm, &tri);
     for (size_t i = 0; i < nv && ok; i++) for (int k = 0; k < 3 && ok; k++) ok = js_array_push(core->vm, pos, js_number(props[i * nprop + k]));
     for (size_t i = 0; i < nt * 3 && ok; i++) ok = js_array_push(core->vm, tri, js_number(tv[i]));
-    if (ok) ok = js_object_set(core->vm, obj, temen_atom(core, "positions"), pos) && js_object_set(core->vm, obj, temen_atom(core, "triangles"), tri);
+    if (ok) ok = temen_object_set(core, obj, "positions", pos) && temen_object_set(core, obj, "triangles", tri);
     js_gc_unprotect(core->vm, &tri); js_gc_unprotect(core->vm, &pos); js_gc_unprotect(core->vm, &obj);
     free(props); free(tv);
     if (!ok) THROW(temen_range_error(core, "out of memory"));
@@ -805,16 +807,16 @@ static bool n_min_wall(JsContext *ctx, JsValue this_val, const JsValue *args, in
     JsValue obj = js_object_new(ctx);
     bool ok = !js_is_undefined(obj);
     js_gc_protect(core->vm, &obj);
-    if (ok) ok = js_object_set(core->vm, obj, temen_atom(core, "thickness"), js_number(best));
+    if (ok) ok = temen_object_set(core, obj, "thickness", js_number(best));
     if (ok) {
         if (at) {
             JsValue arr = js_array_new(ctx, 3);
             ok = !js_is_undefined(arr);
             js_gc_protect(core->vm, &arr);
             for (int k = 0; k < 3 && ok; k++) ok = js_array_push(core->vm, arr, js_number(at[k]));
-            if (ok) ok = js_object_set(core->vm, obj, temen_atom(core, "at"), arr);
+            if (ok) ok = temen_object_set(core, obj, "at", arr);
             js_gc_unprotect(core->vm, &arr);
-        } else ok = js_object_set(core->vm, obj, temen_atom(core, "at"), js_null());
+        } else ok = temen_object_set(core, obj, "at", js_null());
     }
     js_gc_unprotect(core->vm, &obj);
     free(all); free(faces); free(picked);
@@ -1017,7 +1019,11 @@ static bool n_where(JsContext *ctx, JsValue this_val, const JsValue *args, int a
     JsValue arr = js_array_new(ctx, 2);
     if (js_is_undefined(arr)) THROW(temen_range_error(core, "out of memory"));
     js_gc_protect(core->vm, &arr);
-    bool ok = js_array_push(core->vm, arr, temen_string(core, file, strlen(file))) && js_array_push(core->vm, arr, js_number(line));
+    /* root the string before the push: growing the array is a safe point and would let the collector take it */
+    JsValue name = temen_string(core, file, strlen(file));
+    js_gc_protect(core->vm, &name);
+    bool ok = js_is_string(name) && js_array_push(core->vm, arr, name) && js_array_push(core->vm, arr, js_number(line));
+    js_gc_unprotect(core->vm, &name);
     js_gc_unprotect(core->vm, &arr);
     if (!ok) THROW(temen_range_error(core, "out of memory"));
     *result = arr;
