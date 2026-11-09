@@ -2201,6 +2201,129 @@ function roof(sk, opts = {}) {
 }
 Q.roof = function (opts) { return roof(this, opts); };
 
+// ---- gears ------------------------------------------------------------------------------------
+//
+// Involute spur and helical gears and a matching rack, metric module system. The gear lies on the
+// ground plane with its axis along Y and its base on y = 0, like an extrude; tooth 0 points along +X.
+
+function checkGearOpts(fn, o) {
+  const m = o.module === undefined ? 1 : o.module;
+  const z = o.teeth === undefined ? 20 : o.teeth;
+  const pa = o.pressureAngle === undefined ? 20 : o.pressureAngle;
+  const backlash = o.backlash === undefined ? 0 : o.backlash;
+  const segments = o.segments === undefined ? 8 : o.segments;
+  checkPositive(fn, 'module', m); checkInt(fn, 'teeth', z, 5); checkNumber(fn, 'pressureAngle', pa);
+  if (!(pa > 0 && pa < 45)) throw new RangeError(`${fn}: pressureAngle must be between 0 and 45 degrees, got ${pa}`);
+  checkNonNegative(fn, 'backlash', backlash); checkInt(fn, 'segments', segments, 2);
+  return { m, z, pa, backlash, segments };
+}
+/** The pitch-circle distance between the axes of two meshing gears of the same module. */
+function gearDistance(module, teeth1, teeth2) {
+  checkPositive('gearDistance', 'module', module); checkInt('gearDistance', 'teeth1', teeth1, 5); checkInt('gearDistance', 'teeth2', teeth2, 5);
+  return (module * (teeth1 + teeth2)) / 2;
+}
+/**
+ * The 2D outline of an involute spur gear, centred on the origin.
+ * opts: { module = 1, teeth = 20, pressureAngle = 20, backlash = 0, bore = 0, segments = 8 }
+ * backlash thins every tooth at the pitch circle by that many mm (give each gear of a pair half the play wanted).
+ */
+function gear2d(opts = {}) {
+  const g = checkGearOpts('gear2d', opts);
+  const bore = opts.bore === undefined ? 0 : opts.bore;
+  checkNonNegative('gear2d', 'bore', bore);
+  const m = g.m, z = g.z;
+  const rp = (m * z) / 2, rb = rp * Math.cos(rad(g.pa)), ra = rp + m, rf = Math.max(rp - 1.25 * m, m * 0.25);
+  if (bore / 2 >= rf) throw new RangeError(`gear2d: bore ${bore} does not fit inside the root circle (diameter ${(2 * rf).toFixed(2)})`);
+  const inv = (a) => Math.tan(a) - a;
+  const half = Math.PI / (2 * z) - g.backlash / (2 * rp) + inv(rad(g.pa)); // half the tooth angle at the base circle
+  if (half <= 0) throw new RangeError(`gear2d: backlash ${g.backlash} leaves no tooth`);
+  // involute parameter at the tip, stopped early if the two flanks would cross (pointed teeth)
+  let tMax = Math.sqrt(Math.max(0, ra * ra - rb * rb)) / rb;
+  while (tMax > 0 && tMax - Math.atan(tMax) >= half) tMax *= 0.98;
+  const N = g.segments;
+  const pts = [];
+  for (let k = 0; k < z; k++) {
+    const c = (2 * Math.PI * k) / z;
+    const flank = (sign) => {
+      const a0 = c + sign * half;
+      const out = rf < rb ? [[rf * Math.cos(a0), rf * Math.sin(a0)]] : []; // radial run down to the root circle
+      for (let i = 0; i <= N; i++) {
+        const t = (tMax * i) / N;
+        const x = rb * (Math.cos(t) + t * Math.sin(t)), y = rb * (Math.sin(t) - t * Math.cos(t));
+        const r = Math.max(Math.hypot(x, y), rf), a = c + sign * (half - Math.atan2(y, x));
+        out.push([r * Math.cos(a), r * Math.sin(a)]);
+      }
+      return out;
+    };
+    const left = flank(-1), right = flank(1).reverse();
+    for (const p of left) pts.push(p);
+    for (const p of right) pts.push(p);
+    // the root between this tooth and the next follows the root circle
+    const from = c + half, to = c + (2 * Math.PI) / z - half;
+    for (let i = 1; i < 4; i++) { const a = from + ((to - from) * i) / 4; pts.push([rf * Math.cos(a), rf * Math.sin(a)]); }
+  }
+  const sk = polygon2d(pts);
+  return bore > 0 ? sk.subtract(circle(bore / 2, { segments: 48 })) : sk;
+}
+/**
+ * An involute spur or helical gear: axis along Y, base on y = 0, tooth 0 pointing along +X.
+ * opts: gear2d's, plus { thickness = 5, helix = 0 (helix angle in degrees; the sign is the hand) }
+ */
+function gear(opts = {}) {
+  const g = checkGearOpts('gear', opts);
+  const thickness = opts.thickness === undefined ? 5 : opts.thickness;
+  const helix = opts.helix === undefined ? 0 : opts.helix;
+  checkPositive('gear', 'thickness', thickness); checkNumber('gear', 'helix', helix);
+  if (Math.abs(helix) >= 60) throw new RangeError(`gear: helix angle must be under 60 degrees, got ${helix}`);
+  const rp = (g.m * g.z) / 2;
+  const twist = helix ? deg((thickness * Math.tan(rad(helix))) / rp) : 0;
+  const sk = gear2d(opts);
+  return extrude(sk, thickness, twist ? { twist, slices: Math.max(8, Math.ceil(Math.abs(twist) / 2)) } : {});
+}
+/**
+ * Two gears that mesh: the first on the origin, the second along +X at gearDistance, turned so a
+ * tooth meets a gap; a helical pair gets opposite hands. Returns [first, second].
+ * opts: gear()'s with teeth: [teeth1, teeth2]; backlash is split between the two.
+ */
+function gearPair(opts = {}) {
+  const teeth = opts.teeth === undefined ? [20, 10] : opts.teeth;
+  if (!Array.isArray(teeth) || teeth.length !== 2) throw new TypeError(`gearPair: teeth must be [teeth1, teeth2], got ${describe(teeth)}`);
+  const m = opts.module === undefined ? 1 : opts.module;
+  const backlash = opts.backlash === undefined ? 0 : opts.backlash;
+  const helix = opts.helix === undefined ? 0 : opts.helix;
+  const a = gear(Object.assign({}, opts, { teeth: teeth[0], backlash: backlash / 2, helix }));
+  // the second gear faces the first with its 180-degree direction: a gap must be there
+  const turn = teeth[1] % 2 === 0 ? 180 / teeth[1] : 0;
+  const b = gear(Object.assign({}, opts, { teeth: teeth[1], backlash: backlash / 2, helix: -helix }))
+    .rotate(0, turn, 0)
+    .translate(gearDistance(m, teeth[0], teeth[1]), 0, 0);
+  return [a, b];
+}
+/**
+ * A straight rack that meshes with gears of the same module: pitch line along X at z = 0, teeth
+ * pointing toward -Z, base on y = 0, centred along X.
+ * opts: { module = 1, teeth = 10, pressureAngle = 20, backlash = 0, thickness = 5, height (backing below the roots) = 2 * module }
+ */
+function rack(opts = {}) {
+  const g = checkGearOpts('rack', Object.assign({ teeth: 10 }, opts));
+  const thickness = opts.thickness === undefined ? 5 : opts.thickness;
+  const height = opts.height === undefined ? 2 * g.m : opts.height;
+  checkPositive('rack', 'thickness', thickness); checkPositive('rack', 'height', height);
+  const p = Math.PI * g.m, ha = g.m, hf = 1.25 * g.m, s = Math.tan(rad(g.pa));
+  const halfPitchWidth = p / 4 - g.backlash / 2; // half the tooth thickness on the pitch line
+  if (halfPitchWidth - ha * s <= 0) throw new RangeError('rack: the teeth come to a point; lower the pressure angle or the backlash');
+  const pts = [];
+  const x0 = -(g.z * p) / 2;
+  pts.push([x0, -hf - height]);
+  for (let k = 0; k < g.z; k++) {
+    const c = x0 + p / 2 + k * p;
+    pts.push([c - halfPitchWidth - hf * s, -hf], [c - halfPitchWidth + ha * s, ha], [c + halfPitchWidth - ha * s, ha], [c + halfPitchWidth + hf * s, -hf]);
+  }
+  pts.push([-x0, -hf], [-x0, -hf - height]);
+  pts[1][0] = Math.max(pts[1][0], x0); // the first root does not reach past the end
+  return extrude(polygon2d(pts), thickness);
+}
+
 // ---- helpers --------------------------------------------------------------------
 
 const deg = (radians) => (radians * 180) / Math.PI;
@@ -2302,6 +2425,7 @@ export const api = {
   Sketch, circle, ellipse, rect, square, roundedRect, regularPolygon, polygon2d, slot, teardrop, bridgedCircle,
   union2d, difference2d, intersect2d, hull2d, extrude, revolve, projection, sketch, SketchBuilder, text, text3d, emboss, engrave,
   SCREWS, screw, screwHole, nutPocket, heatInsert, hole,
+  gear, gear2d, gearPair, gearDistance, rack,
   Path, path, line, arc, helix, bezier, sweep, polyhedron, loft, fillet, chamfer, sharpEdges,
   GrayImage, heightmap, lithophane, __temenImage, __temenMesh,
   overhangs, unsupported, minWallThickness, printability,

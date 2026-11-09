@@ -1,11 +1,14 @@
 // Regression test: every script under test/ and the demo built by the core, compared with
 // core/test/golden.json — the parts (names, volumes, bounds, colours, flags), annotations and printer
-// profile the JavaScript modelling layer produced before it was retired (recorded with the two
-// runtimes side by side, when every script built identically). A DIFF means the core moved.
+// profile. The reference was first recorded from the JavaScript modelling layer, with the two runtimes
+// building every script identically, just before that layer was retired; scripts and demo parts added
+// since are recorded from the core with --record once they are checked. A DIFF means the core moved.
 //
-//   node core/test/diff.mjs            all scripts
-//   node core/test/diff.mjs fillet     scripts whose path contains "fillet"
-import { readdirSync, statSync, readFileSync } from 'node:fs';
+//   node core/test/diff.mjs                  all scripts
+//   node core/test/diff.mjs fillet           scripts whose path contains "fillet"
+//   node core/test/diff.mjs --record gear    store what the core builds now as the reference for the
+//                                            matching scripts (a filter is required; check them first)
+import { readdirSync, statSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRuntime } from '../wasm/index.js';
@@ -16,7 +19,10 @@ const golden = JSON.parse(readFileSync(join(ROOT, 'core/test/golden.json'), 'utf
 const { Project } = await import(join(ROOT, 'src/project.js'));
 const { DEFAULT_SCRIPT } = await import(join(ROOT, 'src/default-script.js'));
 
-const filter = process.argv[2] ?? '';
+const args = process.argv.slice(2);
+const record = args.includes('--record');
+const filter = args.find((a) => !a.startsWith('--')) ?? '';
+if (record && !filter) { console.error('--record needs a filter naming the scripts to record (e.g. --record gear)'); process.exit(2); }
 const scripts = [];
 const walk = (dir) => {
   for (const e of readdirSync(dir)) {
@@ -37,7 +43,7 @@ const boundsOf = (positions) => {
   return { min, max };
 };
 
-let diffs = 0, unsupported = 0, ok = 0;
+let diffs = 0, unsupported = 0, ok = 0, recorded = 0;
 const cases = scripts.map((p) => ({ label: p.slice(ROOT.length + 1), project: () => projectFromDisk(p) }));
 cases.push({ label: 'src/default-script.js (demo)', project: () => { const pr = new Project(); pr.set('main.js', DEFAULT_SCRIPT); return pr; } });
 
@@ -46,9 +52,16 @@ for (const c of cases) {
   let project;
   try { project = c.project(); } catch (e) { console.log(`OLD-FAIL    ${c.label}: ${e.message}`); continue; }
   const old = golden[c.label];
-  if (!old) { console.log(`NO-GOLDEN   ${c.label}: not in core/test/golden.json`); continue; }
+  if (!old && !record) { diffs++; console.log(`NO-GOLDEN   ${c.label}: not in core/test/golden.json (check it, then --record it)`); continue; }
   const files = project.toFiles();
   const res = rt.run(files);
+  if (record) {
+    if (!res.ok) { console.log(`NOT RECORDED ${c.label}: ${res.error.message}`); diffs++; continue; }
+    golden[c.label] = { parts: res.parts.map((p) => ({ name: p.name, volume: p.volume, bounds: boundsOf(p.positions), color: p.color, ghost: p.ghost, hidden: p.hidden })), annotations: res.annotations, profile: res.profile };
+    recorded++;
+    console.log(`recorded    ${c.label}  (${res.parts.length} parts)`);
+    continue;
+  }
   if (!res.ok) {
     unsupported++;
     console.log(`UNSUPPORTED ${c.label}: ${res.error.message}${res.error.file ? ` (${res.error.file}:${res.error.line})` : ''}`);
@@ -75,6 +88,11 @@ for (const c of cases) {
   if (!!op !== !!np || (op && (op.nozzle !== np.nozzle || op.layer !== np.layer || op.holeCompensation !== np.holeCompensation || (op.material ?? null) !== np.material))) problems.push(`profile ${JSON.stringify(op)} vs ${JSON.stringify(np)}`);
   if (problems.length) { diffs++; console.log(`DIFF        ${c.label}\n    ${problems.slice(0, 8).join('\n    ')}${problems.length > 8 ? `\n    … ${problems.length - 8} more` : ''}`); }
   else { ok++; console.log(`ok          ${c.label}  (${res.parts.length} parts, ${res.ms.toFixed(0)} ms)`); }
+}
+if (record) {
+  writeFileSync(join(ROOT, 'core/test/golden.json'), JSON.stringify(golden, null, 1));
+  console.log(`\nrecorded ${recorded} script(s) in core/test/golden.json`);
+  process.exit(diffs ? 1 : 0);
 }
 console.log(`\n${ok} ok, ${diffs} differ, ${unsupported} unsupported`);
 process.exit(diffs ? 1 : 0);

@@ -144,6 +144,11 @@ if (SHOW_TEXT) {
 const tagBlock = box(18, 8, 12).onPlate();
 place(tagBlock.emboss('TEMEN', tagBlock.face('front'), { depth: 0.8, size: 4 }).engrave('v2', tagBlock.face('top'), { depth: 0.5, size: 5 }), 65, 50, '#ffd27f', 'lettered');
 
+// 12c. Gears: a meshing pair with print clearance, and a rack
+const [bigGear, smallGear] = gearPair({ module: 1.5, teeth: [18, 10], thickness: 5, backlash: 0.2, bore: 5 });
+place(union(bigGear, smallGear), -40, 115, '#9fd3c7', 'gear pair');
+place(rack({ module: 1.5, teeth: 8, thickness: 5 }), 25, 115, '#9fd3c7', 'rack');
+
 // 13. Loft between profiles, and a shelled cup (hollow with an open top)
 place(loft([circle(6), rect(8, 8).fillet(2), regularPolygon(6, 4)], [0, 8, 16]), 60, 50, '#d3a6ff');
 place(cylinder(7, 14).shell(CUP_WALL, { open: 'top' }), -70, 75, '#7fe0e0', 'cup');

@@ -88,6 +88,11 @@ export const GLOBALS = [
   fn('polarArray', 'polarArray(${shape}, ${count}, { radius: ${r} })', '(shape, count, { radius, axis, start, sweep })', 'count copies around an axis (returns an array).'),
   fn('grid', 'grid(${shape}, [${nx}, ${nz}], [${dx}, ${dz}])', '(shape, [nx, nz], [dx, dz])', 'nx × nz grid on the ground plane (returns an array).'),
   // Screws
+  fn('gear', 'gear({ module: ${1}, teeth: ${20}, thickness: ${5} })', '({ module, teeth, pressureAngle, thickness, helix, backlash, bore })', 'Involute spur or helical gear: axis Y, base on y = 0, tooth 0 along +X.'),
+  fn('gear2d', 'gear2d({ module: ${1}, teeth: ${20} })', '({ module, teeth, pressureAngle, backlash, bore })', 'The outline of an involute gear as a 2D sketch.'),
+  fn('gearPair', 'gearPair({ module: ${1}, teeth: [${20}, ${10}], backlash: ${0.2} })', '({ module, teeth: [t1, t2], ... })', 'Two meshing gears: [first, second], the second along +X at the right distance and turned to mesh.'),
+  fn('gearDistance', 'gearDistance(${module}, ${teeth1}, ${teeth2})', '(module, teeth1, teeth2)', 'Centre distance of two meshing gears: module × (teeth1 + teeth2) / 2.'),
+  fn('rack', 'rack({ module: ${1}, teeth: ${10} })', '({ module, teeth, pressureAngle, thickness, height, backlash })', 'Straight gear rack: pitch line along X at z = 0, teeth toward -Z.'),
   fn('hole', "hole(${r}, ${length}, { axis: '${z}' })", "(r, length, { axis: 'x' | 'y' | 'z', shape: 'teardrop' | 'bridge' | 'round', angle, flat, tolerance })", 'Printable hole cutter centred on the origin; horizontal holes get a teardrop top by default.'),
   fn('screwHole', "screwHole('${M3}', ${length})", "(size, length, { type: 'clearance' | 'tap' | 'countersunk' | 'counterbore', tolerance, bridge })", 'Cutter for a screw hole: axis Y, top surface at y = 0. Sizes M2 M2.5 M3 M4 M5 M6 M8.'),
   fn('nutPocket', "nutPocket('${M3}')", '(size, { depth, tolerance })', 'Hexagonal nut pocket cutter: axis Y, top at y = 0.'),

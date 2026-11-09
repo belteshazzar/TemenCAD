@@ -1562,7 +1562,45 @@
     "hidden": false
    },
    {
-    "name": "Part 36",
+    "name": "gear pair",
+    "volume": 3375.9039649475867,
+    "bounds": {
+     "min": [
+      -54.993080139160156,
+      0,
+      100.15557861328125
+     ],
+     "max": [
+      -10.330517768859863,
+      5,
+      129.84442138671875
+     ]
+    },
+    "color": "#9fd3c7",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "rack",
+    "volume": 898.2815291918812,
+    "bounds": {
+     "min": [
+      6.150444030761719,
+      0,
+      113.5
+     ],
+     "max": [
+      43.84955596923828,
+      5,
+      119.875
+     ]
+    },
+    "color": "#9fd3c7",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 38",
     "volume": 1087.296798132392,
     "bounds": {
      "min": [
@@ -1657,7 +1695,7 @@
     "hidden": false
    },
    {
-    "name": "Part 41",
+    "name": "Part 43",
     "volume": 463.5530407518259,
     "bounds": {
      "min": [
@@ -1676,7 +1714,7 @@
     "hidden": false
    },
    {
-    "name": "Part 42",
+    "name": "Part 44",
     "volume": 421.2479957427979,
     "bounds": {
      "min": [
@@ -1714,7 +1752,7 @@
     "hidden": false
    },
    {
-    "name": "Part 44",
+    "name": "Part 46",
     "volume": 1222.2465640398138,
     "bounds": {
      "min": [
@@ -1794,5 +1832,125 @@
    "material": null,
    "declared": true
   }
+ },
+ "test/gear.js": {
+  "parts": [
+   {
+    "name": "gear",
+    "volume": 7298.863872104207,
+    "bounds": {
+     "min": [
+      -21.99069595336914,
+      0,
+      -21.99069595336914
+     ],
+     "max": [
+      21.99069595336914,
+      6,
+      21.99069595336914
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "pinion",
+    "volume": 2560.863913917498,
+    "bounds": {
+     "min": [
+      18.342391967773438,
+      0,
+      -13.657608985900879
+     ],
+     "max": [
+      45.65760803222656,
+      6,
+      13.657608985900879
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "helical",
+    "volume": 12166.889880234396,
+    "bounds": {
+     "min": [
+      -21.9999942779541,
+      0,
+      38.000003814697266
+     ],
+     "max": [
+      21.9999942779541,
+      10,
+      81.99999237060547
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "helicalPinion",
+    "volume": 4264.699115597406,
+    "bounds": {
+     "min": [
+      18.000019073486328,
+      0,
+      46.00001907348633
+     ],
+     "max": [
+      45.99998092651367,
+      10,
+      73.9999771118164
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "rack",
+    "volume": 2369.800023190677,
+    "bounds": {
+     "min": [
+      -31.415925979614258,
+      0,
+      -52
+     ],
+     "max": [
+      31.415925979614258,
+      6,
+      -43.5
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "onRack",
+    "volume": 7298.863872104206,
+    "bounds": {
+     "min": [
+      -21.99069595336914,
+      0,
+      -91.99069213867188
+     ],
+     "max": [
+      21.99069595336914,
+      6,
+      -48.00930404663086
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": null
  }
 }

@@ -202,6 +202,15 @@ union(a, b, ...)                                  // merge; arrays of shapes are
       <pre>grid(s, [nx, nz], [dx, dz], { center })           // nx × nz copies on the ground plane
 linearArray(s, count, [dx, dy, dz])               // count copies stepped by a vector (a number = X step)
 polarArray(s, count, { radius, axis, start, sweep }) // count copies around an axis; sweep in degrees</pre>
+      <h3>Gears</h3>
+      <pre>gear({ module, teeth, pressureAngle, thickness, helix, backlash, bore })  // involute spur gear (helix: angle in degrees, sign is the hand);
+                                                  //   axis Y, base on y = 0, tooth 0 along +X. Defaults: module 1, 20 teeth, 20°, 5 mm thick
+gear2d({ module, teeth, pressureAngle, backlash, bore })  // its outline as a 2D sketch
+gearDistance(module, teeth1, teeth2)              // centre distance of a meshing pair: module × (teeth1 + teeth2) / 2
+gearPair({ module, teeth: [t1, t2], ... })        // [first, second]: second along +X at gearDistance, turned to mesh; helical pairs get opposite hands
+rack({ module, teeth, pressureAngle, thickness, height, backlash })  // straight rack: pitch line along X at z = 0, teeth toward -Z
+// Give printed pairs backlash: 0.1–0.2 mm (gearPair splits it between the two). Cut gears under 17 teeth (at 20°) are undercut at the root;
+// these profiles are not, so a very small pinion may want a little more backlash.</pre>
       <h3>Holes and screw helpers (cutters to subtract)</h3>
       <pre>hole(r, length, { axis, shape, angle, flat, tolerance })  // centred on the origin along axis 'x' | 'y' | 'z'; horizontal holes get shape
                                                   //   'teardrop' (default: a 45° point on top) | 'bridge' (flat ceiling) | 'round'

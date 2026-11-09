@@ -311,6 +311,22 @@ if (r.ok) {
   check('minkowski of two unit-ish boxes is a 4-box; erode 2 of 20x10x20 is 16x6x16', t.includes('"mink", 64, 1536'), t);
 }
 
+// 4k. gears
+r = rt.run({ 'main.js': `
+  const [a, b] = gearPair({ module: 2, teeth: [20, 12], thickness: 6, backlash: 0.2 });
+  const [e1, e2] = gearPair({ module: 2, teeth: [20, 12], thickness: 6 });
+  echo('gear', a.bounds().size[0], gearDistance(2, 20, 12), intersects(a, b), interference(e1, e2) < 1e-6, clearance(a, b) > 0.02);
+  return { a, b, rack: rack({ module: 2, teeth: 10, thickness: 6 }) };
+` });
+check('gear scripts run', r.ok, r.error?.message);
+if (r.ok) {
+  const m = r.messages.map((x) => x.text).join('\n').match(/"gear", ([\d.]+), ([\d.]+), (true|false), (true|false), (true|false)/);
+  check('gear tips on the addendum circle: module x (teeth + 2)', m && near(+m[1], 44, 0.01), m && m[1]);
+  check('gearDistance 32; the pair meshes: no overlap at zero backlash, clearance with backlash', m && +m[2] === 32 && m[3] === 'false' && m[4] === 'true' && m[5] === 'true', m && m[0]);
+  const byName = Object.fromEntries(r.parts.map((x) => [x.name, x]));
+  check('rack length teeth x pi x module', near(Math.max(...byName.rack.positions.filter((_, i) => i % 3 === 0)) - Math.min(...byName.rack.positions.filter((_, i) => i % 3 === 0)), 10 * Math.PI * 2, 0.05));
+}
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);
