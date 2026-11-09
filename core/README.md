@@ -186,10 +186,11 @@ that seems right. The core builds against `lamassu.h` alone.
    to LLVM libc's correctly-rounded functions, so about 2% of results still differ from Node by one
    ulp; bit-identical output with modern Node would need a correctly-rounded kernel, a separate
    project.
-8. **Function values take no properties.** `GrayImage.fromFunction = …` fails with "cannot create
-   property on a primitive value", so the app's statics on constructor functions (`Sketch.fromPoints`,
-   `GrayImage.fromRGBA`) cannot be written in the subset; the prelude keeps them as plain functions.
-   With classes out, properties on functions are the natural home for statics.
+8. **Properties on functions — done.** Closures and natives carry an own-property object made on
+   the first write, so `F.from = …`, constants and caches on functions work, as do `in`, `delete`,
+   `hasOwnProperty`, `Object.keys`/`assign`/`hasOwn` and `freeze`/`seal` on them; builtins' own
+   statics stay unlisted. The prelude still spells its statics as plain functions
+   (`sketchFromPoints`, `GrayImage` helpers); they can move onto their constructors if wanted.
 9. **Number to string — done.** Printing rounded a 17-digit, already rounded string a second time,
    so about 1% of doubles came out with the last digit one too high or a needless 17th digit
    (0.09983341664682816 where V8 prints 0.09983341664682815). It now rounds from a 26-digit
