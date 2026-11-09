@@ -327,6 +327,20 @@ if (r.ok) {
   check('rack length teeth x pi x module', near(Math.max(...byName.rack.positions.filter((_, i) => i % 3 === 0)) - Math.min(...byName.rack.positions.filter((_, i) => i % 3 === 0)), 10 * Math.PI * 2, 0.05));
 }
 
+// 4l. ring gears and planetary sets
+r = rt.run({ 'main.js': `
+  const s = planetary({ module: 2, sun: 12, planet: 12, planets: 3, thickness: 6, backlash: 0.2 });
+  echo('planetary', s.planets.length, s.planets.every((p) => !intersects(s.ring, p) && !intersects(s.sun, p)),
+    Math.min(...s.planets.map((p) => clearance(s.ring, p))) > 0.05, ringAddendum(36, 12) < 1);
+  return s;
+` });
+check('planetary scripts run', r.ok, r.error?.message);
+if (r.ok) {
+  const t = r.messages.map((x) => x.text).join('\n');
+  check('three planets mesh with sun and ring, ring tips trimmed for 12-tooth planets', t.includes('"planetary", 3, true, true, true'), t);
+  check('parts named sun, planet 1..3, ring', r.parts.map((x) => x.name).join() === 'sun,planet 1,planet 2,planet 3,ring', r.parts.map((x) => x.name).join());
+}
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);

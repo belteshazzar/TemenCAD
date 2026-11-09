@@ -148,6 +148,8 @@ place(tagBlock.emboss('TEMEN', tagBlock.face('front'), { depth: 0.8, size: 4 }).
 const [bigGear, smallGear] = gearPair({ module: 1.5, teeth: [18, 10], thickness: 5, backlash: 0.2, bore: 5 });
 place(union(bigGear, smallGear), -40, 115, '#9fd3c7', 'gear pair');
 place(rack({ module: 1.5, teeth: 8, thickness: 5 }), 25, 115, '#9fd3c7', 'rack');
+const set = planetary({ module: 1, sun: 10, planet: 8, planets: 3, thickness: 5, backlash: 0.2 }); // ring gets 26 teeth
+place(union(set.sun, set.planets, set.ring), 80, 115, '#9fd3c7', 'planetary');
 
 // 13. Loft between profiles, and a shelled cup (hollow with an open top)
 place(loft([circle(6), rect(8, 8).fillet(2), regularPolygon(6, 4)], [0, 8, 16]), 60, 50, '#d3a6ff');

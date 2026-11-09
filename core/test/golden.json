@@ -1600,7 +1600,26 @@
     "hidden": false
    },
    {
-    "name": "Part 38",
+    "name": "planetary",
+    "volume": 2463.651157822709,
+    "bounds": {
+     "min": [
+      63.648136138916016,
+      0,
+      98.64813232421875
+     ],
+     "max": [
+      96.35186767578125,
+      5,
+      131.35186767578125
+     ]
+    },
+    "color": "#9fd3c7",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 39",
     "volume": 1087.296798132392,
     "bounds": {
      "min": [
@@ -1695,7 +1714,7 @@
     "hidden": false
    },
    {
-    "name": "Part 43",
+    "name": "Part 44",
     "volume": 463.5530407518259,
     "bounds": {
      "min": [
@@ -1714,7 +1733,7 @@
     "hidden": false
    },
    {
-    "name": "Part 44",
+    "name": "Part 45",
     "volume": 421.2479957427979,
     "bounds": {
      "min": [
@@ -1752,7 +1771,7 @@
     "hidden": false
    },
    {
-    "name": "Part 46",
+    "name": "Part 47",
     "volume": 1222.2465640398138,
     "bounds": {
      "min": [
@@ -1943,6 +1962,50 @@
       21.99069595336914,
       6,
       -48.00930404663086
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": null
+ },
+ "test/planetary.js": {
+  "parts": [
+   {
+    "name": "spur set",
+    "volume": 19471.851368295425,
+    "bounds": {
+     "min": [
+      -42.602535247802734,
+      0,
+      -42.602535247802734
+     ],
+     "max": [
+      42.602535247802734,
+      6,
+      42.602535247802734
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "helical set",
+    "volume": 25955.02869504967,
+    "bounds": {
+     "min": [
+      67.39746856689453,
+      0,
+      -42.602535247802734
+     ],
+     "max": [
+      152.6025390625,
+      8,
+      42.602535247802734
      ]
     },
     "color": "#8fb3ff",

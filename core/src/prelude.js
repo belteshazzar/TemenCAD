@@ -1111,8 +1111,14 @@ function clearance(a, b, opts = {}) {
   if (opts.searchLength !== undefined) checkNumber('clearance', 'searchLength', opts.searchLength);
   if (interference(a, b) > 1e-9) return 0;
   const L = opts.searchLength === undefined ? diag(a) + diag(b) + 1 : opts.searchLength;
-  const g = cad.minGap(a.h, b.h, L);
-  return g >= L ? Infinity : g;
+  // Manifold's min-gap cost grows with the search radius (every triangle pair within it is measured),
+  // and a found gap is exact whatever the radius, so search close first and widen only when nothing
+  // is found: the same answer, without measuring two meshing gears across their whole diameters.
+  for (let r = Math.min(1, L); ; r = Math.min(r * 8, L)) {
+    const g = cad.minGap(a.h, b.h, r);
+    if (g < r) return g;
+    if (r >= L) return Infinity;
+  }
 }
 
 // ---- annotations (annotate.js): drawn over renders and listed in the report, never geometry -----
@@ -2224,15 +2230,18 @@ function gearDistance(module, teeth1, teeth2) {
 }
 /**
  * The 2D outline of an involute spur gear, centred on the origin.
- * opts: { module = 1, teeth = 20, pressureAngle = 20, backlash = 0, bore = 0, segments = 8 }
+ * opts: { module = 1, teeth = 20, pressureAngle = 20, backlash = 0, bore = 0, segments = 8,
+ *         addendum = 1, dedendum = 1.25 (tooth height above and below the pitch circle, in modules) }
  * backlash thins every tooth at the pitch circle by that many mm (give each gear of a pair half the play wanted).
  */
 function gear2d(opts = {}) {
   const g = checkGearOpts('gear2d', opts);
   const bore = opts.bore === undefined ? 0 : opts.bore;
-  checkNonNegative('gear2d', 'bore', bore);
+  const addendum = opts.addendum === undefined ? 1 : opts.addendum;
+  const dedendum = opts.dedendum === undefined ? 1.25 : opts.dedendum;
+  checkNonNegative('gear2d', 'bore', bore); checkPositive('gear2d', 'addendum', addendum); checkPositive('gear2d', 'dedendum', dedendum);
   const m = g.m, z = g.z;
-  const rp = (m * z) / 2, rb = rp * Math.cos(rad(g.pa)), ra = rp + m, rf = Math.max(rp - 1.25 * m, m * 0.25);
+  const rp = (m * z) / 2, rb = rp * Math.cos(rad(g.pa)), ra = rp + addendum * m, rf = Math.max(rp - dedendum * m, m * 0.25);
   if (bore / 2 >= rf) throw new RangeError(`gear2d: bore ${bore} does not fit inside the root circle (diameter ${(2 * rf).toFixed(2)})`);
   const inv = (a) => Math.tan(a) - a;
   const half = Math.PI / (2 * z) - g.backlash / (2 * rp) + inv(rad(g.pa)); // half the tooth angle at the base circle
@@ -2322,6 +2331,94 @@ function rack(opts = {}) {
   pts.push([-x0, -hf], [-x0, -hf - height]);
   pts[1][0] = Math.max(pts[1][0], x0); // the first root does not reach past the end
   return extrude(polygon2d(pts), thickness);
+}
+
+/**
+ * An internal (ring) gear: teeth on the inside of a rim, axis along Y, base on y = 0, centred on the
+ * origin, with a tooth space along +X (where an external gear placed inside it at +X puts its tooth 0).
+ * opts: { module = 1, teeth = 36, pressureAngle = 20, thickness = 5, rim = 2 × module (wall outside the
+ *         tooth roots), backlash = 0 (widens every tooth space at the pitch circle), helix = 0, segments = 8,
+ *         addendum = 1 (how far the teeth reach inside the pitch circle, in modules) }
+ * A helical ring meshes with gears of the same helix sign. A small pinion inside a ring hits the ring's tips
+ * unless they are shortened; planetary() works out the addendum, and ringAddendum() gives it for a pair.
+ */
+function ringGear(opts = {}) {
+  const g = checkGearOpts('ringGear', Object.assign({ teeth: 36 }, opts));
+  const thickness = opts.thickness === undefined ? 5 : opts.thickness;
+  const rim = opts.rim === undefined ? 2 * g.m : opts.rim;
+  const helix = opts.helix === undefined ? 0 : opts.helix;
+  const addendum = opts.addendum === undefined ? 1 : opts.addendum;
+  checkPositive('ringGear', 'thickness', thickness); checkPositive('ringGear', 'rim', rim); checkNumber('ringGear', 'helix', helix);
+  checkPositive('ringGear', 'addendum', addendum);
+  if (Math.abs(helix) >= 60) throw new RangeError(`ringGear: helix angle must be under 60 degrees, got ${helix}`);
+  const rp = (g.m * g.z) / 2;
+  // the tooth spaces are an external gear's teeth, made 1.25 modules tall so the ring's roots leave the
+  // same tip clearance an external gear does; offset widens them so the circular space grows by backlash
+  let cut = gear2d({ module: g.m, teeth: g.z, pressureAngle: g.pa, segments: g.segments, addendum: 1.25 });
+  if (g.backlash > 0) cut = cut.offset((g.backlash * Math.cos(rad(g.pa))) / 2, { join: 'round', segments: 8 });
+  const n = Math.max(96, 8 * g.z);
+  const round = (r) => circle(r / Math.cos(Math.PI / n), { segments: n }); // circumscribed, so the facets sit on r
+  const outer = rp + 1.25 * g.m + g.backlash + rim; // rim measured from the tooth roots
+  // tips end at the addendum circle, pitch - addendum × module (the cut-out alone would leave them at pitch - 1.25 module)
+  const sk = round(outer).subtract(cut).subtract(round(rp - addendum * g.m));
+  const twist = helix ? deg((thickness * Math.tan(rad(helix))) / rp) : 0;
+  return extrude(sk, thickness, twist ? { twist, slices: Math.max(8, Math.ceil(Math.abs(twist) / 2)) } : {});
+}
+/**
+ * The ring addendum (in modules, at most 1) that keeps a pinion of `pinionTeeth` clear of the ring's tips:
+ * the tips must stay outside the point where the line of action touches the pinion's base circle,
+ * √((r_ring cos α)² + ((r_ring − r_pinion) sin α)²) from the ring's centre. Under 15 teeth this shortens them.
+ */
+function ringAddendum(ringTeeth, pinionTeeth, pressureAngle = 20) {
+  checkInt('ringAddendum', 'ringTeeth', ringTeeth, 5); checkInt('ringAddendum', 'pinionTeeth', pinionTeeth, 5); checkNumber('ringAddendum', 'pressureAngle', pressureAngle);
+  if (pinionTeeth >= ringTeeth) throw new RangeError(`ringAddendum: the pinion (${pinionTeeth}) must have fewer teeth than the ring (${ringTeeth})`);
+  const a = rad(pressureAngle), rr = ringTeeth / 2, rq = pinionTeeth / 2; // in modules
+  const limit = Math.sqrt((rr * Math.cos(a)) ** 2 + ((rr - rq) * Math.sin(a)) ** 2);
+  return Math.min(1, rr - limit);
+}
+/**
+ * A planetary gear set, assembled and phased: { sun, planets: [...], ring }, centred on the origin, axis Y,
+ * base on y = 0, planet 1 along +X. The ring has sun + 2 × planet teeth; (sun + ring) must divide by the number
+ * of planets for them to sit evenly. Helical sets get the sun one hand and the planets and ring the other.
+ * opts: { module = 1, sun = 12, planet = 12, planets = 3, thickness = 5, pressureAngle = 20, helix = 0,
+ *         backlash = 0 (split between the two meshes), rim, sunBore = 0, planetBore = 0, segments = 8 }
+ */
+function planetary(opts = {}) {
+  const m = opts.module === undefined ? 1 : opts.module;
+  const zs = opts.sun === undefined ? 12 : opts.sun;
+  const zp = opts.planet === undefined ? 12 : opts.planet;
+  const N = opts.planets === undefined ? 3 : opts.planets;
+  const thickness = opts.thickness === undefined ? 5 : opts.thickness;
+  const backlash = opts.backlash === undefined ? 0 : opts.backlash;
+  const helix = opts.helix === undefined ? 0 : opts.helix;
+  checkPositive('planetary', 'module', m); checkInt('planetary', 'sun', zs, 5); checkInt('planetary', 'planet', zp, 5); checkInt('planetary', 'planets', N, 1);
+  checkNonNegative('planetary', 'backlash', backlash);
+  const zr = zs + 2 * zp;
+  if ((zs + zr) % N !== 0) {
+    const ok = [];
+    for (let s = Math.max(5, zs - 6); s <= zs + 6 && ok.length < 4; s++) if ((2 * s + 2 * zp) % N === 0) ok.push(s);
+    throw new RangeError(`planetary: ${N} planets cannot be spaced evenly: sun + ring teeth (${zs + zr}) must divide by ${N}; with ${zp}-tooth planets try sun teeth ${ok.join(', ')}`);
+  }
+  const d = (m * (zs + zp)) / 2;
+  const tip = (m * (zp + 2)) / 2;
+  if (N > 1 && 2 * tip >= 2 * d * Math.sin(Math.PI / N)) throw new RangeError(`planetary: ${N} planets of ${zp} teeth would touch each other; use fewer or smaller planets, or a bigger sun`);
+  const common = { module: m, thickness, pressureAngle: opts.pressureAngle, segments: opts.segments, backlash: backlash / 2 };
+  // planet 1 at +X with its tooth 0 facing the ring's space there; the sun turns half a tooth when that
+  // planet also has a tooth facing the sun (an even count)
+  const sun = gear(Object.assign({}, common, { teeth: zs, helix, bore: opts.sunBore }))
+    .rotate(0, zp % 2 === 0 ? 180 / zs : 0, 0).name('sun');
+  // carrier kinematics: moving a planet round the orbit by θ, with the sun held, turns it by θ × sun / planet
+  // about its own axis (beyond the orbit's own turn); the ring then moves by whole teeth, so it can stay put
+  const planets = [];
+  for (let i = 0; i < N; i++) {
+    const a = (360 * i) / N;
+    planets.push(gear(Object.assign({}, common, { teeth: zp, helix: -helix, bore: opts.planetBore }))
+      .rotate(0, (a * zs) / zp, 0).translate(d, 0, 0).rotate(0, a, 0).name(`planet ${i + 1}`));
+  }
+  const tips = ringAddendum(zr, zp, opts.pressureAngle === undefined ? 20 : opts.pressureAngle);
+  if (tips < 0.3) throw new RangeError(`planetary: ${zp}-tooth planets are too small for a ${zr}-tooth ring (the ring's teeth would have to be cut to ${tips.toFixed(2)} module); use bigger planets`);
+  const ring = ringGear(Object.assign({}, common, { teeth: zr, helix: -helix, rim: opts.rim, addendum: tips })).name('ring');
+  return { sun, planets, ring };
 }
 
 // ---- helpers --------------------------------------------------------------------
@@ -2425,7 +2522,7 @@ export const api = {
   Sketch, circle, ellipse, rect, square, roundedRect, regularPolygon, polygon2d, slot, teardrop, bridgedCircle,
   union2d, difference2d, intersect2d, hull2d, extrude, revolve, projection, sketch, SketchBuilder, text, text3d, emboss, engrave,
   SCREWS, screw, screwHole, nutPocket, heatInsert, hole,
-  gear, gear2d, gearPair, gearDistance, rack,
+  gear, gear2d, gearPair, gearDistance, rack, ringGear, ringAddendum, planetary,
   Path, path, line, arc, helix, bezier, sweep, polyhedron, loft, fillet, chamfer, sharpEdges,
   GrayImage, heightmap, lithophane, __temenImage, __temenMesh,
   overhangs, unsupported, minWallThickness, printability,
