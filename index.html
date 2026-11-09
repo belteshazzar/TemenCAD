@@ -16,7 +16,7 @@
       <symbol id="icon-iso" viewBox="0 0 20 20"><path fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" d="M10 2 17 5.5v9L10 18l-7-3.5v-9z"/><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" d="M3 5.5l7 3.5 7-3.5M10 9v9"/></symbol>
     </svg>
     <input type="file" id="file-input" accept=".temen,.js,.mjs" hidden />
-    <input type="file" id="add-file-input" accept=".js,.mjs,.json,.txt,.md,.ttf,.otf,.stl" multiple hidden />
+    <input type="file" id="add-file-input" accept=".js,.mjs,.json,.txt,.md,.svg,.ttf,.otf,.stl,.png,.jpg,.jpeg" multiple hidden />
     <main id="app">
       <section id="viewer-pane">
         <canvas id="viewport"></canvas>
@@ -102,7 +102,7 @@
             <button type="button" class="tab-add" title="Add, rename or remove files" aria-label="Project files">+</button>
             <div class="tab-menu">
               <button type="button" data-action="new">New script…</button>
-              <button type="button" data-action="add">Add files… <span class="hint">.js .ttf .stl</span></button>
+              <button type="button" data-action="add">Add files… <span class="hint">.js .svg .ttf .stl .png</span></button>
               <hr />
               <button type="button" data-action="catalog">Add from catalogue…</button>
             </div>

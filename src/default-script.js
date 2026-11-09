@@ -163,6 +163,10 @@ place(union(split(longBar, { x: 0 }, { dowels: 1, dowelDiameter: 3, dowelLength:
 const vaseProfile = sketch().moveTo(0, 0).lineTo(8, 0).bezierTo(14, 6, 3, 14, 7, 22).lineTo(5.5, 22).quadTo(1.5, 14, 0, 2).close();
 place(revolve(vaseProfile, { segments: 48 }), 35, 145, '#d3a6ff', 'vase');
 
+// 12g. SVG: path data as a sketch (import logo from './logo.svg' turns a drawing in the project into one)
+const heart = svgPath('M10 30 A10 10 0 0 1 30 30 A10 10 0 0 1 50 30 Q50 45 30 60 Q10 45 10 30 Z').center().scale(0.5);
+place(extrude(heart, 3), 65, 145, '#ff8fa3', 'heart');
+
 // 13. Loft between profiles, and a shelled cup (hollow with an open top)
 place(loft([circle(6), rect(8, 8).fillet(2), regularPolygon(6, 4)], [0, 8, 16]), 60, 50, '#d3a6ff');
 place(cylinder(7, 14).shell(CUP_WALL, { open: 'top' }), -70, 75, '#7fe0e0', 'cup');

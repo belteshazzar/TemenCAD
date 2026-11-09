@@ -50,11 +50,12 @@ Scripts run on TemenCAD's own engine in every host (browser, CLI, phone), which 
 - Threads: `thread({ size: 'M8', length: 20 })` is a threaded rod along Y from y = 0; `thread({ size: 'M8', length: 10, internal: true, tolerance: 0.4 })` is the cutter for a threaded hole (subtract it). Sizes 'M8', 'M8x1', 'Tr8x8(P2)'; `left: true`, `starts`.
 - Gears: `gearPair({ module, teeth: [20, 12], thickness, backlash: 0.2, bore })` returns two involute gears already placed and turned to mesh (helical with `helix`, opposite hands); `gear()` for one, `rack()` for a straight rack, `ringGear()` for internal teeth, `planetary({ sun, planet, planets })` for a whole set (`{ sun, planets, ring }`, phased; (sun + ring) must divide by planets), `gearDistance()` for the axis spacing. Check fit with `assert(!intersects(a, b))`.
 - Pictures: add a `.png` or `.jpg` to the project folder, `import photo from './photo.png'`, then `lithophane(photo, { width: 80, upright: true })` or `heightmap(photo, { width: 60, height: 4 })`.
-- Multi-file projects: other `.js` files are ES modules (`export const lid = ...`, `import { lid } from './lid.js'`); fonts (`.ttf`), meshes (`.stl`) and images import the same way. A `.temen` file is a zip of those files with `main.js` as the entry.
+- Multi-file projects: other `.js` files are ES modules (`export const lid = ...`, `import { lid } from './lid.js'`); fonts (`.ttf`), meshes (`.stl`), images and SVG drawings (`.svg`, a Sketch in mm, Y up: `extrude(logo, 2)`; `svg(markup, { width: 50, id })`, `svgPath(d)`) import the same way. A `.temen` file is a zip of those files with `main.js` as the entry.
 - Shared shapes: `npx temencad add parametric-hinge` vendors a catalogue package into `catalog/` and adds its import.
 
 ## Common errors
 
 - "mesh is not a closed, manifold solid": a hand-built `polyhedron` or a sweep whose bend is tighter than the profile. Increase the bend radius or the segment length.
 - "X is empty (no volume) and was skipped": a subtraction removed everything, or a sketch was extruded with height 0.
-- An imported file is "not a script, font, mesh or image file": only `.js`, `.mjs`, `.json`, `.ttf`, `.otf`, `.stl`, `.png`, `.jpg` can be imported.
+- An imported file is "not a script, font, mesh, image or SVG file": only `.js`, `.mjs`, `.json`, `.ttf`, `.otf`, `.stl`, `.png`, `.jpg`, `.svg` can be imported.
+- An SVG import warns about strokes, `<text>` or `<use>`: those carry no filled area; outline strokes and convert text to paths in the drawing program first.

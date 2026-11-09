@@ -2009,6 +2009,311 @@ function __temenMesh(name) {
   return new Shape(manifoldFromTriangles(name, m.positions, m.triangles));
 }
 
+// ---- SVG drawings ------------------------------------------------------------------------------
+//
+// An SVG's filled shapes become a Sketch: paths (every command, arcs included), rect, circle, ellipse,
+// polygon and polyline, through group and element transforms, with fill and fill-rule from attributes,
+// style="" and simple <style> rules (tag, .class, #id). Curves are sampled; Y is flipped so the drawing
+// reads the right way up with the bottom-left of its viewBox at the origin. Sizes: a width/height in
+// mm, cm, in, pt, pc or px sets the scale; without units one user unit is one millimetre.
+
+const SVG_UNITS = { mm: 1, cm: 10, in: 25.4, pt: 25.4 / 72, pc: 25.4 / 6, px: 25.4 / 96 };
+const SVG_SKIP = { defs: 1, clipPath: 1, mask: 1, symbol: 1, marker: 1, pattern: 1, linearGradient: 1, radialGradient: 1, filter: 1, metadata: 1, title: 1, desc: 1, style: 1, script: 1, foreignObject: 1 };
+const SVG_NUMBER = /[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g;
+
+const svgNumbers = (s) => (String(s).match(SVG_NUMBER) || []).map(Number);
+/** A length attribute: { v, unit } (unit '' for none), or undefined. */
+function svgLength(s) {
+  if (s === undefined) return undefined;
+  const m = String(s).trim().match(/^([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*([a-z%]*)$/i);
+  return m ? { v: Number(m[1]), unit: m[2].toLowerCase() } : undefined;
+}
+const svgNum = (attrs, k, dflt = 0) => { const l = svgLength(attrs[k]); return l === undefined ? dflt : l.v; };
+// affine matrices [a, b, c, d, e, f]: (x, y) -> (a x + c y + e, b x + d y + f)
+const svgMul = (m, n) => [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3], m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]];
+const SVG_ID = [1, 0, 0, 1, 0, 0];
+function svgTransform(s) {
+  let m = SVG_ID;
+  for (const t of String(s).matchAll(/([a-zA-Z]+)\s*\(([^)]*)\)/g)) {
+    const a = svgNumbers(t[2]), k = t[1];
+    let n;
+    if (k === 'matrix' && a.length === 6) n = a;
+    else if (k === 'translate' && a.length >= 1) n = [1, 0, 0, 1, a[0], a.length > 1 ? a[1] : 0];
+    else if (k === 'scale' && a.length >= 1) n = [a[0], 0, 0, a.length > 1 ? a[1] : a[0], 0, 0];
+    else if (k === 'rotate' && a.length >= 1) {
+      const c = Math.cos(rad(a[0])), sn = Math.sin(rad(a[0])), x = a.length > 2 ? a[1] : 0, y = a.length > 2 ? a[2] : 0;
+      n = [c, sn, -sn, c, x - c * x + sn * y, y - sn * x - c * y];
+    } else if (k === 'skewX' && a.length === 1) n = [1, 0, Math.tan(rad(a[0])), 1, 0, 0];
+    else if (k === 'skewY' && a.length === 1) n = [1, Math.tan(rad(a[0])), 0, 1, 0, 0];
+    else throw new SyntaxError(`svg: cannot read the transform ${t[0]}`);
+    m = svgMul(m, n);
+  }
+  return m;
+}
+
+/** Points along an SVG elliptical arc from (x1, y1) to (x2, y2), not including the start (SVG 1.1 F.6.5). */
+function svgArc(x1, y1, rx, ry, phi, large, sweep, x2, y2, perTurn, push) {
+  if (x1 === x2 && y1 === y2) return;
+  rx = Math.abs(rx); ry = Math.abs(ry);
+  if (rx === 0 || ry === 0) { push(x2, y2); return; }
+  const c = Math.cos(rad(phi)), s = Math.sin(rad(phi));
+  const dx = (x1 - x2) / 2, dy = (y1 - y2) / 2;
+  const xp = c * dx + s * dy, yp = -s * dx + c * dy;
+  const lam = (xp * xp) / (rx * rx) + (yp * yp) / (ry * ry);
+  if (lam > 1) { rx *= Math.sqrt(lam); ry *= Math.sqrt(lam); }
+  const num = rx * rx * ry * ry - rx * rx * yp * yp - ry * ry * xp * xp, den = rx * rx * yp * yp + ry * ry * xp * xp;
+  const k = (large !== sweep ? 1 : -1) * Math.sqrt(Math.max(0, num / den));
+  const cxp = (k * rx * yp) / ry, cyp = (-k * ry * xp) / rx;
+  const cx = c * cxp - s * cyp + (x1 + x2) / 2, cy = s * cxp + c * cyp + (y1 + y2) / 2;
+  const ang = (ux, uy, vx, vy) => Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy);
+  const ux = (xp - cxp) / rx, uy = (yp - cyp) / ry;
+  const t0 = ang(1, 0, ux, uy);
+  let dt = ang(ux, uy, (-xp - cxp) / rx, (-yp - cyp) / ry);
+  if (!sweep && dt > 0) dt -= 2 * Math.PI;
+  if (sweep && dt < 0) dt += 2 * Math.PI;
+  const n = Math.max(1, Math.ceil((Math.abs(dt) / (2 * Math.PI)) * perTurn));
+  for (let i = 1; i < n; i++) {
+    const t = t0 + (dt * i) / n;
+    push(cx + c * rx * Math.cos(t) - s * ry * Math.sin(t), cy + s * rx * Math.cos(t) + c * ry * Math.sin(t));
+  }
+  push(x2, y2);
+}
+
+/** An SVG path's d attribute as rings of points (in its own coordinates); every subpath counts as closed for filling. */
+function svgPathRings(d, segments) {
+  const toks = String(d).match(/[MmLlHhVvCcSsQqTtAaZz]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g) || [];
+  const stray = String(d).replace(/[MmLlHhVvCcSsQqTtAaZz]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?|[\s,]/g, '');
+  if (stray.length) throw new SyntaxError(`svg: unexpected '${stray[0]}' in path data "${String(d).slice(0, 60)}"`);
+  const rings = [];
+  let ring = null, k = 0, cmd = '', x = 0, y = 0, sx = 0, sy = 0, cx = 0, cy = 0, prev = '';
+  const isCmd = (t) => /^[A-Za-z]$/.test(t);
+  const num = () => {
+    if (k >= toks.length || isCmd(toks[k])) throw new SyntaxError(`svg: path command ${cmd} is missing a number in "${String(d).slice(0, 60)}"`);
+    return Number(toks[k++]);
+  };
+  const flag = () => {
+    // arc flags may be written together with what follows them: "a5 5 0 0110 10"
+    if (k >= toks.length || isCmd(toks[k])) throw new SyntaxError(`svg: arc is missing a flag in "${String(d).slice(0, 60)}"`);
+    const t = toks[k], f = t[0];
+    if (f !== '0' && f !== '1') throw new SyntaxError(`svg: arc flag must be 0 or 1, got ${t}`);
+    if (t.length > 1) toks[k] = t.slice(1); else k++;
+    return f === '1';
+  };
+  const push = (px, py) => { if (!ring) { ring = [[x, y]]; rings.push(ring); } ring.push([px, py]); };
+  const bez = (pts) => {
+    for (let i = 1; i <= segments; i++) {
+      const t = i / segments, u = 1 - t;
+      if (pts.length === 3) push(u * u * pts[0][0] + 2 * u * t * pts[1][0] + t * t * pts[2][0], u * u * pts[0][1] + 2 * u * t * pts[1][1] + t * t * pts[2][1]);
+      else {
+        const a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, e = t * t * t;
+        push(a * pts[0][0] + b * pts[1][0] + c * pts[2][0] + e * pts[3][0], a * pts[0][1] + b * pts[1][1] + c * pts[2][1] + e * pts[3][1]);
+      }
+    }
+  };
+  while (k < toks.length) {
+    if (isCmd(toks[k])) cmd = toks[k++];
+    else if (!cmd) throw new SyntaxError(`svg: path data must start with a command, got "${String(d).slice(0, 60)}"`);
+    const rel = cmd === cmd.toLowerCase(), C = cmd.toUpperCase();
+    const ox = rel ? x : 0, oy = rel ? y : 0;
+    if (C === 'Z') {
+      if (ring) { x = sx; y = sy; ring = null; }
+      prev = 'Z';
+      if (k < toks.length && !isCmd(toks[k])) throw new SyntaxError(`svg: numbers after Z in "${String(d).slice(0, 60)}"`);
+      continue;
+    }
+    if (C === 'M') {
+      x = ox + num(); y = oy + num(); sx = x; sy = y;
+      ring = [[x, y]]; rings.push(ring);
+      cmd = rel ? 'l' : 'L'; // further pairs are lines
+    } else if (C === 'L') { const px = ox + num(), py = oy + num(); push(px, py); x = px; y = py; }
+    else if (C === 'H') { const px = ox + num(); push(px, y); x = px; }
+    else if (C === 'V') { const py = oy + num(); push(x, py); y = py; }
+    else if (C === 'C' || C === 'S') {
+      let c1x, c1y;
+      if (C === 'C') { c1x = ox + num(); c1y = oy + num(); }
+      else if (prev === 'C' || prev === 'S') { c1x = 2 * x - cx; c1y = 2 * y - cy; }
+      else { c1x = x; c1y = y; }
+      const c2x = ox + num(), c2y = oy + num(), px = ox + num(), py = oy + num();
+      bez([[x, y], [c1x, c1y], [c2x, c2y], [px, py]]);
+      cx = c2x; cy = c2y; x = px; y = py;
+    } else if (C === 'Q' || C === 'T') {
+      let qx, qy;
+      if (C === 'Q') { qx = ox + num(); qy = oy + num(); }
+      else if (prev === 'Q' || prev === 'T') { qx = 2 * x - cx; qy = 2 * y - cy; }
+      else { qx = x; qy = y; }
+      const px = ox + num(), py = oy + num();
+      bez([[x, y], [qx, qy], [px, py]]);
+      cx = qx; cy = qy; x = px; y = py;
+    } else if (C === 'A') {
+      const rx = num(), ry = num(), phi = num(), large = flag(), sweep = flag(), px = ox + num(), py = oy + num();
+      svgArc(x, y, rx, ry, phi, large, sweep, px, py, 4 * segments, push);
+      x = px; y = py;
+    }
+    prev = C;
+  }
+  return rings;
+}
+
+/** The rings an element outlines, in its own coordinates, or null for elements with no area. */
+function svgShapeRings(tag, a, segments) {
+  const perTurn = 4 * segments;
+  const ellipse = (cx, cy, rx, ry) => {
+    const ring = [];
+    for (let i = 0; i < perTurn; i++) { const t = (2 * Math.PI * i) / perTurn; ring.push([cx + rx * Math.cos(t), cy + ry * Math.sin(t)]); }
+    return [ring];
+  };
+  if (tag === 'path') return a.d === undefined ? null : svgPathRings(a.d, segments);
+  if (tag === 'circle') { const r = svgNum(a, 'r'); return r > 0 ? ellipse(svgNum(a, 'cx'), svgNum(a, 'cy'), r, r) : null; }
+  if (tag === 'ellipse') { const rx = svgNum(a, 'rx'), ry = svgNum(a, 'ry'); return rx > 0 && ry > 0 ? ellipse(svgNum(a, 'cx'), svgNum(a, 'cy'), rx, ry) : null; }
+  if (tag === 'polygon' || tag === 'polyline') {
+    const n = svgNumbers(a.points || ''), ring = [];
+    for (let i = 0; i + 1 < n.length; i += 2) ring.push([n[i], n[i + 1]]);
+    return ring.length >= 3 ? [ring] : null;
+  }
+  if (tag === 'rect') {
+    const x = svgNum(a, 'x'), y = svgNum(a, 'y'), w = svgNum(a, 'width'), h = svgNum(a, 'height');
+    if (!(w > 0 && h > 0)) return null;
+    let rx = svgLength(a.rx) ? svgNum(a, 'rx') : undefined, ry = svgLength(a.ry) ? svgNum(a, 'ry') : undefined;
+    if (rx === undefined) rx = ry === undefined ? 0 : ry;
+    if (ry === undefined) ry = rx;
+    rx = Math.min(Math.max(rx, 0), w / 2); ry = Math.min(Math.max(ry, 0), h / 2);
+    if (!(rx > 0 && ry > 0)) return [[[x, y], [x + w, y], [x + w, y + h], [x, y + h]]];
+    const ring = [], q = Math.max(1, segments);
+    const corner = (cx, cy, a0) => { for (let i = 0; i <= q; i++) { const t = rad(a0) + (Math.PI / 2) * (i / q); ring.push([cx + rx * Math.cos(t), cy + ry * Math.sin(t)]); } };
+    corner(x + w - rx, y + ry, 270); corner(x + w - rx, y + h - ry, 0); corner(x + rx, y + h - ry, 90); corner(x + rx, y + ry, 180);
+    return [ring];
+  }
+  return null;
+}
+
+/** The declarations of a style="" attribute or a CSS block, as { property: value }. */
+function svgDeclarations(s, into) {
+  for (const decl of String(s).split(';')) {
+    const i = decl.indexOf(':');
+    if (i > 0) into[decl.slice(0, i).trim()] = decl.slice(i + 1).replace(/!important/, '').trim();
+  }
+  return into;
+}
+
+/**
+ * The filled shapes of an SVG drawing (its markup as a string) as a Sketch, in millimetres, Y up, with the
+ * bottom-left of the viewBox at the origin.
+ * opts: { segments = 16 (per curve; arcs and circles get 4× that per turn), id (only that element and what it holds),
+ *         width or height (scale the drawing uniformly to that size in mm) }
+ */
+function svg(markup, opts = {}) {
+  if (typeof markup !== 'string') throw new TypeError(`svg: expected the SVG markup as a string, got ${describe(markup)}`);
+  const segments = opts.segments === undefined ? 16 : opts.segments;
+  checkInt('svg', 'segments', segments, 1);
+  if (opts.width !== undefined) checkPositive('svg', 'width', opts.width);
+  if (opts.height !== undefined) checkPositive('svg', 'height', opts.height);
+  if (opts.id !== undefined && typeof opts.id !== 'string') throw new TypeError(`svg: id must be a string, got ${describe(opts.id)}`);
+  // <style> rules first, then the markup without comments, CDATA wrappers, declarations and processing instructions
+  const rules = [];
+  for (const st of markup.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/g)) {
+    const css = st[1].replace(/<!\[CDATA\[|\]\]>/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const r of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const decls = svgDeclarations(r[2], {});
+      for (const sel of r[1].split(',')) {
+        const m = sel.trim().match(/^([\w-]*)(?:([.#])([\w-]+))?$/);
+        if (m && (m[1] || m[3])) rules.push({ tag: m[1], kind: m[2] || '', name: m[3] || '', decls });
+      }
+    }
+  }
+  const src = markup.replace(/<!--[\s\S]*?-->/g, '').replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '').replace(/<\?[\s\S]*?\?>/g, '').replace(/<!DOCTYPE[^>]*>/gi, '');
+  const warned = {};
+  const warnOnce = (key, msg) => { if (!warned[key]) { warned[key] = true; cad.warn(opts.file === undefined ? msg : `${opts.file}: ${msg}`); } };
+  const stack = [];
+  let state = { m: SVG_ID, fill: true, rule: 'nonzero', stroke: false, skip: false, chosen: opts.id === undefined };
+  let root = null, found = opts.id === undefined;
+  const parts = [];
+  for (const t of src.matchAll(/<(\/?)([\w:.-]+)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g)) {
+    const tag = t[2].replace(/^svg:/, '');
+    if (t[1]) { if (stack.length) state = stack.pop(); continue; }
+    const a = {};
+    for (const at of t[3].matchAll(/([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) a[at[1]] = at[2] !== undefined ? at[2] : at[3];
+    const selfClosing = !!t[4];
+    // the style that applies: presentation attributes, then <style> rules by tag, class and id, then style=""
+    const st = {};
+    for (const k of ['fill', 'fill-rule', 'stroke', 'display', 'visibility']) if (a[k] !== undefined) st[k] = a[k];
+    const classes = a.class ? a.class.trim().split(/\s+/) : [];
+    for (const kind of ['', '.', '#']) for (const r of rules) {
+      if (r.kind !== kind || (r.tag && r.tag !== tag)) continue;
+      if (kind === '.' && !classes.includes(r.name)) continue;
+      if (kind === '#' && a.id !== r.name) continue;
+      Object.assign(st, r.decls);
+    }
+    if (a.style) svgDeclarations(a.style, st);
+    const next = Object.assign({}, state);
+    if (st.fill !== undefined && st.fill !== 'inherit') next.fill = st.fill !== 'none' && st.fill !== 'transparent';
+    if (st['fill-rule'] !== undefined && st['fill-rule'] !== 'inherit') next.rule = st['fill-rule'] === 'evenodd' ? 'evenodd' : 'nonzero';
+    if (st.stroke !== undefined && st.stroke !== 'inherit') next.stroke = st.stroke !== 'none';
+    if (st.display === 'none' || st.visibility === 'hidden' || st.visibility === 'collapse' || SVG_SKIP[tag]) next.skip = true;
+    if (opts.id !== undefined && a.id === opts.id) { next.chosen = true; found = true; }
+    if (tag === 'svg' && !root) root = a;
+    else if (a.transform !== undefined) next.m = svgMul(state.m, svgTransform(a.transform));
+    if (!next.skip && next.chosen) {
+      if (tag === 'text' || tag === 'use' || tag === 'image') warnOnce(tag, `svg: <${tag}> elements are not imported${tag === 'text' ? ' (convert text to paths in your drawing program)' : tag === 'use' ? ' (unlink clones in your drawing program)' : ''}`);
+      else if (tag === 'line') { if (next.stroke) warnOnce('stroke', 'svg: lines and stroke-only shapes have no area and are skipped; outline strokes (stroke to path) in your drawing program'); }
+      else {
+        const rings = svgShapeRings(tag, a, segments);
+        if (rings) {
+          if (!next.fill) { if (next.stroke) warnOnce('stroke', 'svg: lines and stroke-only shapes have no area and are skipped; outline strokes (stroke to path) in your drawing program'); }
+          else parts.push({ rings: rings.map((r) => r.map((p) => [next.m[0] * p[0] + next.m[2] * p[1] + next.m[4], next.m[1] * p[0] + next.m[3] * p[1] + next.m[5]])), rule: next.rule });
+        }
+      }
+    }
+    if (!selfClosing) { stack.push(state); state = next; }
+  }
+  if (!root) throw new SyntaxError('svg: no <svg> element in the markup');
+  if (!found) throw new RangeError(`svg: no element with id "${opts.id}"`);
+  // the viewBox and size: millimetres per user unit, and where the bottom of the drawing is
+  const vb = root.viewBox !== undefined ? svgNumbers(root.viewBox) : [];
+  const W = svgLength(root.width), H = svgLength(root.height);
+  const mm = (l) => (l && SVG_UNITS[l.unit] !== undefined ? l.v * SVG_UNITS[l.unit] : l && l.unit === '' ? l.v : undefined);
+  let scale = 1, x0 = 0, y0;
+  if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) {
+    const sx = mm(W) !== undefined ? mm(W) / vb[2] : undefined, sy = mm(H) !== undefined ? mm(H) / vb[3] : undefined;
+    scale = sx !== undefined && sy !== undefined ? Math.min(sx, sy) : sx !== undefined ? sx : sy !== undefined ? sy : 1;
+    x0 = vb[0]; y0 = vb[1] + vb[3];
+  } else {
+    // no viewBox: user units are CSS pixels once the size is given in real units
+    if ((W && SVG_UNITS[W.unit] !== undefined) || (H && SVG_UNITS[H.unit] !== undefined)) scale = SVG_UNITS.px;
+    if (H && mm(H) !== undefined) y0 = mm(H) / scale;
+  }
+  const sketchesOut = [];
+  for (const p of parts) {
+    const rings = p.rings.map((r) => r.map((q) => [(q[0] - x0) * scale, ((y0 === undefined ? 0 : y0) - q[1]) * scale])).filter((r) => r.length >= 3);
+    if (rings.length) sketchesOut.push(sketchFromRings(rings, p.rule === 'evenodd' ? FILL.evenOdd : FILL.nonZero));
+  }
+  if (!sketchesOut.length) throw new RangeError('svg: the drawing has no filled shapes');
+  let out = sketchesOut.length === 1 ? sketchesOut[0] : union2d(...sketchesOut);
+  if (out.isEmpty()) throw new RangeError('svg: the drawing\'s filled shapes have no area');
+  if (y0 === undefined) out = out.translate(0, -out.bounds().min[1]); // no known height: sit the drawing on y = 0
+  if (opts.width !== undefined || opts.height !== undefined) {
+    const sz = out.bounds().size;
+    const f = opts.width !== undefined ? opts.width / sz[0] : opts.height / sz[1];
+    out = out.scale(f, f);
+  }
+  return out;
+}
+
+/** SVG path data (the d attribute) as a Sketch in its own units, Y flipped to point up. opts: { segments = 16, evenOdd = false } */
+function svgPath(d, opts = {}) {
+  if (typeof d !== 'string') throw new TypeError(`svgPath: expected path data as a string, got ${describe(d)}`);
+  const segments = opts.segments === undefined ? 16 : opts.segments;
+  checkInt('svgPath', 'segments', segments, 1);
+  const rings = svgPathRings(d, segments).map((r) => r.map((p) => [p[0], -p[1]])).filter((r) => r.length >= 3);
+  if (!rings.length) throw new RangeError('svgPath: the path encloses no area');
+  return sketchFromRings(rings, opts.evenOdd ? FILL.evenOdd : FILL.nonZero);
+}
+
+/** `import logo from './logo.svg'` evaluates to this; `import { markup } from './logo.svg'` is the file's text. */
+function __temenText(name) { return cad.readText(name); }
+function __temenSvg(name, markup) {
+  try { return svg(markup, { file: name }); } catch (e) { e.message = `${name}: ${e.message}`; throw e; }
+}
+
 // ---- printability (print.js) -------------------------------------------------------------------
 //
 // Checks on the mesh a shape exports; y = 0 is the plate, +Y is up.
@@ -2795,7 +3100,7 @@ export const api = {
   SCREWS, screw, screwHole, nutPocket, heatInsert, hole,
   gear, gear2d, gearPair, gearDistance, rack, ringGear, ringAddendum, planetary, thread, split,
   Path, path, line, arc, helix, bezier, sweep, polyhedron, loft, fillet, chamfer, sharpEdges,
-  GrayImage, heightmap, lithophane, __temenImage, __temenMesh,
+  GrayImage, heightmap, lithophane, __temenImage, __temenMesh, svg, svgPath, __temenText, __temenSvg,
   overhangs, unsupported, minWallThickness, printability,
   minkowski, shell, roof,
   Face, distance, rectPattern, gridPattern, intersects, interference, overlap, clearance, dimension, mark,

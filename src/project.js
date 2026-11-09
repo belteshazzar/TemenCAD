@@ -1,5 +1,5 @@
 /**
- * A project: a set of named files (scripts, fonts, meshes, images) saved as a .temen zip.
+ * A project: a set of named files (scripts, fonts, meshes, images, SVG drawings) saved as a .temen zip.
  * Text files are kept as strings, binary files as ArrayBuffers. `main.js` is the entry script.
  * Pure module: used by the app, the worker and the command-line tool.
  */
@@ -7,7 +7,7 @@ import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 
 export const ENTRY = 'main.js';
 export const PROJECT_EXT = '.temen';
-const TEXT_EXT = ['.js', '.mjs', '.json', '.txt', '.md'];
+const TEXT_EXT = ['.js', '.mjs', '.json', '.txt', '.md', '.svg'];
 export const FONT_EXT = ['.ttf', '.otf'];
 export const MESH_EXT = ['.stl'];
 export const IMAGE_EXT = ['.png', '.jpg', '.jpeg'];
@@ -19,6 +19,7 @@ export const isScript = (name) => ['.js', '.mjs'].includes(extOf(name));
 export const isFontFile = (name) => FONT_EXT.includes(extOf(name));
 export const isMeshFile = (name) => MESH_EXT.includes(extOf(name));
 export const isImageFile = (name) => IMAGE_EXT.includes(extOf(name));
+export const isSvgFile = (name) => extOf(name) === '.svg';
 
 /** Normalise a project-relative path: forward slashes, no leading './' or '/', no '..' escaping the root. */
 export function normalizePath(path) {

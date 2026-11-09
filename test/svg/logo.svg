@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- a 40 x 20 mm plate with a round hole, as a drawing program would save it -->
+<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="20mm" viewBox="0 0 400 200">
+  <style><![CDATA[ .ink { fill: #222; fill-rule: evenodd } .guide { fill: none; stroke: red } ]]></style>
+  <defs><rect id="unused" width="1000" height="1000"/></defs>
+  <path class="ink" d="M0,0 H400 V200 H0 Z M150,100 a50,50 0 1,0 100,0 a50,50 0 1,0 -100,0 z"/>
+  <rect class="guide" x="10" y="10" width="20" height="20"/>
+</svg>

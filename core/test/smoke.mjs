@@ -368,6 +368,20 @@ if (r.ok) {
   check('pieces add up to 60000, cut at x = 10, two pieces and two dowels laid on the plate', m && near(+m[1], 60000, 1e-9) && near(+m[2], 10, 1e-9) && +m[3] === 4 && m[4] === 'true', m && m[0]);
 }
 
+// 4m. SVG drawings: an imported file becomes a Sketch in mm, its markup a named export
+r = rt.run({
+  'main.js': `import logo, { markup } from './art/logo.svg';
+    echo('svg', logo.bounds().size[0], logo.bounds().size[1], Math.abs(logo.area() - (200 - 25)) < 1e-9, markup.length > 0);
+    return extrude(logo, 2);`,
+  'art/logo.svg': '<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="10mm" viewBox="0 0 40 20"><path fill-rule="evenodd" d="M0 0H40V20H0Z M10 5h10v10h-10z"/><text>hi</text></svg>',
+});
+check('svg import runs', r.ok, r.error?.message);
+if (r.ok) {
+  const t = r.messages.map((x) => x.text).join('\n');
+  check('svg scaled to its mm size with an evenodd hole', t.includes('"svg", 20, 10, true, true'), t);
+  check('svg warns about <text> and names the file', t.includes('art/logo.svg: svg: <text> elements are not imported'), t);
+}
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);

@@ -1695,7 +1695,26 @@
     "hidden": false
    },
    {
-    "name": "Part 43",
+    "name": "heart",
+    "volume": 834.6551993509223,
+    "bounds": {
+     "min": [
+      55,
+      0,
+      135
+     ],
+     "max": [
+      75,
+      3,
+      155
+     ]
+    },
+    "color": "#ff8fa3",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 44",
     "volume": 1087.296798132392,
     "bounds": {
      "min": [
@@ -1790,7 +1809,7 @@
     "hidden": false
    },
    {
-    "name": "Part 48",
+    "name": "Part 49",
     "volume": 463.5530407518259,
     "bounds": {
      "min": [
@@ -1809,7 +1828,7 @@
     "hidden": false
    },
    {
-    "name": "Part 49",
+    "name": "Part 50",
     "volume": 421.2479957427979,
     "bounds": {
      "min": [
@@ -1847,7 +1866,7 @@
     "hidden": false
    },
    {
-    "name": "Part 51",
+    "name": "Part 52",
     "volume": 1222.2465640398138,
     "bounds": {
      "min": [
@@ -2385,6 +2404,31 @@
       20.666255950927734,
       25,
       63.333744049072266
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": null
+ },
+ "test/svg/main.js": {
+  "parts": [
+   {
+    "name": "Part 1",
+    "volume": 2164.7588632722523,
+    "bounds": {
+     "min": [
+      0,
+      0,
+      -20
+     ],
+     "max": [
+      40,
+      3,
+      0
      ]
     },
     "color": "#8fb3ff",

@@ -217,6 +217,7 @@ static bool is_script(const char *n) { return has_ext(n, ".js") || has_ext(n, ".
 static bool is_font(const char *n) { return has_ext(n, ".ttf") || has_ext(n, ".otf"); }
 static bool is_mesh(const char *n) { return has_ext(n, ".stl"); }
 static bool is_image(const char *n) { return has_ext(n, ".png") || has_ext(n, ".jpg") || has_ext(n, ".jpeg"); }
+static bool is_svg(const char *n) { return has_ext(n, ".svg"); }
 
 /*
  * Resolve `spec` against `referrer` the way src/project.js resolveImport does:
@@ -389,8 +390,12 @@ static JsValue loader(void *ud, JsContext *ctx, const uint16_t *spec, size_t spe
         } else if (is_image(name)) {
             snprintf(msg, sizeof msg, "export default __temenImage(\"%s\");", name);
             result = fulfilled(core, temen_string(core, msg, strlen(msg)));
+        } else if (is_svg(name)) {
+            /* the prelude's __temenSvg parses the drawing into a Sketch; `markup` is the file's text for svg(markup, opts) */
+            snprintf(msg, sizeof msg, "export const markup = __temenText(\"%s\");\nexport default __temenSvg(\"%s\", markup);", name, name);
+            result = fulfilled(core, temen_string(core, msg, strlen(msg)));
         } else {
-            snprintf(msg, sizeof msg, "'%s' is not a script, font, mesh or image file", name);
+            snprintf(msg, sizeof msg, "'%s' is not a script, font, mesh, image or SVG file", name);
             result = rejected(core, msg);
         }
     }

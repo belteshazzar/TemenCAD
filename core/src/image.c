@@ -179,8 +179,20 @@ static bool n_parse_stl(JsContext *ctx, JsValue this_val, const JsValue *args, i
     return true;
 }
 
+/* readText(name): a project file's contents as a string (SVG drawings) */
+static bool n_read_text(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val;
+    TemenCore *core = CORE();
+    const TemenHostFile *f = named_file(ctx, args, argc, "file", result);
+    if (!f) return false;
+    JsValue s = temen_string(core, (const char *)f->data, f->len);
+    if (js_is_undefined(s)) THROW(temen_range_error(core, "out of memory"));
+    *result = s;
+    return true;
+}
+
 bool temen_install_assets(TemenCore *core, JsValue ns) {
-    static const struct { const char *name; JsNativeFn fn; } entries[] = { { "decodeImage", n_decode_image }, { "parseSTL", n_parse_stl } };
+    static const struct { const char *name; JsNativeFn fn; } entries[] = { { "decodeImage", n_decode_image }, { "parseSTL", n_parse_stl }, { "readText", n_read_text } };
     for (size_t i = 0; i < sizeof entries / sizeof entries[0]; i++) {
         JsValue fn = js_native_new(core->ctx, entries[i].name, entries[i].fn, NULL);
         if (js_is_undefined(fn)) return false;

@@ -1,6 +1,6 @@
 /**
  * File tabs above the editor. Each text file keeps its own CodeMirror state (undo history,
- * diagnostics); binary files (fonts, meshes, images) show an info panel with the import line to use.
+ * diagnostics, SVG drawings included); binary files (fonts, meshes, images) show an info panel with the import line to use.
  * The "+" menu adds, renames and removes files.
  */
 import { setDiagnostics } from '@codemirror/lint';

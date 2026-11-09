@@ -122,6 +122,17 @@ sk.sweep(p, opts)                                 // method form of sweep
 // frame 'minimal' (default) never twists the profile; 'upright' keeps sketch y pointing to `up` (default +Y).
 // twist in degrees over the whole path; scale a factor or [sx, sy] reached at the end.
 // Corners are mitred; a bend tighter than the profile is wide warns, because the surface folds into itself.</pre>
+      <h3>SVG drawings</h3>
+      <pre>import logo from './logo.svg'                     // the drawing's filled shapes as a Sketch, in mm, Y up, viewBox bottom-left at the origin
+import { markup } from './logo.svg'               // the file's text, for svg(markup, opts)
+svg(markup, { segments, id, width, height })      // SVG markup as a Sketch; id: only that element and its children;
+                                                  //   width or height: scale uniformly to that size in mm; segments per curve (16)
+svgPath(d, { segments, evenOdd })                 // SVG path data ('M0 0 h10 v10 Z') as a Sketch in its own units, Y flipped
+// Reads path (every command, arcs included), rect, circle, ellipse, polygon and polyline, through group transforms,
+//   with fill and fill-rule from attributes, style="" and simple &lt;style&gt; rules (tag, .class, #id); all filled shapes are unioned.
+// Size: width/height in mm, cm, in, pt, pc or px scale the viewBox; without units one user unit is 1 mm.
+// Skipped with a warning: strokes (outline them: stroke to path), &lt;text&gt; (convert to paths), &lt;use&gt; and &lt;image&gt;.
+// extrude(logo, 2) makes it a solid; logo.offset(-0.2) shrinks it for an inlay.</pre>
       <h3>Images: heightmaps and lithophanes</h3>
       <pre>heightmap(img, { width, depth, height, base, invert, smooth, gamma, resolution })  // relief: brightness becomes height
 heightmap((x, z) => 0..1, opts)                   // the same from a function of position in mm
@@ -294,6 +305,7 @@ unsupported(s, { angle }) / s.unsupported(opts)   // the overhangs with nothing 
       <pre>import { lid, WALL } from './lid.js'              // another script; lid.js uses export const / function
 import logo from './Logo.ttf'                     // a font in the project: text3d('Hi', { font: logo })
 import part from './part.stl'                     // a mesh in the project, as a Shape (Z-up STL becomes Y-up)
+import logo from './logo.svg'                     // a drawing in the project, as a Sketch (see SVG drawings)
 import { hinge } from './catalog/parametric-hinge/hinge.js'  // a shape added from the catalogue
 // A project is a .temen zip. main.js is the entry and the only file that may use a top-level return.</pre>
       <h3>Helpers</h3>

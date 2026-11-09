@@ -46,6 +46,8 @@ export const GLOBALS = [
   fn('bezier', 'bezier([${p0}], [${p1}], [${p2}], [${p3}])', '(p0, p1, p2, p3, { segments })', 'Cubic Bézier curve as a path.'),
   fn('sweep', 'sweep(${sketch}, ${path})', '(sketch | (t) => sketch, path, { frame, up, twist, scale, segments })', 'Sweep a 2D profile along a path; closed paths make rings. frame: \'minimal\' (no twist) or \'upright\'.'),
   // Images
+  fn('svg', 'svg(${markup}, { width: ${50} })', '(markup, { segments, id, width, height })', 'An SVG drawing as a Sketch: filled paths, rects, circles, polygons, in mm with Y up. import logo from \'./logo.svg\' does the same for a project file.'),
+  fn('svgPath', "svgPath('${M0 0 h10 v10 Z}')", '(d, { segments, evenOdd })', 'SVG path data as a Sketch in its own units, Y flipped.'),
   fn('heightmap', 'heightmap(${image}, { width: ${60}, height: ${4} })', '(image | (x, z) => 0..1, { width, depth, height, base, invert, smooth, gamma, resolution })', 'Relief solid: brightness (or a function of position) becomes height above a base plate.'),
   fn('lithophane', 'lithophane(${image}, { width: ${80}, upright: true })', '(image, { width, depth, minThickness, maxThickness, border, smooth, gamma, resolution, upright })', 'Plate whose thickness follows the image: dark is thick, light is thin. Light it from behind.'),
   // Placement
