@@ -3073,10 +3073,13 @@ const show = (...args) => {
   }
 };
 
-export async function run(main) {
+// The host calls begin() before main.js evaluates, then run() with what main.js returned.
+export function begin() {
   shown.length = 0;
   declaredProfile = null;
-  const result = await main();
+}
+
+export async function run(result) {
   const shapes = collect(shown).concat(collect(result === undefined ? [] : [result]));
   const used = new Map();
   const parts = [];

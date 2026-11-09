@@ -4,9 +4,8 @@
  * natives, and the run loop that turns a script's result into mesh buffers.
  *
  * Module layout mirrors src/modules.js of the browser app:
- *   - main.js is wrapped so its top-level `return` works: imports are hoisted onto
- *     line 1 together with `export default async function main() {`, so user line L
- *     is module line L + 1
+ *   - main.js is the entry (js_eval_entry): loaded as written, its top-level `return`
+ *     hands back the parts, so its lines are the module's lines
  *   - every other script is loaded as it is; relative specifiers are resolved by the
  *     canonicalizer against the importing file
  *   - a font file is a module whose default export is its own name
@@ -166,10 +165,9 @@ static TemenHostFile *find_file(TemenCore *core, const char *name) {
 const TemenHostFile *temen_find_file(TemenCore *core, const char *name) { return find_file(core, name); }
 
 /* Remember the source a module was compiled from, so an offset in it can become a line. */
-static void remember_source(TemenHostFile *f, const char *utf8, size_t len, int line_offset) {
+static void remember_source(TemenHostFile *f, const char *utf8, size_t len) {
     free(f->src16);
     f->src16 = temen_utf8_to_utf16(utf8, len, &f->len16);
-    f->line_offset = line_offset;
     f->user_lines = 1;
     for (size_t i = 0; i < f->len; i++) if (f->data[i] == '\n') f->user_lines++;
     if (f->len && f->data[f->len - 1] == '\n') f->user_lines--; /* a trailing newline is not a line */
@@ -187,8 +185,8 @@ bool temen_locate(TemenCore *core, const JsStackFrame *frames, size_t n, const c
         if (!f || !f->src16) continue;
         uint32_t l, c;
         js_source_line_col(f->src16, f->len16, frames[i].pos, &l, &c);
-        int ln = (int)l - f->line_offset;
-        /* an unterminated statement is reported at the wrapper's closing brace: show the user's last line */
+        int ln = (int)l;
+        /* an error at the very end (an unterminated statement) can sit past a trailing newline: show the last line */
         if (ln > f->user_lines) ln = f->user_lines;
         *file = f->name;
         *line = ln < 1 ? 1 : ln;
@@ -273,84 +271,6 @@ static bool canonicalize(void *ud, const uint16_t *spec, size_t spec_len, const 
     return true;
 }
 
-/*
- * Static import statements in a script, as src/project.js findImports finds them:
- * `import` at a statement start, an optional clause, then a quoted specifier.
- * Calls `fn(start, spec_end, line_end)` for each (offsets into src).
- */
-typedef void (*ImportFn)(void *ud, size_t stmt_start, size_t spec_end, size_t line_end);
-static void find_imports(const char *src, size_t len, ImportFn fn, void *ud) {
-    for (size_t i = 0; i + 6 <= len; i++) {
-        if (strncmp(src + i, "import", 6) != 0) continue;
-        if (i > 0 && !strchr(" \t\r\n;{}", src[i - 1])) continue;
-        size_t j = i + 6;
-        while (j < len && strchr(" \t\r\n", src[j])) j++;
-        if (j < len && src[j] != '\'' && src[j] != '"') {
-            /* a clause: identifiers, braces, star, commas, whitespace; must reach a quote */
-            while (j < len && (strchr("$*{},_ \t\r\n", src[j]) || (src[j] >= 'a' && src[j] <= 'z') || (src[j] >= 'A' && src[j] <= 'Z') || (src[j] >= '0' && src[j] <= '9'))) j++;
-            if (j >= len || (src[j] != '\'' && src[j] != '"')) continue;
-        }
-        if (j >= len) break;
-        char q = src[j];
-        size_t k = j + 1;
-        while (k < len && src[k] != q && src[k] != '\n') k++;
-        if (k >= len || src[k] != q) continue;
-        size_t spec_end = k + 1;
-        size_t line_end = spec_end;
-        while (line_end < len && src[line_end] != '\n') line_end++;
-        fn(ud, i, spec_end, line_end);
-        i = spec_end - 1;
-    }
-}
-
-typedef struct Wrap { const char *src; size_t len; char *body; char *hoisted; size_t hoisted_len, hoisted_cap; } Wrap;
-static void wrap_import(void *ud, size_t start, size_t spec_end, size_t line_end) {
-    Wrap *w = ud;
-    /* one-line copy of the statement, whitespace collapsed */
-    size_t need = w->hoisted_len + (spec_end - start) + 3;
-    if (need > w->hoisted_cap) {
-        size_t cap = w->hoisted_cap ? w->hoisted_cap * 2 : 256;
-        while (cap < need) cap *= 2;
-        char *n = realloc(w->hoisted, cap);
-        if (!n) return;
-        w->hoisted = n; w->hoisted_cap = cap;
-    }
-    bool space = false;
-    for (size_t i = start; i < spec_end; i++) {
-        char c = w->src[i];
-        if (strchr(" \t\r\n", c)) { if (!space) { w->hoisted[w->hoisted_len++] = ' '; space = true; } }
-        else { w->hoisted[w->hoisted_len++] = c; space = false; }
-    }
-    w->hoisted[w->hoisted_len++] = ';';
-    w->hoisted[w->hoisted_len++] = ' ';
-    w->hoisted[w->hoisted_len] = 0;
-    /* blank the statement (and its semicolon) in the body, keeping line breaks so line numbers hold;
-     * code after it on the same line survives */
-    (void)line_end;
-    size_t end = spec_end;
-    while (end < w->len && (w->src[end] == ' ' || w->src[end] == '\t')) end++;
-    if (end < w->len && w->src[end] == ';') end++;
-    for (size_t i = start; i < end; i++) if (w->body[i] != '\n') w->body[i] = ' ';
-}
-
-/* main.js wrapped as `<hoisted imports> export default async function main() {\n<body>\n}`. */
-static char *wrap_entry(const char *src, size_t len, size_t *out_len) {
-    Wrap w = { src, len, NULL, NULL, 0, 0 };
-    w.body = malloc(len + 1);
-    if (!w.body) return NULL;
-    memcpy(w.body, src, len);
-    w.body[len] = 0;
-    find_imports(src, len, wrap_import, &w);
-    const char *head = "export default async function main() {\n";
-    size_t total = w.hoisted_len + strlen(head) + len + 3;
-    char *out = malloc(total + 1);
-    if (!out) { free(w.body); free(w.hoisted); return NULL; }
-    int n = snprintf(out, total + 1, "%s%s%s\n}", w.hoisted ? w.hoisted : "", head, w.body);
-    *out_len = (size_t)n;
-    free(w.body); free(w.hoisted);
-    return out;
-}
-
 static JsValue loader(void *ud, JsContext *ctx, const uint16_t *spec, size_t spec_len,
                       const uint16_t *ref, size_t ref_len) {
     (void)ctx; (void)ref; (void)ref_len;
@@ -367,19 +287,8 @@ static JsValue loader(void *ud, JsContext *ctx, const uint16_t *spec, size_t spe
             snprintf(msg, sizeof msg, "Cannot find '%s'", name);
             result = rejected(core, msg);
         } else if (is_script(name)) {
-            if (strcmp(name, ENTRY) == 0) {
-                size_t wl;
-                char *wrapped = wrap_entry((const char *)f->data, f->len, &wl);
-                if (!wrapped) result = rejected(core, "out of memory");
-                else {
-                    remember_source(f, wrapped, wl, 1);
-                    result = fulfilled(core, temen_string(core, wrapped, wl));
-                    free(wrapped);
-                }
-            } else {
-                remember_source(f, (const char *)f->data, f->len, 0);
-                result = fulfilled(core, temen_string(core, (const char *)f->data, f->len));
-            }
+            remember_source(f, (const char *)f->data, f->len);
+            result = fulfilled(core, temen_string(core, (const char *)f->data, f->len));
         } else if (is_font(name)) {
             snprintf(msg, sizeof msg, "export default \"%s\";", name);
             result = fulfilled(core, temen_string(core, msg, strlen(msg)));
@@ -414,7 +323,7 @@ static bool load_prelude(TemenCore *core);
  * prelude stays compiled. Rebuilt only if an eviction is refused.
  */
 static bool fresh_context(TemenCore *core) {
-    core->cad_ns = core->api_run = core->slot_a = core->slot_b = core->slot_c = js_undefined();
+    core->cad_ns = core->api_begin = core->api_run = core->slot_a = core->slot_b = core->slot_c = js_undefined();
     if (core->ctx) js_context_free(core->ctx);
     core->ctx = js_context_new(core->vm);
     core->prelude_loaded = false;
@@ -435,8 +344,9 @@ TemenCore *temen_new(void) {
     if (thr) cfg.gc_threshold = (size_t)strtoull(thr, NULL, 10);
     core->vm = js_vm_new(&cfg);
     if (!core->vm) { temen_free(core); return NULL; }
-    core->cad_ns = core->api_run = core->slot_a = core->slot_b = core->slot_c = js_undefined();
+    core->cad_ns = core->api_begin = core->api_run = core->slot_a = core->slot_b = core->slot_c = js_undefined();
     js_gc_protect(core->vm, &core->cad_ns);
+    js_gc_protect(core->vm, &core->api_begin);
     js_gc_protect(core->vm, &core->api_run);
     js_gc_protect(core->vm, &core->slot_a);
     js_gc_protect(core->vm, &core->slot_b);
@@ -550,10 +460,12 @@ static bool load_prelude(TemenCore *core) {
     }
     JsValue ns = js_promise_result(core->slot_a);
     static const uint16_t run_name[] = { 'r', 'u', 'n' };
+    static const uint16_t begin_name[] = { 'b', 'e', 'g', 'i', 'n' };
     static const uint16_t api_name[] = { 'a', 'p', 'i' };
     core->api_run = js_module_get_export(core->ctx, ns, run_name, 3);
+    core->api_begin = js_module_get_export(core->ctx, ns, begin_name, 5);
     core->slot_b = js_module_get_export(core->ctx, ns, api_name, 3);
-    if (!js_is_function(core->api_run) || !js_is_object(core->slot_b)) { set_error(core, "prelude exports missing", NULL, 0); return false; }
+    if (!js_is_function(core->api_run) || !js_is_function(core->api_begin) || !js_is_object(core->slot_b)) { set_error(core, "prelude exports missing", NULL, 0); return false; }
     /* every api entry becomes a global, so scripts use box() and friends unqualified */
     JsValue globals = js_context_globals(core->ctx);
     size_t count = js_object_size(core->slot_b);
@@ -618,16 +530,18 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
     else evict_project_modules(core);
 
     int status = 0;
+    JsValue out;
+    /* the run's state is reset before any of the project's modules evaluate (their top level can show()) */
+    if (!js_call(core->ctx, core->api_begin, js_undefined(), NULL, 0, &out)) { core->slot_c = out; report_rejection(core, out); status = 1; goto done; }
     static const uint16_t entry[] = { 'm', 'a', 'i', 'n', '.', 'j', 's' };
-    core->slot_a = js_eval_module(core->ctx, entry, 7);
+    /* main.js is the entry: its top-level `return` is what the promise fulfills with */
+    core->slot_a = js_eval_entry(core->ctx, entry, 7);
     if (js_is_undefined(core->slot_a)) { set_error(core, "out of memory", NULL, 0); status = 2; goto done; }
     if (settle(core, core->slot_a) != 1) { report_rejection(core, js_promise_result(core->slot_a)); status = 1; goto done; }
     {
-        static const uint16_t def[] = { 'd', 'e', 'f', 'a', 'u', 'l', 't' };
-        JsValue main_fn = js_module_get_export(core->ctx, js_promise_result(core->slot_a), def, 7);
-        core->slot_b = main_fn;
-        JsValue args[1] = { main_fn };
-        JsValue out;
+        JsValue returned = js_promise_result(core->slot_a);
+        core->slot_b = returned;
+        JsValue args[1] = { returned };
         if (!js_call(core->ctx, core->api_run, js_undefined(), args, 1, &out)) { core->slot_c = out; report_rejection(core, out); status = 1; goto done; }
         core->slot_c = out; /* the promise run() returns */
         if (!js_is_promise(out)) { set_error(core, "prelude run() did not return a promise", NULL, 0); status = 2; goto done; }

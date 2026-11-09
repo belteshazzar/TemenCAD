@@ -198,10 +198,12 @@ that seems right. The core builds against `lamassu.h` alone.
    "5000…" tail), and tries the neighbouring candidate at a power of two, where the round-trip
    interval is lopsided. 1.6 million doubles (random bit patterns, computed values, every power
    of two, subnormals) now print exactly as Node does, against 0.86% differing before.
-10. **Top-level `return` in the entry (nice to have).** main.js is wrapped in
-   `export default async function main() {}` with imports hoisted onto line 1, as the browser app
-   does, which costs a one-line offset in every location. A compile flag allowing a top-level
-   `return` in a module would remove the wrapping.
+10. **Top-level `return` in the entry — done.** main.js used to be wrapped in
+   `export default async function main() {}` with its imports hoisted onto line 1, which cost a
+   one-line offset in every location and kept main.js from exporting. lamassu's `js_eval_entry`
+   evaluates it as written: the root module alone may `return` at top level, and the promise
+   fulfils with that value. The host calls the prelude's `begin()` before evaluating and `run()`
+   with the returned value after. `test_entry_return` in lamassu's `test/test_modules.c` covers it.
 11. **Failed calls name their callee — done.** "value is not a function" now reads as V8 words it:
    `s.filet is not a function`, `cube(...).translate(...).rotat is not a function`,
    `a[0] is not a function`, `n is not a constructor`. The compiler records each call site's

@@ -406,6 +406,18 @@ check('error names the method and line', r.error?.message === 'TypeError: s.file
 r = rt.run({ 'main.js': 'const lid = box(1), body = box(2), base = box(3);\nreturn { lid, body, 2: base, base, 1: box(4) };' });
 check('part order follows the object', r.ok && r.parts.map((p) => p.name).join() === '1,2,lid,body,base', r.error?.message ?? r.parts?.map((p) => p.name).join());
 
+// 4q. main.js runs as written (no wrapper): return anywhere at top level, imports where they stand, exact lines
+r = rt.run({ 'main.js': '// a part\nconst big = true;\nif (big) {\n  return box(4);\n}\nreturn box(1);' });
+check('return inside a block', r.ok && near(r.parts[0].volume, 64), r.error?.message);
+r = rt.run({ 'main.js': '// header\n\nimport { size } from "./dims.js";\nconst s = box(size);\nreturn s.nope();', 'dims.js': 'export const size = 2;' });
+check('error line with an import below the top', !r.ok && r.error?.line === 5 && r.error?.file === 'main.js', JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'export const size = 3;\nreturn box(size);' });
+check('main.js may export', r.ok && near(r.parts[0].volume, 27), r.error?.message);
+r = rt.run({ 'main.js': 'const s = box(2);\nreturn s.translate([1, 0, 0]' });
+check('an unfinished last line is reported on it', !r.ok && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'box(2);' });
+check('no return: nothing but what is shown', r.ok && r.parts.length === 0, r.error?.message);
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);

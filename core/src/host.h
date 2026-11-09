@@ -19,7 +19,6 @@ typedef struct TemenHostFile {
     size_t len;
     uint16_t *src16;   /* the module source as the engine saw it (set when loaded); for error lines */
     size_t len16;
-    int line_offset;   /* lines the wrapper added before the user's first line (1 for main.js) */
     int user_lines;    /* lines in the file as the user wrote it; a position in the wrapper's tail maps to the last one */
 } TemenHostFile;
 
@@ -48,7 +47,8 @@ struct TemenCore {
 
     /* GC-protected slots the run loop keeps values in. */
     JsValue cad_ns;        /* the __cad object */
-    JsValue api_run;       /* prelude's run(main) */
+    JsValue api_begin;     /* prelude's begin(): resets the run's state before main.js evaluates */
+    JsValue api_run;       /* prelude's run(result): main.js's returned value -> parts */
     JsValue slot_a, slot_b, slot_c;
 
     /* the project of the current run */
