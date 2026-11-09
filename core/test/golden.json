@@ -1619,7 +1619,45 @@
     "hidden": false
    },
    {
-    "name": "Part 39",
+    "name": "bolt",
+    "volume": 1210.2129156726633,
+    "bounds": {
+     "min": [
+      107.5,
+      0,
+      108.50480651855469
+     ],
+     "max": [
+      122.5,
+      17,
+      121.49519348144531
+     ]
+    },
+    "color": "#c8c8d0",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "nut",
+    "volume": 628.6852523060174,
+    "bounds": {
+     "min": [
+      127.5,
+      0,
+      108.50480651855469
+     ],
+     "max": [
+      142.5,
+      6.5,
+      121.49519348144531
+     ]
+    },
+    "color": "#c8c8d0",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "Part 41",
     "volume": 1087.296798132392,
     "bounds": {
      "min": [
@@ -1714,7 +1752,7 @@
     "hidden": false
    },
    {
-    "name": "Part 44",
+    "name": "Part 46",
     "volume": 463.5530407518259,
     "bounds": {
      "min": [
@@ -1733,7 +1771,7 @@
     "hidden": false
    },
    {
-    "name": "Part 45",
+    "name": "Part 47",
     "volume": 421.2479957427979,
     "bounds": {
      "min": [
@@ -1771,7 +1809,7 @@
     "hidden": false
    },
    {
-    "name": "Part 47",
+    "name": "Part 49",
     "volume": 1222.2465640398138,
     "bounds": {
      "min": [
@@ -2015,5 +2053,131 @@
   ],
   "annotations": [],
   "profile": null
+ },
+ "test/thread.js": {
+  "parts": [
+   {
+    "name": "rod",
+    "volume": 807.5125804368674,
+    "bounds": {
+     "min": [
+      -3.9999403953552246,
+      0,
+      -3.999988555908203
+     ],
+     "max": [
+      4,
+      20,
+      3.999988555908203
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "nut",
+    "volume": 2498.0863848464796,
+    "bounds": {
+     "min": [
+      17,
+      0,
+      -8
+     ],
+     "max": [
+      33,
+      12,
+      8
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "bolt",
+    "volume": 482.63626505765376,
+    "bounds": {
+     "min": [
+      21.000028610229492,
+      0,
+      -3.9999988079071045
+     ],
+     "max": [
+      29,
+      12,
+      3.9999964237213135
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "leadScrew",
+    "volume": 767.1333196357134,
+    "bounds": {
+     "min": [
+      -28.999977111816406,
+      0,
+      -3.999976396560669
+     ],
+     "max": [
+      -21.000022888183594,
+      20,
+      3.999976396560669
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "square",
+    "volume": 622.6769311578792,
+    "bounds": {
+     "min": [
+      -4.999032974243164,
+      0,
+      20.000967025756836
+     ],
+     "max": [
+      4.99785852432251,
+      10,
+      29.999032974243164
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   },
+   {
+    "name": "leftHand",
+    "volume": 796.034703305435,
+    "bounds": {
+     "min": [
+      21.000059127807617,
+      0,
+      21.000011444091797
+     ],
+     "max": [
+      29,
+      20,
+      28.999988555908203
+     ]
+    },
+    "color": "#8fb3ff",
+    "ghost": false,
+    "hidden": false
+   }
+  ],
+  "annotations": [],
+  "profile": {
+   "nozzle": 0.4,
+   "layer": 0.2,
+   "holeCompensation": 0.3,
+   "material": null,
+   "declared": true
+  }
  }
 }

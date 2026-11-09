@@ -150,6 +150,10 @@ place(union(bigGear, smallGear), -40, 115, '#9fd3c7', 'gear pair');
 place(rack({ module: 1.5, teeth: 8, thickness: 5 }), 25, 115, '#9fd3c7', 'rack');
 const set = planetary({ module: 1, sun: 10, planet: 8, planets: 3, thickness: 5, backlash: 0.2 }); // ring gets 26 teeth
 place(union(set.sun, set.planets, set.ring), 80, 115, '#9fd3c7', 'planetary');
+// 12d. Threads: an M8 bolt (hex head and a threaded shank) and a nut with 0.4 mm of print clearance
+const head = prism(6, 7.5, 5, { center: false });
+place(union(head, thread({ size: 'M8', length: 12, segments: 24 }).translate(0, 5, 0)), 115, 115, '#c8c8d0', 'bolt');
+place(prism(6, 7.5, 6.5, { center: false }).subtract(thread({ size: 'M8', length: 6.5, internal: true, tolerance: 0.4, segments: 24 })), 135, 115, '#c8c8d0', 'nut');
 
 // 13. Loft between profiles, and a shelled cup (hollow with an open top)
 place(loft([circle(6), rect(8, 8).fillet(2), regularPolygon(6, 4)], [0, 8, 16]), 60, 50, '#d3a6ff');

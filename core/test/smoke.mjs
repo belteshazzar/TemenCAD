@@ -341,6 +341,19 @@ if (r.ok) {
   check('parts named sun, planet 1..3, ring', r.parts.map((x) => x.name).join() === 'sun,planet 1,planet 2,planet 3,ring', r.parts.map((x) => x.name).join());
 }
 
+// 4m. threads
+r = rt.run({ 'main.js': `
+  const bolt = thread({ size: 'M8', length: 12 });
+  const nut = box(16, 12, 16).onPlate().subtract(thread({ size: 'M8', length: 12, internal: true, tolerance: 0.4 }));
+  echo('thread', bolt.bounds().size[0], intersects(nut, bolt), thread({ size: 'Tr8x8(P2)', length: 4 }).bounds().size[1]);
+  return { bolt, nut };
+` });
+check('thread scripts run', r.ok, r.error?.message);
+if (r.ok) {
+  const m = r.messages.map((x) => x.text).join('\n').match(/"thread", ([\d.]+), (true|false), ([\d.]+)/);
+  check('M8 rod 8 across, fits its 0.4-tolerance hole, Tr8x8(P2) builds', m && near(+m[1], 8, 0.002) && m[2] === 'false' && +m[3] === 4, m && m[0]);
+}
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);

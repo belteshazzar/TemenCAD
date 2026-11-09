@@ -1114,7 +1114,7 @@ function clearance(a, b, opts = {}) {
   // Manifold's min-gap cost grows with the search radius (every triangle pair within it is measured),
   // and a found gap is exact whatever the radius, so search close first and widen only when nothing
   // is found: the same answer, without measuring two meshing gears across their whole diameters.
-  for (let r = Math.min(1, L); ; r = Math.min(r * 8, L)) {
+  for (let r = Math.min(1 / 64, L); ; r = Math.min(r * 4, L)) {
     const g = cad.minGap(a.h, b.h, r);
     if (g < r) return g;
     if (r >= L) return Infinity;
@@ -2421,6 +2421,134 @@ function planetary(opts = {}) {
   return { sun, planets, ring };
 }
 
+// ---- threads ------------------------------------------------------------------------------------
+//
+// A screw thread's cross-section is the same shape at every height, only turned, so the solid is that
+// section extruded with one full twist per lead: every vertex of the section traces an exact helix.
+// The axial tooth profile R(v) (v along the axis, one pitch long) gives the section's radius at each
+// angle: radius(θ) = R(-lead × θ / 360 mod pitch) for a right-hand thread, crest centred on +X at y = 0.
+
+// ISO 261 coarse pitches
+const THREAD_PITCH = { M2: 0.4, M2_5: 0.45, M3: 0.5, M3_5: 0.6, M4: 0.7, M5: 0.8, M6: 1, M8: 1.25, M10: 1.5, M12: 1.75, M14: 2, M16: 2, M20: 2.5, M24: 3 };
+// tooth shapes: crest width and depth as fractions of the pitch, flank slope from the radial direction
+const THREAD_PROFILES = {
+  // ISO 68-1, 60°. External: crest P/8, depth 17H/24 (root P/6). Internal (the cutter): crest P/8, depth 5H/8 (root P/4).
+  iso: { flank: 30, external: { crest: 1 / 8, depth: (17 / 24) * 0.8660254 }, internal: { crest: 1 / 8, depth: (5 / 8) * 0.8660254 } },
+  // ISO 2904 trapezoidal, 30°: lead screws (Tr8x8(P2) and the like)
+  trapezoid: { flank: 15, external: { crest: 0.366, depth: 0.5 }, internal: { crest: 0.366, depth: 0.5 } },
+  square: { flank: 0, external: { crest: 0.5, depth: 0.5 }, internal: { crest: 0.5, depth: 0.5 } },
+};
+
+/** 'M8' (coarse pitch), 'M8x1' (fine), 'Tr8x8(P2)' (trapezoidal: diameter, lead, pitch) or a diameter in mm. */
+function parseThreadSize(size) {
+  if (typeof size === 'number') return { d: checkPositive('thread', 'size', size) };
+  if (typeof size !== 'string') throw new TypeError(`thread: size must be like 'M8', 'M8x1', 'Tr8x8(P2)' or a diameter in mm, got ${describe(size)}`);
+  const s = size.replace(/\s+/g, '');
+  let m = s.match(/^M(\d+(?:\.\d+)?)(?:x(\d+(?:\.\d+)?))?$/i);
+  if (m) {
+    const d = +m[1];
+    if (m[2] !== undefined) return { d, pitch: +m[2] };
+    const p = THREAD_PITCH['M' + m[1].replace('.', '_')];
+    if (p === undefined) throw new RangeError(`thread: no coarse pitch for ${size}; give it as '${size}x<pitch>' (known: ${Object.keys(THREAD_PITCH).join(', ').replace(/_/g, '.')})`);
+    return { d, pitch: p };
+  }
+  m = s.match(/^Tr(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)(?:\(P(\d+(?:\.\d+)?)\))?$/i);
+  if (m) {
+    const d = +m[1], lead = +m[2], pitch = m[3] === undefined ? lead : +m[3];
+    const starts = lead / pitch;
+    if (!Number.isInteger(starts)) throw new RangeError(`thread: ${size}: the lead must be a whole number of pitches`);
+    return { d, pitch, starts, profile: 'trapezoid' };
+  }
+  throw new TypeError(`thread: size must be like 'M8', 'M8x1', 'Tr8x8(P2)' or a diameter in mm, got ${describe(size)}`);
+}
+
+/**
+ * A screw thread along Y from y = 0 to `length`, centred on the axis.
+ * External (default): a threaded rod. internal: true: the cutter for a threaded hole (subtract it).
+ * opts: { size = 'M8' ('M8', 'M8x1', 'Tr8x8(P2)', or a diameter with pitch), pitch, length = 10, internal = false,
+ *         profile = 'iso' | 'trapezoid' | 'square', starts = 1, left = false,
+ *         tolerance (mm on the diameter: the rod shrinks, the hole grows; a hole defaults to the printer's
+ *         holeCompensation once printer() is declared), chamfer = true (45° lead-in at both ends), segments = 32 (per turn) }
+ */
+function thread(opts = {}) {
+  const spec = parseThreadSize(opts.size === undefined ? 'M8' : opts.size);
+  const pitch = opts.pitch !== undefined ? opts.pitch : spec.pitch;
+  if (pitch === undefined) throw new TypeError('thread: give a pitch for a diameter size, or a size like \'M8\'');
+  checkPositive('thread', 'pitch', pitch);
+  const length = opts.length === undefined ? 10 : opts.length;
+  const internal = !!opts.internal;
+  const profileName = opts.profile !== undefined ? opts.profile : spec.profile !== undefined ? spec.profile : 'iso';
+  const starts = opts.starts !== undefined ? opts.starts : spec.starts !== undefined ? spec.starts : 1;
+  const left = !!opts.left;
+  const chamfer = opts.chamfer === undefined ? true : !!opts.chamfer;
+  const segments = opts.segments === undefined ? 32 : opts.segments;
+  let tolerance = opts.tolerance;
+  if (tolerance === undefined) { const pp = printProfile(); tolerance = internal && pp.declared ? pp.holeCompensation : 0; }
+  checkPositive('thread', 'length', length); checkInt('thread', 'starts', starts, 1); checkInt('thread', 'segments', segments, 8);
+  checkNonNegative('thread', 'tolerance', tolerance);
+  const prof = typeof profileName === 'string' ? THREAD_PROFILES[profileName] : undefined;
+  if (!prof) throw new TypeError(`thread: profile must be 'iso', 'trapezoid' or 'square', got ${describe(profileName)}`);
+  const form = internal ? prof.internal : prof.external;
+  const d = spec.d;
+  if (pitch >= d / 2) throw new RangeError(`thread: pitch ${pitch} is too coarse for a ${d} mm thread`);
+  const lead = pitch * starts;
+  const depth = form.depth * pitch, crest = form.crest * pitch, slope = Math.tan(rad(prof.flank));
+  const rMaj = d / 2 + (internal ? tolerance / 2 : -tolerance / 2), rMin = rMaj - depth;
+  if (rMin <= 0) throw new RangeError(`thread: a ${pitch} mm pitch leaves no core in a ${d} mm thread`);
+  const flank = depth * slope, half = crest / 2;
+  if (crest + 2 * flank > pitch + 1e-9) throw new RangeError('thread: the profile does not fit in one pitch');
+  // the axial profile: crest centred on v = 0, flanks, root
+  const R = (v) => {
+    if (v <= half || v >= pitch - half) return rMaj;
+    if (v < half + flank) return rMaj - (depth * (v - half)) / flank;
+    if (v > pitch - half - flank) return rMaj - (depth * (pitch - half - v)) / flank;
+    return rMin;
+  };
+  // samples along one pitch: the four corners, each piece subdivided (square flanks are radial steps)
+  const corners = [0, half, half + flank, pitch - half - flank, pitch - half, pitch];
+  const per = Math.max(2, Math.ceil(segments / (4 * starts)));
+  const vs = [];
+  for (let k = 0; k < 5; k++) {
+    const a = corners[k], b = corners[k + 1];
+    if (b - a < 1e-12) continue;
+    for (let i = 0; i < per; i++) vs.push(a + ((b - a) * i) / per);
+  }
+  const pts = []; // { a: angle in [0, 2π), k: insertion order, p: [x, y] }
+  const add = (theta, r) => pts.push({ a: theta, k: pts.length, p: [r * Math.cos(theta), r * Math.sin(theta)] });
+  for (let s = 0; s < starts; s++) {
+    for (const v of vs) {
+      // radius at angle θ is R(-lead θ / 360 mod pitch): sample v gives θ = 360 (pitch - v + s pitch) / lead
+      const theta = rad((360 * ((pitch - v) % pitch + s * pitch)) / lead);
+      if (flank < 1e-12 && (Math.abs(v - half) < 1e-12 || Math.abs(v - (pitch - half)) < 1e-12)) {
+        // a square step: both radii at the same angle, in the order the outline meets them (θ falls as v rises)
+        const outerFirst = Math.abs(v - (pitch - half)) < 1e-12;
+        add(theta, outerFirst ? rMaj : rMin);
+        add(theta, outerFirst ? rMin : rMaj);
+        continue;
+      }
+      add(theta, R(v));
+    }
+  }
+  // by angle, so the outline runs once round the axis; equal angles (a square step) keep their order
+  pts.sort((p, q) => (p.a - q.a) || (p.k - q.k));
+  const twist = ((left ? -1 : 1) * 360 * length) / lead;
+  const slices = Math.max(1, Math.ceil((Math.abs(twist) * segments) / 360));
+  let body = extrude(polygon2d(pts.map((e) => e.p)), length, { twist, slices });
+  if (chamfer) {
+    const c = Math.min(depth, length / 2);
+    if (internal) {
+      // flared entries: a cone at each end from rMaj + c down to rMaj (so a bolt finds the thread)
+      const flare = revolve(polygon2d([[0, -0.01], [rMaj + c + 0.01, -0.01], [rMaj - 0.01, c], [0, c]]), { segments: 4 * segments });
+      body = union(body, flare, flare.mirror('y').translate(0, length, 0));
+    } else {
+      // 45° lead-in at both ends: the rod is intersected with a chamfered cylinder
+      const blank = revolve(polygon2d([[0, 0], [rMin - 0.01, 0], [rMaj + 0.01, c + 0.01], [rMaj + 0.01, length - c - 0.01], [rMin - 0.01, length], [0, length]]), { segments: 4 * segments });
+      body = intersect(body, blank);
+    }
+  }
+  return body;
+}
+
 // ---- helpers --------------------------------------------------------------------
 
 const deg = (radians) => (radians * 180) / Math.PI;
@@ -2522,7 +2650,7 @@ export const api = {
   Sketch, circle, ellipse, rect, square, roundedRect, regularPolygon, polygon2d, slot, teardrop, bridgedCircle,
   union2d, difference2d, intersect2d, hull2d, extrude, revolve, projection, sketch, SketchBuilder, text, text3d, emboss, engrave,
   SCREWS, screw, screwHole, nutPocket, heatInsert, hole,
-  gear, gear2d, gearPair, gearDistance, rack, ringGear, ringAddendum, planetary,
+  gear, gear2d, gearPair, gearDistance, rack, ringGear, ringAddendum, planetary, thread,
   Path, path, line, arc, helix, bezier, sweep, polyhedron, loft, fillet, chamfer, sharpEdges,
   GrayImage, heightmap, lithophane, __temenImage, __temenMesh,
   overhangs, unsupported, minWallThickness, printability,

@@ -219,6 +219,14 @@ planetary({ module, sun, planet, planets, thickness, backlash, helix, rim, sunBo
                                                   //   the ring's tips are shortened with ringAddendum() when the planets are small
 // Give printed pairs backlash: 0.1–0.2 mm (gearPair splits it between the two). Cut gears under 17 teeth (at 20°) are undercut at the root;
 // these profiles are not, so a very small pinion may want a little more backlash.</pre>
+      <h3>Threads</h3>
+      <pre>thread({ size, length, internal, pitch, profile, starts, left, tolerance, chamfer, segments })  // along Y from y = 0 to length, centred;
+                                                  //   external: a threaded rod; internal: true: the cutter for a threaded hole (subtract it)
+// size: 'M8' (ISO coarse pitch, M2–M24), 'M8x1' (fine pitch), 'Tr8x8(P2)' (trapezoidal lead screw: diameter, lead, pitch), or a diameter with pitch
+// profile: 'iso' (60°, default) | 'trapezoid' (30°) | 'square'; starts: multi-start threads; left: true for a left-hand thread
+// tolerance: mm on the diameter (the rod shrinks, the hole grows); a hole defaults to printer()'s holeCompensation. Printed pairs want ~0.3–0.4.
+// chamfer (default true): a 45° lead-in on rods, flared entries on holes, at both ends; give a hole cutter the hole's exact length
+// segments: samples per turn (32); an M8 × 20 rod is about 40k triangles</pre>
       <h3>Holes and screw helpers (cutters to subtract)</h3>
       <pre>hole(r, length, { axis, shape, angle, flat, tolerance })  // centred on the origin along axis 'x' | 'y' | 'z'; horizontal holes get shape
                                                   //   'teardrop' (default: a 45° point on top) | 'bridge' (flat ceiling) | 'round'
