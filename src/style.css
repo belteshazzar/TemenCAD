@@ -298,7 +298,7 @@ dialog { position: relative; }
 .view-labels > div { position: absolute; left: 0; top: 0; white-space: nowrap; }
 .ref-tag { min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; color: #fff; font: 600 11px/18px system-ui, sans-serif; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
 .measure-tag { padding: 2px 6px; border-radius: 4px; background: #1a1a1a; color: #fff; font: 600 11px/1.3 ui-monospace, monospace; }
-.view-hint { position: absolute; top: 52px; left: 10px; padding: 4px 8px; border-radius: 6px; background: rgba(26,26,26,.78); color: #fff; font-size: 11px; z-index: 20; pointer-events: none; }
+.view-hint { position: absolute; top: 52px; left: 10px; padding: 4px 8px; border-radius: 6px; background: rgba(26,26,26,.78); color: #fff; font-size: 11px; z-index: 18; pointer-events: none; }
 .view-hint[hidden], .measure-panel[hidden] { display: none; }
 .measure-panel { position: absolute; top: 52px; right: 10px; min-width: 190px; padding: 8px 10px; background: rgba(251,250,247,.96); border: 1px solid var(--border);
   border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.1); z-index: 19; font-size: 12px; display: flex; flex-direction: column; gap: 3px; }
@@ -307,3 +307,47 @@ dialog { position: relative; }
 .measure-detail.strong { color: var(--text); font-weight: 600; }
 .measure-actions { display: flex; gap: 6px; margin-top: 4px; }
 .measure-actions button { padding: 2px 8px; font-size: 11px; }
+
+/* ---- Phones (desktop is unchanged) ----
+   Portrait: the 3D view on top, the chat (and file tabs) below; the view shrinks while typing.
+   Landscape: the 3D view beside the chat. Either way ⤢ expands the view to the whole screen. */
+#view-expand { display: none; }
+@media (max-width: 760px) and (orientation: portrait), (orientation: landscape) and (max-height: 520px) {
+  html, body { height: 100dvh; }
+  #app { height: 100dvh; }
+  #divider { display: none; }
+  #viewer-pane, #editor-pane { min-width: 0; min-height: 0; }
+  input, select, textarea, .chat-input { font-size: 16px; } /* below 16px iOS zooms the page on focus */
+  #view-expand { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0;
+    background: rgba(251,250,247,.92); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08); font-size: 16px; }
+  #view-tools { top: 8px; left: 8px; gap: 4px; }
+  #view-tools button { height: 34px; padding: 0 8px; }
+  #top-right { top: 8px; right: 8px; }
+  .view-hint { top: 48px; left: 8px; font-size: 11px; }
+  .measure-panel { top: auto; bottom: 8px; right: 8px; min-width: 160px; }
+  #console { left: 6px; right: 6px; bottom: 6px; max-height: 35%; font-size: 11px; padding: 4px 8px; }
+  #top-right .menu-items { max-height: calc(100dvh - 60px); overflow-y: auto; }
+  .chat-log { padding: 8px; }
+  .msg { max-width: 96%; }
+  .chat-form { padding: 6px 8px; }
+  .chat-attach { padding: 4px 6px; }
+  .attachment { max-width: 180px; }
+  dialog { max-width: calc(100vw - 16px); }
+  /* the view on its own, full screen */
+  body.view-expanded #viewer-pane { position: fixed; inset: 0; z-index: 50; height: auto; width: auto; }
+  body.view-expanded #editor-pane { visibility: hidden; }
+}
+@media (max-width: 760px) and (orientation: portrait) {
+  #app { flex-direction: column; }
+  #viewer-pane { flex: none; height: 38dvh; border-bottom: 1px solid var(--border); }
+  #app:has(.chat-input:focus) #viewer-pane { height: 24dvh; } /* leave the chat room above the keyboard */
+  #editor-pane { width: 100% !important; flex: 1; }
+  #view-tools button .label { display: none; } /* icons only in the short view */
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  #viewer-pane { flex: 1; }
+  #editor-pane { width: 50% !important; flex: none; }
+  #tabs { font-size: 12px; }
+  .chat-head { padding-top: 2px; padding-bottom: 2px; }
+}

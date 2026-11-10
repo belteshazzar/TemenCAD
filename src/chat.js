@@ -55,6 +55,11 @@ export function initChat({ root, host, onChange = () => {} }) {
   const settings = (() => { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch { return {}; } })();
   const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} };
   const keepInFile = () => settings.keepInFile !== false;
+  // On touch screens focusing the input raises the keyboard and (in portrait) shrinks the 3D view, so the
+  // chat only takes focus when tapped there; elsewhere it keeps focus ready for typing.
+  const touch = matchMedia('(pointer: coarse)').matches;
+  const focusInput = () => { if (!touch) input.focus(); };
+  if (matchMedia('(max-width: 760px), (max-height: 520px)').matches) input.placeholder = 'Describe a change, or attach a photo';
 
   const agent = new Agent({ ...host, showImage, saveAttachment });
   function applySettings() {
@@ -380,7 +385,7 @@ export function initChat({ root, host, onChange = () => {} }) {
         : a.kind === 'ref' ? `pointed at in the 3D view${a.color ? ` · ${a.color}` : ''}` : a.kind === 'measure' ? 'measured in the 3D view' : `for the assistant · ${fmtBytes(a.size)}` })));
     if (mode === 'pending') {
       const x = el('button', { type: 'button', className: 'att-remove', textContent: '×', title: 'Remove' });
-      x.addEventListener('click', () => { dropAttached(a); if (a.kind === 'ref') host.removeReference?.(a.id); input.focus(); });
+      x.addEventListener('click', () => { dropAttached(a); if (a.kind === 'ref') host.removeReference?.(a.id); focusInput(); });
       chip.appendChild(x);
     }
     return chip;
@@ -419,7 +424,7 @@ export function initChat({ root, host, onChange = () => {} }) {
     return host.putFile(target, buffer, { replace });
   }
   root.querySelector('.chat-attach').addEventListener('click', () => { attachInput.value = ''; attachInput.click(); });
-  attachInput.addEventListener('change', () => { attach([...attachInput.files]); input.focus(); });
+  attachInput.addEventListener('change', () => { attach([...attachInput.files]); focusInput(); });
   input.addEventListener('paste', (e) => {
     const files = [...(e.clipboardData?.files ?? [])];
     if (files.length) { e.preventDefault(); attach(files); }
@@ -434,7 +439,7 @@ export function initChat({ root, host, onChange = () => {} }) {
     if (!hasFiles(e)) return;
     e.preventDefault(); dragDepth = 0; dropHint.hidden = true;
     attach([...e.dataTransfer.files]);
-    input.focus();
+    focusInput();
   });
 
   /**
@@ -531,7 +536,7 @@ export function initChat({ root, host, onChange = () => {} }) {
     } finally {
       try { endTurn(turn); } catch (err) { console.error(err); }
       send.disabled = false; stop.hidden = true;
-      input.focus();
+      if (touch) input.blur(); else input.focus(); // on a phone, drop the keyboard so the result shows
     }
   });
   /** After a reply: checkpoint what it changed, put the actions under it, keep the conversation. */
@@ -590,7 +595,7 @@ export function initChat({ root, host, onChange = () => {} }) {
   return {
     openSettings, ask, offerDownload, addReference,
     /** Called by the tab bar when the Assistant tab is shown. */
-    focus: () => { showEmpty(); input.focus(); },
+    focus: () => { showEmpty(); focusInput(); },
     get busy() { return agent.busy; },
     /** Archive entries for the project file ({ path: bytes }), or null when there is nothing to keep. */
     archive: () => (keepInFile() && entries.length ? toArchive(pack()) : null),

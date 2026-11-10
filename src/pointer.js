@@ -31,8 +31,8 @@ export class Pointer {
     // toolbar, label layer and the measurement panel
     this.toolbar = Object.assign(document.createElement('div'), { id: 'view-tools' });
     this.toolbar.innerHTML = `
-      <button type="button" data-mode="point" title="Point: click a face or part to refer to it in your message to the assistant (Esc to stop)">☝ Point</button>
-      <button type="button" data-mode="measure" title="Measure: click two points; corners snap (Esc to stop)">📏 Measure</button>`;
+      <button type="button" data-mode="point" title="Point: click a face or part to refer to it in your message to the assistant (Esc to stop)">☝<span class="label"> Point</span></button>
+      <button type="button" data-mode="measure" title="Measure: click two points; corners snap (Esc to stop)">📏<span class="label"> Measure</span></button>`;
     this.labels = Object.assign(document.createElement('div'), { className: 'view-labels' });
     this.panel = Object.assign(document.createElement('div'), { className: 'measure-panel', hidden: true });
     this.hint = Object.assign(document.createElement('div'), { className: 'view-hint', hidden: true });
@@ -66,8 +66,9 @@ export class Pointer {
     this.canvas.classList.toggle('pointing', !!mode);
     this.setHover(null);
     this.hint.hidden = !mode;
-    this.hint.textContent = mode === 'point' ? 'Click a face or part to refer to it in your message · click it again to drop it · Esc to stop'
-      : mode === 'measure' ? 'Click two points to measure · corners snap · Esc to stop' : '';
+    const touch = matchMedia('(pointer: coarse)').matches;
+    this.hint.textContent = mode === 'point' ? (touch ? 'Tap a face to refer to it · tap again to drop it' : 'Click a face or part to refer to it in your message · click it again to drop it · Esc to stop')
+      : mode === 'measure' ? (touch ? 'Tap two points · corners snap' : 'Click two points to measure · corners snap · Esc to stop') : '';
     if (mode !== 'measure' && this.measure && !this.measure.b) this.clearMeasure();
   }
 

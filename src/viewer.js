@@ -69,6 +69,24 @@ export class Viewer {
     this.camera.updateProjectionMatrix();
   }
 
+  /**
+   * Run a layout change (e.g. the phone's full-screen view) keeping what is framed: the camera moves in
+   * or out so the view's narrower side still shows the same extent, keeping the user's angle.
+   */
+  keepFraming(change) {
+    const el = this.canvas.parentElement;
+    const before = el.clientWidth / Math.max(1, el.clientHeight);
+    change();
+    const after = el.clientWidth / Math.max(1, el.clientHeight);
+    const k = Math.min(1, before) / Math.min(1, after); // visible extent of the narrow side goes with distance * min(1, aspect)
+    if (!isFinite(k) || Math.abs(k - 1) < 1e-3) return;
+    const target = this.controls.target;
+    this.camera.position.sub(target).multiplyScalar(k).add(target);
+    this.camera.far = Math.max(this.camera.far, this.camera.position.distanceTo(target) * 20);
+    this.resize();
+    this.controls.update();
+  }
+
   /** Frame the build plate if one is set, otherwise the model, from the default direction. */
   resetView() {
     let box = null;

@@ -627,6 +627,15 @@ function makeDivider(el, onMove) {
     el.addEventListener('pointerup', up);
   });
 }
+// ---- Phones: ⤢ shows the 3D view on its own (the button only appears in the phone layouts) ----
+const expandBtn = document.getElementById('view-expand');
+expandBtn.addEventListener('click', () => {
+  let on;
+  viewer.keepFraming(() => { on = document.body.classList.toggle('view-expanded'); });
+  expandBtn.textContent = on ? '⤡' : '⤢';
+  expandBtn.title = on ? 'Back to the chat' : 'Show the 3D view on its own';
+});
+
 const editorPane = document.getElementById('editor-pane');
 makeDivider(document.getElementById('divider'), (x) => { editorPane.style.width = `${Math.max(200, window.innerWidth - x)}px`; });
 
