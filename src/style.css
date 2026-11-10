@@ -211,7 +211,23 @@ dialog.lightbox img { display: block; width: 100%; height: auto; max-height: cal
 .lightbox-bar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; }
 .lightbox-caption { flex: 1; color: var(--muted); font-size: 12px; }
 .lightbox-save { color: var(--accent); font-weight: 600; text-decoration: none; }
-.chat-form { display: flex; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--border); align-items: flex-end; }
+.chat-form { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border); }
+.chat-row { display: flex; gap: 8px; align-items: flex-end; }
+.chat-attach { padding: 4px 8px; font-size: 14px; line-height: 1; align-self: stretch; }
+.chat-attachments { display: flex; gap: 6px; flex-wrap: wrap; }
+.attachment { position: relative; display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 3px 22px 3px 3px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); font-size: 11px; }
+.attachment img { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; background: #fff; }
+.attachment .att-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 4px; background: var(--panel); font-size: 10px; font-weight: 700; color: var(--muted); }
+.attachment .att-text { display: flex; flex-direction: column; min-width: 0; }
+.attachment .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment .att-role { color: var(--muted); }
+.attachment .att-remove { position: absolute; top: 2px; right: 2px; border: 0; background: none; color: var(--muted); padding: 0 4px; font-size: 13px; cursor: pointer; }
+.msg.user .msg-attachments { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.msg.user .msg-attachments .attachment { padding-right: 6px; background: rgb(255 255 255 / 0.6); }
+.msg.user .msg-attachments img { cursor: zoom-in; }
+#chat { position: relative; }
+.chat-drop { position: absolute; inset: 6px; display: grid; place-items: center; padding: 24px; text-align: center; border: 2px dashed var(--accent); border-radius: 10px; background: color-mix(in srgb, var(--panel) 88%, transparent); color: var(--accent); font-weight: 600; pointer-events: none; z-index: 5; }
+.chat-drop[hidden] { display: none; }
 .chat-input { flex: 1; resize: none; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
 .chat-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .chat-buttons { display: flex; gap: 6px; }

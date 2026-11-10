@@ -27,7 +27,8 @@ const SYSTEM = `You are the modelling assistant inside TemenCAD, a browser app w
 
 How to work:
 - The project's files and the last build report are included with every user message. Read them before deciding what to change. main.js is the entry script; other .js files are ES modules it imports (\`import { lid } from './lid.js'\`, \`export const lid = ...\`). Fonts (.ttf/.otf), meshes (.stl) and images (.png/.jpg) in the project are imported the same way: \`import logo from './Logo.ttf'\` gives a font name for text(), \`import part from './part.stl'\` gives a Shape, \`import photo from './photo.png'\` gives an image for heightmap() and lithophane().
-- Make the smallest edit that does the job with edit_script (exact-match replacement; pass \`file\` for anything other than main.js). Use write_script only for new models, new files or large rewrites. To split a model into modules, write_script a new .js file name (it is created) and import it from main.js; remove_file and rename_file manage script files. Fonts, meshes and images can only be added by the user.
+- Make the smallest edit that does the job with edit_script (exact-match replacement; pass \`file\` for anything other than main.js). Use write_script only for new models, new files or large rewrites. To split a model into modules, write_script a new .js file name (it is created) and import it from main.js; remove_file and rename_file manage script files. Fonts, meshes and images can only be added by the user: they can attach or drop them into the chat (the message's <app_events> lists what was added), or you can ask with add_files.
+- The user can attach photos, sketches and PDFs to a message (labelled Attachment 1, 2, … in order across the conversation). Use them as references: a broken part next to a ruler, a hand sketch with dimensions, a drawing. Read dimensions from the drawing's labels first; when you scale from a photo, say which reference you used (a ruler, a coin, a known part) and how sure you are, and ask for the one or two measurements that matter most (hole spacing, mating diameters) rather than guessing them. To use an attached image in the model itself (lithophane, heightmap), save_attachment puts it in the project.
 - After every change call run_model and read the report. Fix any error or warning it reports (they include line numbers) before replying. If the report says the model does not fit the plate, tell the user rather than silently shrinking their design.
 - Use render_views when the shape of the result matters and the build report can't confirm it (first version of a new model, visual arrangement, fit against a ghost reference, anything you are unsure of): it returns labelled views (part names, sizes, scale bar, axes) with ghosts translucent, and can cut the model open with a section. take_screenshot gives the live 3D view instead. Both images also appear in the chat as thumbnails the user can open, so you can refer to them.
 - Each of your replies that changed the project gets an Undo button, and Download STL / 3MF buttons when the build succeeded, so you don't need to offer those. When the user undoes or redoes a reply, an <app_events> note says so at the top of their next message; the <project> block is then the restored state.
@@ -65,6 +66,7 @@ const TOOL_DESCRIPTIONS = {
   set_autorun: 'Turn auto-run (rebuild as the user types) on or off (View > Auto-run).',
   search_catalog: 'Search the shared catalogue of parametric shapes (hinges, clips, knobs, boxes…). query: words that must all match (empty lists everything). Returns name, title, description, exports and parts of each.',
   add_from_catalog: 'Add a catalogue shape to the project by name: its files are copied into catalog/<name>/ and an import line is added to main.js. Then use its exports in main.js and run_model.',
+  save_attachment: 'Add an image the user attached to a message (Attachment n) to the project as a file, e.g. a photo for lithophane() or heightmap(); then import it from main.js. .png and .jpg keep their bytes; other types are converted to .png. PDFs cannot be saved.',
   add_files: 'Ask the user to add files from their computer (images for heightmap/lithophane, fonts for text, STL meshes, SVG drawings, scripts). Puts an "Add files" button in the chat with your reason, waits for the click and returns the names added; import them from main.js.',
 };
 
@@ -82,6 +84,7 @@ export class Agent {
     this.host = host;
     this.messages = [];
     this.notes = []; // things the user did in the app (undo, redo) to tell the model with the next message
+    this.attachments = []; // files the user showed the model (attachment n is attachments[n - 1]), for save_attachment
     this.client = null;
     this.abort = null;
   }
@@ -92,7 +95,9 @@ export class Agent {
     this.client = apiKey ? new Anthropic({ apiKey, dangerouslyAllowBrowser: true }) : null;
   }
 
-  reset() { this.messages = []; this.notes = []; }
+  reset() { this.messages = []; this.notes = []; this.attachments = []; }
+  /** Remember a file shown to the model; returns its attachment number. */
+  addAttachment(file) { this.attachments.push(file); return this.attachments.length; }
   /** Tell the model about something the user did, with their next message. */
   note(text) { this.notes.push(text); }
 
@@ -243,6 +248,15 @@ export class Agent {
       tool('search_catalog', { query: { type: 'string' } }, async ({ query }) => json(await host.searchCatalog(query ?? ''))),
       tool('add_from_catalog', { name: { type: 'string', description: 'Package name from search_catalog' } },
         async ({ name }) => json(await host.addFromCatalog(name)), ['name']),
+      tool('save_attachment', {
+        attachment: { type: 'integer', description: 'The attachment number from the message' },
+        name: { type: 'string', description: 'File name in the project (default: the attachment\'s name); the extension follows the image type' },
+        replace: { type: 'boolean', description: 'Replace a project file of the same name' },
+      }, async ({ attachment, name, replace }) => {
+        const file = this.attachments[attachment - 1];
+        if (!file) throw new Error(`no attachment ${attachment}; there ${this.attachments.length === 1 ? 'is 1' : `are ${this.attachments.length}`}`);
+        return json(await host.saveAttachment(file, name, !!replace));
+      }, ['attachment']),
       tool('add_files', { reason: { type: 'string', description: 'Shown on the button card: what to add and why, e.g. "Add the photo for the lithophane (.png or .jpg)"' } },
         async ({ reason }) => json(await host.addFiles(reason)), ['reason']),
     ];
@@ -262,14 +276,17 @@ export class Agent {
   /**
    * Send a user message and stream the reply.
    * events: onText(delta), onTool(name), onDone(finalMessage), onError(err)
+   * extra: { blocks: image / document content blocks to show with the message, notes: lines for <app_events> }
    */
-  async send(text, events) {
+  async send(text, events, extra = {}) {
     if (!this.client) throw new Error('No API key set. Open Assistant settings and paste your Anthropic API key.');
     if (this.busy) throw new Error('The assistant is still working.');
     this.abort = new AbortController();
     const before = [...this.messages];
     const notes = this.notes.splice(0);
-    this.messages.push({ role: 'user', content: (notes.length ? `<app_events>\n${notes.join('\n')}\n</app_events>\n\n` : '') + text + this.turnContext() });
+    const appEvents = [...notes, ...(extra.notes ?? [])];
+    const body = (appEvents.length ? `<app_events>\n${appEvents.join('\n')}\n</app_events>\n\n` : '') + text + this.turnContext();
+    this.messages.push({ role: 'user', content: extra.blocks?.length ? [...extra.blocks, { type: 'text', text: body }] : body });
 
     const params = {
       model: this.model,

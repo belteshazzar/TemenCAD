@@ -120,12 +120,18 @@
           </div>
           <div class="chat-log"></div>
           <form class="chat-form">
-            <textarea class="chat-input" rows="2" placeholder="Describe a change, e.g. “add four M3 countersunk holes in the corners”"></textarea>
-            <div class="chat-buttons">
-              <button type="button" class="chat-stop secondary" hidden>Stop</button>
-              <button type="submit" class="chat-send">Send</button>
+            <div class="chat-attachments" hidden></div>
+            <div class="chat-row">
+              <button type="button" class="chat-attach secondary" title="Attach photos, sketches or PDFs for the assistant to look at, or STL, SVG, font and script files to add to the project (you can also drop or paste them here)">📎</button>
+              <input type="file" class="chat-attach-input" multiple hidden accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf,.stl,.svg,.ttf,.otf,.js,.mjs,.json,.txt,.md">
+              <textarea class="chat-input" rows="2" placeholder="Describe a change, e.g. “add four M3 countersunk holes in the corners”, or attach a photo or sketch"></textarea>
+              <div class="chat-buttons">
+                <button type="button" class="chat-stop secondary" hidden>Stop</button>
+                <button type="submit" class="chat-send">Send</button>
+              </div>
             </div>
           </form>
+          <div class="chat-drop" hidden>Drop photos, sketches and PDFs to show the assistant, or STL, SVG, font and script files to add to the project</div>
         </section>
         <div id="editor"></div>
         <div id="asset-info" hidden></div>

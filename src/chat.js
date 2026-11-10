@@ -3,6 +3,7 @@
  * the streamed conversation; the API key and model live in localStorage.
  */
 import { Agent, MODELS, DEFAULT_MODEL, describeAgentError } from './agent.js';
+import { classify, prepareImage, projectImage, blobToBase64 } from './attachments.js';
 
 const SETTINGS_KEY = 'temencad.assistant';
 const TOOL_LABELS = {
@@ -10,7 +11,7 @@ const TOOL_LABELS = {
   rename_file: 'Renaming a file', run_model: 'Building the model', take_screenshot: 'Taking a screenshot', render_views: 'Rendering views',
   new_project: 'Starting a new project', open_project: 'Opening a project', save_project: 'Saving the project', export_model: 'Exporting',
   share_project: 'Preparing to share', set_view: 'Changing the view', set_plate: 'Setting the build plate', set_part_display: 'Changing part display',
-  set_autorun: 'Changing auto-run', search_catalog: 'Searching the catalogue', add_from_catalog: 'Adding from the catalogue', add_files: 'Adding files',
+  set_autorun: 'Changing auto-run', search_catalog: 'Searching the catalogue', add_from_catalog: 'Adding from the catalogue', add_files: 'Adding files', save_attachment: 'Adding the image to the project',
 };
 const fmtBytes = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 
@@ -45,7 +46,10 @@ export function initChat({ root, host }) {
   const settings = (() => { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch { return {}; } })();
   const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} };
 
-  const agent = new Agent({ ...host, showImage });
+  const agent = new Agent({ ...host, showImage, saveAttachment });
+  const attachRow = root.querySelector('.chat-attachments');
+  const attachInput = root.querySelector('.chat-attach-input');
+  const dropHint = root.querySelector('.chat-drop');
   function applySettings() {
     agent.configure({ apiKey: settings.apiKey, model: settings.model || DEFAULT_MODEL });
     modelEl.textContent = settings.apiKey ? (MODELS.find((m) => m[0] === agent.model)?.[1] ?? agent.model) : 'No API key set';
@@ -193,6 +197,99 @@ export function initChat({ root, host }) {
     });
   }
 
+  // ---- Attachments: shown to the assistant (images, PDFs) or added to the project (STL, SVG, fonts, scripts) ----
+  let attached = []; // { file, kind: 'image' | 'pdf' | 'file', url? }
+  let pasteCount = 0;
+  function attachmentChip(a, removable) {
+    const chip = Object.assign(document.createElement('div'), { className: 'attachment', title: a.file.name });
+    if (a.kind === 'image') {
+      const img = Object.assign(document.createElement('img'), { src: a.url, alt: a.file.name });
+      if (!removable) img.addEventListener('click', () => openLightbox(a.url, a.file.name, a.file.name));
+      chip.appendChild(img);
+    } else {
+      chip.appendChild(Object.assign(document.createElement('span'), { className: 'att-icon', textContent: (a.file.name.match(/\.([^.]+)$/)?.[1] ?? '').toUpperCase().slice(0, 4) }));
+    }
+    const text = Object.assign(document.createElement('span'), { className: 'att-text' });
+    text.append(
+      Object.assign(document.createElement('span'), { className: 'att-name', textContent: a.file.name }),
+      Object.assign(document.createElement('span'), { className: 'att-role', textContent: a.kind === 'file' ? (removable ? 'adds to the project' : 'added to the project') : `for the assistant · ${fmtBytes(a.file.size)}` }),
+    );
+    chip.appendChild(text);
+    if (removable) {
+      const x = Object.assign(document.createElement('button'), { type: 'button', className: 'att-remove', textContent: '×', title: 'Remove' });
+      x.addEventListener('click', () => { attached = attached.filter((b) => b !== a); if (a.url) URL.revokeObjectURL(a.url); renderAttached(); input.focus(); });
+      chip.appendChild(x);
+    }
+    return chip;
+  }
+  function renderAttached() {
+    attachRow.textContent = '';
+    for (const a of attached) attachRow.appendChild(attachmentChip(a, true));
+    attachRow.hidden = !attached.length;
+  }
+  function attach(files) {
+    const problems = [];
+    for (let file of files) {
+      const kind = classify(file);
+      if (typeof kind !== 'string') { problems.push(kind.error); continue; }
+      // pasted screenshots all arrive as "image.png"
+      if (kind === 'image' && /^image\.(png|jpe?g|gif|webp)$/i.test(file.name)) file = new File([file], `pasted-${++pasteCount}.${file.name.split('.').pop()}`, { type: file.type });
+      attached.push({ file, kind, url: kind === 'image' ? URL.createObjectURL(file) : null });
+    }
+    renderAttached();
+    if (problems.length) addMsg('error', problems.join('\n'));
+  }
+  async function saveAttachment(file, name, replace) {
+    if (classify(file) !== 'image') throw new Error(`${file.name} is not an image; only images can be saved to the project`);
+    const { name: target, buffer } = await projectImage(file, name);
+    return host.putFile(target, buffer, { replace });
+  }
+  root.querySelector('.chat-attach').addEventListener('click', () => { attachInput.value = ''; attachInput.click(); });
+  attachInput.addEventListener('change', () => { attach([...attachInput.files]); input.focus(); });
+  input.addEventListener('paste', (e) => {
+    const files = [...(e.clipboardData?.files ?? [])];
+    if (files.length) { e.preventDefault(); attach(files); }
+  });
+  // Dropping anywhere on the chat panel
+  let dragDepth = 0;
+  const hasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes('Files');
+  root.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; dropHint.hidden = false; });
+  root.addEventListener('dragover', (e) => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  root.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; dropHint.hidden = true; } });
+  root.addEventListener('drop', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); dragDepth = 0; dropHint.hidden = true;
+    attach([...e.dataTransfer.files]);
+    input.focus();
+  });
+
+  /**
+   * Turn the attachments into content blocks and app-event notes for one message. Project files are
+   * added here, inside the turn, so the reply's Undo takes them out again.
+   */
+  async function prepareAttachments(list) {
+    const blocks = [], notes = [];
+    const files = list.filter((a) => a.kind === 'file').map((a) => a.file);
+    if (files.length) {
+      const added = await host.addChatFiles(files);
+      const skipped = files.map((f) => f.name).filter((n) => !added.includes(n));
+      if (added.length) notes.push(`The user added these files to the project with this message: ${added.join(', ')}. Import them from main.js to use them.`);
+      if (skipped.length) notes.push(`The user chose not to add (or replace) ${skipped.join(', ')}.`);
+    }
+    for (const a of list) {
+      if (a.kind === 'image') {
+        const img = await prepareImage(a.file);
+        const n = agent.addAttachment(a.file);
+        const size = `${img.source.width}×${img.source.height} px${img.width !== img.source.width ? `, shown at ${img.width}×${img.height}` : ''}`;
+        blocks.push({ type: 'text', text: `Attachment ${n}: ${a.file.name} (image, ${size})` }, { type: 'image', source: { type: 'base64', media_type: img.mediaType, data: img.data } });
+      } else if (a.kind === 'pdf') {
+        const n = agent.addAttachment(a.file);
+        blocks.push({ type: 'text', text: `Attachment ${n}: ${a.file.name} (PDF)` }, { type: 'document', title: a.file.name, source: { type: 'base64', media_type: 'application/pdf', data: await blobToBase64(a.file) } });
+      }
+    }
+    return { blocks, notes };
+  }
+
   function showEmpty() {
     if (!log.children.length) addMsg('empty', settings.apiKey
       ? 'Describe what you want to build or change. The assistant edits the script, builds it, and checks the result.'
@@ -202,24 +299,37 @@ export function initChat({ root, host }) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const text = input.value.trim();
-    if (!text || agent.busy) return;
+    if ((!text && !attached.length) || agent.busy) return;
     if (!settings.apiKey) { openSettings(); return; }
     log.querySelector('.msg.empty')?.remove();
-    addMsg('user', text);
+    const sending = attached;
+    attached = []; renderAttached();
+    const userMsg = addMsg('user', text);
+    if (sending.length) {
+      const row = Object.assign(document.createElement('div'), { className: 'msg-attachments' });
+      for (const a of sending) row.appendChild(attachmentChip(a, false));
+      userMsg.prepend(row);
+      for (const a of sending) if (a.url) downloads.push(a.url); // revoked on New chat
+    }
     input.value = '';
     send.disabled = true; stop.hidden = false;
     let bubble = null;
     const ensureBubble = () => bubble ?? (bubble = addMsg('assistant'));
     let streamed = '';
-    const turn = { text, before: host.snapshot() };
+    const turn = { text: text || sending.map((a) => a.file.name).join(', '), before: host.snapshot() };
     try {
-      await agent.send(text, {
+      const extra = await prepareAttachments(sending);
+      await agent.send(text || '(see the attachments)', {
         onText: (delta) => { streamed += delta; renderMarkdown(ensureBubble(), streamed); log.scrollTop = log.scrollHeight; },
         onTool: (name) => { bubble = null; streamed = ''; addMsg('tool', `${TOOL_LABELS[name] ?? name}…`); },
         onDone: (final) => { if (final?.stop_reason === 'refusal') addMsg('error', 'The model declined this request.'); },
-      });
+      }, extra);
     } catch (err) {
       cancelPending();
+      // the message was dropped from the conversation: put what it showed back, ready to send again
+      // (project files were added already and stay; their names are in the project the next message carries)
+      const shown = sending.filter((a) => a.kind !== 'file');
+      if (shown.length) { attached = [...shown, ...attached]; renderAttached(); }
       addMsg('error', describeAgentError(err));
       if (err instanceof Error && /API key/.test(err.message)) openSettings();
     } finally {
@@ -237,6 +347,8 @@ export function initChat({ root, host }) {
     for (const u of downloads.splice(0)) URL.revokeObjectURL(u);
     log.textContent = '';
     latestDownloads = null;
+    for (const a of attached) if (a.url) URL.revokeObjectURL(a.url);
+    attached = []; renderAttached();
     showEmpty();
   });
 

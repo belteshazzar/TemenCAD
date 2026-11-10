@@ -15,7 +15,7 @@ import { PartsPanel } from './parts-panel.js';
 import { initMenus } from './menu.js';
 import { initChat } from './chat.js';
 import { DEFAULT_SCRIPT } from './default-script.js';
-import { Project, ENTRY } from './project.js';
+import { Project, ENTRY, ACCEPTED_EXT, normalizePath, extOf } from './project.js';
 import { Tabs } from './tabs.js';
 import { whereText } from './trace.js';
 import { initCatalog } from './catalog.js';
@@ -392,6 +392,25 @@ function appActions() {
       clearTimeout(timer);
       projectChanged({ run: false });
       return builder.runAndWait();
+    },
+    /** Files dropped or attached in the chat: added like Add files (asks before replacing), staying in the chat. */
+    addChatFiles: async (list) => {
+      const added = await tabs.addFiles(list);
+      stayInChat();
+      clearTimeout(timer); // the assistant builds when it is ready
+      projectChanged({ run: false });
+      return added;
+    },
+    /** A file the assistant saves (an attached image): no prompt, so replacing must be asked for. */
+    putFile: (name, content, { replace = false } = {}) => {
+      const n = normalizePath(name);
+      if (!n || !ACCEPTED_EXT.includes(extOf(n))) throw new Error(`"${name}" is not a valid project file name (${ACCEPTED_EXT.join(', ')})`);
+      if (project.has(n) && !replace) throw new Error(`${n} is already in the project; pass replace: true to overwrite it, or pick another name`);
+      project.set(n, content);
+      tabs.filesChanged([n]);
+      clearTimeout(timer);
+      projectChanged({ run: false });
+      return { done: true, file: n, bytes: content.byteLength, import_line: `import ${n.replace(/\.[^.]*$/, '').replace(/\W+(\w)?/g, (_, c) => (c ? c.toUpperCase() : '')).replace(/^\d/, '_$&') || 'image'} from './${n}';`, files: project.names() };
     },
     canExport: () => !!(lastReport?.ok && lastMeshes?.length),
     download: (format) => exportNow(format, baseName()),
