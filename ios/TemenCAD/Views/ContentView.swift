@@ -34,6 +34,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showSettings) { SettingsView().environmentObject(app) }
         .sheet(isPresented: $showCode) { CodeView().environmentObject(app) }
+        .sheet(item: $app.sharing) { file in
+            ShareSheet(url: file.url).presentationDetents([.medium, .large]).ignoresSafeArea()
+        }
         .onAppear {
             if !app.hasKey { showSettings = true }
             #if DEBUG
@@ -47,6 +50,12 @@ struct ContentView: View {
             .ignoresSafeArea(edges: expanded ? .all : [.top, .horizontal])
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: 8) {
+                    Menu {
+                        Button { app.share(.stl) } label: { Label("Share STL", systemImage: "cube") }
+                        Button { app.share(.threeMF) } label: { Label("Share 3MF (named, coloured parts)", systemImage: "square.stack.3d.up") }
+                    } label: { Image(systemName: "square.and.arrow.up") }
+                    .disabled(!app.canExport)
+                    .accessibilityLabel("Share the model for printing")
                     Menu {
                         ForEach(Agent.views, id: \.self) { v in Button(v.capitalized) { app.preview.frame(view: v) } }
                     } label: { Image(systemName: "cube") }

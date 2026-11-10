@@ -18,6 +18,10 @@ final class AppModel: ObservableObject, AgentHost {
     @Published private(set) var entries: [ChatEntry] = []
     @Published private(set) var busy = false
     @Published private(set) var buildStatus = ""
+    /// The visible, non-ghost parts of the last successful build: what STL and 3MF export write.
+    @Published private(set) var printableParts: [TemenPart] = []
+    /// A file waiting in the share sheet.
+    @Published var sharing: SharedFile?
     @Published var apiKey: String { didSet { Keychain.write(apiKey); agent.client.apiKey = apiKey } }
     @Published var model: String { didSet { UserDefaults.standard.set(model, forKey: "model"); agent.model = model } }
 
@@ -55,6 +59,7 @@ final class AppModel: ObservableObject, AgentHost {
         lastReport = BuildReport.make(result)
         buildStatus = BuildReport.summary(result)
         preview.show(result)
+        printableParts = result?.ok == true ? result!.parts.filter { !$0.ghost && !$0.hidden } : []
         return result
     }
 
@@ -123,6 +128,27 @@ final class AppModel: ObservableObject, AgentHost {
         Task { await rebuild(); preview.frame(view: "iso") }
     }
 
+    // MARK: - STL and 3MF
+
+    enum ExportFormat: String { case stl, threeMF = "3mf" }
+    var canExport: Bool { !printableParts.isEmpty }
+
+    /// Writes the model as STL or 3MF (the core's writers, the same bytes as the web app's) and opens the
+    /// share sheet: a slicer app, AirDrop to a Mac, Save to Files, Mail.
+    func share(_ format: ExportFormat) {
+        do {
+            let data = format == .stl ? try TemenExport.stl(printableParts) : try TemenExport.threeMF(printableParts)
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Export", isDirectory: true)
+            try? FileManager.default.removeItem(at: folder) // only the latest export is kept
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let url = folder.appendingPathComponent("\(project.fileStem).\(format.rawValue)")
+            try data.write(to: url, options: .atomic)
+            sharing = SharedFile(url: url)
+        } catch {
+            entries.append(ChatEntry(kind: .error, text: "Could not export \(format == .stl ? "STL" : "3MF"): \(error)"))
+        }
+    }
+
     // MARK: - .temen files
 
     /// Opens a .temen (from the Files picker, AirDrop or "Open in"): it replaces the current model and
@@ -181,7 +207,8 @@ final class AppModel: ObservableObject, AgentHost {
     #if DEBUG
     /// Development: send a prompt at launch (`-TemenAutoPrompt "make a box"`), for driving the app in the simulator.
     /// Also `-TemenOpen /path/a.temen` opens a project and `-TemenSaveTo /path/b.temen` writes the
-    /// project there, so .temen handling can be checked without the system file sheets.
+    /// project there, so .temen handling can be checked without the system file sheets; `-TemenShare stl`
+    /// (or 3mf) exports and opens the share sheet.
     func runAutoPrompt() {
         let defaults = UserDefaults.standard
         if let path = defaults.string(forKey: "TemenOpen"), !path.isEmpty { open(url: URL(fileURLWithPath: path)) }
@@ -191,6 +218,9 @@ final class AppModel: ObservableObject, AgentHost {
                 do { try doc.data.write(to: url); saved(to: url) }
                 catch { entries.append(ChatEntry(kind: .error, text: "Could not save the project: \(error)")) }
             }
+        }
+        if let f = defaults.string(forKey: "TemenShare"), let format = ExportFormat(rawValue: f) {
+            Task { await rebuild(); share(format) }
         }
         if let p = defaults.string(forKey: "TemenAutoPrompt"), !p.isEmpty { send(p) }
     }

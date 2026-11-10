@@ -67,4 +67,20 @@ final class TemenCADTests: XCTestCase {
         }
         XCTAssertThrowsError(try TemenArchive.read(Data("not a zip".utf8)))
     }
+
+    func testExportsSTLAnd3MF() throws {
+        let r = try TemenCore().build(script: "return { a: box(10).onPlate().color('#ff8000'), b: sphere(3).translate(20, 3, 0).name('b & <c>') }")
+        XCTAssertTrue(r.ok, r.error?.message ?? "")
+        let stl = try TemenExport.stl(r.parts)
+        let tris = r.parts.reduce(0) { $0 + $1.indices.count / 3 }
+        XCTAssertEqual(stl.count, 84 + tris * 50)
+        XCTAssertEqual(stl.subdata(in: 80..<84).withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }, UInt32(tris))
+        XCTAssertEqual(String(decoding: stl.prefix(19), as: UTF8.self), "TemenCAD binary STL")
+        let zip = try TemenArchive.read(try TemenExport.threeMF(r.parts))
+        XCTAssertEqual(zip.keys.sorted(), ["3D/3dmodel.model", "[Content_Types].xml", "_rels/.rels"])
+        let model = String(decoding: zip["3D/3dmodel.model"]!, as: UTF8.self)
+        XCTAssertTrue(model.contains("<base name=\"a\" displaycolor=\"#FF8000\" />"), model.prefix(600).description)
+        XCTAssertTrue(model.contains("name=\"b &amp; &lt;c&gt;\""))
+        XCTAssertThrowsError(try TemenExport.stl([]))
+    }
 }

@@ -109,7 +109,7 @@ add_library(miniz STATIC third_party/miniz/miniz.c)
 target_compile_definitions(miniz PUBLIC MINIZ_NO_STDIO MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
 
 # ---- the core library -------------------------------------------------------
-add_library(temencore STATIC src/host.c src/natives.c src/text.c src/image.c src/archive.c ${PRELUDE_HDR} ${FONT_HDRS})
+add_library(temencore STATIC src/host.c src/natives.c src/text.c src/image.c src/archive.c src/export.c ${PRELUDE_HDR} ${FONT_HDRS})
 target_include_directories(temencore
   PUBLIC include
   PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated ${MANIFOLD_DIR}/bindings/c/include ${CMAKE_CURRENT_SOURCE_DIR}/third_party)

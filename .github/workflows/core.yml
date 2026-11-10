@@ -86,6 +86,11 @@ jobs:
         run: npm run core:diff
       - name: The command line on the core
         run: npm test
+      - name: STL and 3MF from the native core match the web app's, byte for byte
+        run: |
+          cmake -S core -B build/native -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/native -j4 --target temencore-cli
+          npm run core:export -- build/native/temencore
       - name: The site
         run: npm run build
 

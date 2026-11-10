@@ -6,8 +6,8 @@
  *   temencore project.temen [-o out.stl]   a .temen project archive (a zip)
  *
  * Prints messages as the build emits them, then one line per part with its
- * triangle count and volume; writes a binary STL of every visible part when -o
- * is given. Exit code 1 on a script error, 2 on a runtime failure.
+ * triangle count and volume; with -o writes the visible, non-ghost parts as a
+ * binary STL, or as 3MF with named, coloured objects when the name ends in .3mf. Exit code 1 on a script error, 2 on a runtime failure.
  */
 #include <dirent.h>
 #include <stdio.h>
@@ -98,36 +98,31 @@ static void on_message(void *ud, TemenMessageKind kind, const char *text, const 
     } else printf("%s\n", text);
 }
 
-static void write_stl(TemenCore *core, const char *path) {
+/* The visible, non-ghost parts as binary STL or, for a .3mf path, 3MF (the core's writers). */
+static int write_model(TemenCore *core, const char *path) {
+    size_t n = 0;
+    TemenPart *parts = malloc((temen_part_count(core) + 1) * sizeof *parts);
+    if (!parts) return 0;
+    for (size_t i = 0; i < temen_part_count(core); i++) {
+        const TemenPart *p = temen_part(core, i);
+        if (!p->ghost && !p->hidden) parts[n++] = *p;
+    }
+    if (!n) { free(parts); fprintf(stderr, "Nothing to export: no visible, non-ghost parts\n"); return 0; }
+    int is_3mf = ends_with(path, ".3mf");
+    size_t len = 0, tris = 0;
+    const char *error = NULL;
+    for (size_t i = 0; i < n; i++) tris += parts[i].n_tris;
+    void *buf = is_3mf ? temen_write_3mf(parts, n, &len, &error) : temen_write_stl(parts, n, &len, &error);
+    free(parts);
+    if (!buf) { fprintf(stderr, "%s: %s\n", path, error ? error : "cannot write"); return 0; }
     FILE *f = fopen(path, "wb");
-    if (!f) { perror(path); return; }
-    char header[80] = "TemenCAD binary STL";
-    fwrite(header, 1, 80, f);
-    uint32_t total = 0;
-    for (size_t i = 0; i < temen_part_count(core); i++) {
-        const TemenPart *p = temen_part(core, i);
-        if (!p->ghost && !p->hidden) total += (uint32_t)p->n_tris;
-    }
-    fwrite(&total, 4, 1, f);
-    for (size_t i = 0; i < temen_part_count(core); i++) {
-        const TemenPart *p = temen_part(core, i);
-        if (p->ghost || p->hidden) continue;
-        for (size_t t = 0; t < p->n_tris; t++) {
-            float tri[12] = {0};
-            for (int k = 0; k < 3; k++) {
-                const float *v = p->positions + p->indices[t * 3 + k] * 3;
-                /* STL is Z up: (x, y, z)_Yup -> (x, -z, y) */
-                tri[3 + k * 3 + 0] = v[0];
-                tri[3 + k * 3 + 1] = -v[2];
-                tri[3 + k * 3 + 2] = v[1];
-            }
-            fwrite(tri, sizeof(float), 12, f);
-            uint16_t attr = 0;
-            fwrite(&attr, 2, 1, f);
-        }
-    }
-    fclose(f);
-    printf("Wrote %s (%u triangles)\n", path, total);
+    int ok = f && fwrite(buf, 1, len, f) == len;
+    if (f && fclose(f) != 0) ok = 0;
+    temen_buffer_free(buf);
+    if (!ok) { perror(path); return 0; }
+    if (is_3mf) printf("Wrote %s (%zu part%s)\n", path, n, n == 1 ? "" : "s");
+    else printf("Wrote %s (%zu triangles)\n", path, tris);
+    return 1;
 }
 
 int main(int argc, char **argv) {
@@ -137,7 +132,7 @@ int main(int argc, char **argv) {
         else if (strcmp(argv[i], "--version") == 0) { puts(temen_version()); return 0; }
         else input = argv[i];
     }
-    if (!input) { fprintf(stderr, "usage: temencore <model.js | project-dir | project.temen> [-o out.stl]\n"); return 2; }
+    if (!input) { fprintf(stderr, "usage: temencore <model.js | project-dir | project.temen> [-o out.stl | out.3mf]\n"); return 2; }
 
     Files fs = {0};
     struct stat st;
@@ -167,7 +162,7 @@ int main(int argc, char **argv) {
             tris += p->n_tris;
         }
         printf("%zu part%s, %zu triangles, %.0f ms\n", temen_part_count(core), temen_part_count(core) == 1 ? "" : "s", tris, temen_last_run_ms(core));
-        if (out) write_stl(core, out);
+        if (out && !write_model(core, out)) status = 2;
     }
     temen_free(core);
     for (size_t i = 0; i < fs.n; i++) { free((void *)fs.files[i].name); free((void *)fs.files[i].data); }

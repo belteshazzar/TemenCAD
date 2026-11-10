@@ -34,6 +34,14 @@ let opened = try TemenArchive.readProject(data)   // .files for build(files:), .
 let saved = try TemenArchive.write(opened.files.merging(opened.extras) { file, _ in file })
 ```
 
+STL and 3MF come from the core too, the same bytes the web app writes:
+
+```swift
+let printable = result.parts.filter { !$0.ghost && !$0.hidden }
+let stl = try TemenExport.stl(printable)         // one binary solid, Z up
+let threeMF = try TemenExport.threeMF(printable) // named, coloured objects, Z up
+```
+
 ## Building the binary
 
 The C library is shipped to Swift as `TemenCore.xcframework`, built from the CMake project one

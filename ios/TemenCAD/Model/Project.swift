@@ -47,11 +47,12 @@ struct Project: Equatable {
     /// The .temen archive bytes, as the web app writes them.
     func temen() throws -> Data { try TemenArchive.write(files.merging(extras) { file, _ in file }) }
 
-    /// A file name for saving: the project's name with characters Files does not like replaced.
-    var fileName: String {
+    /// The project's name as a file name (characters Files does not like replaced), without an extension.
+    var fileStem: String {
         let cleaned = name.components(separatedBy: CharacterSet(charactersIn: "/\\:?%*|\"<>")).joined(separator: "-").trimmingCharacters(in: .whitespaces)
-        return (cleaned.isEmpty ? "Model" : cleaned) + ".temen"
+        return cleaned.isEmpty ? "Model" : cleaned
     }
+    var fileName: String { fileStem + ".temen" }
 }
 
 /// The current project and conversation on disk, in Application Support (the app keeps one project for now).

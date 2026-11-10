@@ -70,6 +70,8 @@ struct ChatView: View {
                 Divider()
                 Button("Open…") { opening = true }
                 Button("Save as .temen…") { saving = app.temenDocument() }
+                Button("Share STL…") { app.share(.stl) }.disabled(!app.canExport)
+                Button("Share 3MF…") { app.share(.threeMF) }.disabled(!app.canExport)
                 Divider()
                 Button("Settings…") { showSettings = true }
             } label: { Image(systemName: "ellipsis.circle") }
@@ -83,7 +85,10 @@ struct ChatView: View {
         case .user:
             HStack { Spacer(minLength: 40); bubble(e.text, fill: Color.accentColor.opacity(0.14)) }
         case .assistant:
-            HStack { bubble(e.text, fill: Color(.secondarySystemBackground)); Spacer(minLength: 40) }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack { bubble(e.text, fill: Color(.secondarySystemBackground)); Spacer(minLength: 40) }
+                if e.id == lastReplyID && !app.busy && app.canExport { exportActions }
+            }
         case .tool:
             Text("\(e.text)…").font(.caption).foregroundStyle(.secondary).padding(.leading, 4)
         case .status:
@@ -100,6 +105,20 @@ struct ChatView: View {
                 }
             }
         }
+    }
+
+    /// The latest reply carries the model's files, as in the web app.
+    private var lastReplyID: UUID? { app.entries.last { $0.kind == .assistant }?.id }
+
+    private var exportActions: some View {
+        HStack(spacing: 8) {
+            Button { app.share(.stl) } label: { Label("STL", systemImage: "square.and.arrow.up") }
+            Button { app.share(.threeMF) } label: { Label("3MF", systemImage: "square.and.arrow.up") }
+        }
+        .font(.caption)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .padding(.leading, 4)
     }
 
     private func bubble(_ text: String, fill: Color) -> some View {

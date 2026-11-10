@@ -132,6 +132,13 @@ void             temen_archive_free(TemenArchive *archive);
 void *temen_archive_write(const TemenFile *files, size_t n_files, int level, size_t *out_len, const char **error);
 void  temen_buffer_free(void *buffer);
 
+/* ---- STL and 3MF, independent of any TemenCore (the web app's src/export.js, byte for byte) ----
+ * Every part given is written, so leave out ghosts and hidden parts as the apps do. Coordinates go out
+ * Z up, as slicers expect: (x, y, z) -> (x, -z, y), so the build plate y = 0 becomes z = 0. Returns a
+ * buffer of *out_len bytes to release with temen_buffer_free, or NULL with a static message in *error. */
+void *temen_write_stl(const TemenPart *parts, size_t n_parts, size_t *out_len, const char **error); /* binary, one solid */
+void *temen_write_3mf(const TemenPart *parts, size_t n_parts, size_t *out_len, const char **error); /* named, coloured objects */
+
 /* Version strings of the pieces, for a report or an about box. */
 const char *temen_version(void);
 

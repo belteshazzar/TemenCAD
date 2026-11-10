@@ -30,6 +30,10 @@ straight from the device to api.anthropic.com, billed to the key's account).
   (`TemenArchive` in the Swift package, miniz underneath), with the web app's rules. A conversation the web
   app saved in the file is not shown (the two apps keep conversations differently) but is kept and
   written back on save (`Current/extras/`).
+- STL and 3MF: the share button on the 3D view, Share STL… / Share 3MF… in the ⋯ menu, and STL / 3MF
+  buttons under the latest reply. The core writes the files (`TemenExport`, the same bytes as the web
+  app) from the visible, non-ghost parts, and the system share sheet sends them on: a slicer app,
+  AirDrop to a Mac, Save to Files.
 - `Model/ModelBuilder.swift` builds on the native core (`TemenCore` in an actor: it is single-threaded) and
   makes the build report the assistant reads, in the same shape as the web app's.
 - `Agent/AnthropicClient.swift` the Messages API over HTTP with server-sent events (there is no official
@@ -57,12 +61,12 @@ xcrun simctl launch booted com.temencad.app \
 `-TemenAPIBase` points the client at another server, `-TemenAPIKey` supplies a key, and
 `-TemenAutoPrompt` sends a message at launch; `-TemenOpen /path/a.temen` opens a project and
 `-TemenSaveTo /path/b.temen` saves it, without the system file sheets (the simulator can read and write
-the Mac's paths). None of them exist in release builds.
+the Mac's paths); `-TemenShare stl` (or `3mf`) exports and opens the share sheet. None of them exist in release builds.
 
 ## Not yet
 
 Pointing at faces and measuring, photo attachments, undo per reply, more than one project, showing a
-conversation saved by the web app, STL / 3MF export and share, the plate and printer
+conversation saved by the web app, the plate and printer
 profile, and a Mac or visionOS build. SceneKit is the preview for now: Apple has stopped adding features
 to it in favour of RealityKit, and everything SceneKit touches is in `Views/ModelPreview.swift`, so moving
 is contained.

@@ -14,6 +14,7 @@ Swift package. Nothing in `src/` depends on the host platform.
  src/natives.c   the __cad namespace     C: flat natives over manifoldc, shapes as numeric handles
  src/host.c      engine + modules + run  C: one VM, a module loader over the project files, the run loop
  src/archive.c   .temen archives         C: zip read / write in memory, the web app's project rules
+ src/export.c    STL and 3MF             C: the web app's src/export.js, byte for byte
  ───────────────────────────────
  lamassu-js (third_party)   manifold + Clipper2 (third_party)   miniz (core/third_party)
 ```
@@ -26,6 +27,19 @@ clash with a system zlib); `temen_project_read` applies the rules of the web app
 `TemenCore`. The browser keeps using fflate, so the WebAssembly build does not link it. The native
 `temencore` tool builds a `.temen` directly; `core/test/project.temen` and `lone.temen` are fixtures
 written by fflate, built by `core/test/run-native.sh` and read by the Swift tests.
+
+`temen_write_stl` and `temen_write_3mf` (`src/export.c`) write parts as the web app's `src/export.js`
+does, byte for byte (3MF compared file by file inside the zip, since the two zip writers differ): the
+same Z-up coordinates, normals rounded as V8's `Math.hypot` gives them, and numbers formatted as
+`toFixed(5)` rounds ties, away from zero. `npm run core:export` (`core/test/export-parity.mjs`) checks
+it on every test script, the demo and a `.temen` against the JavaScript command line; keep the two
+files in step. The native `temencore -o out.3mf` uses them.
+
+Known difference: the WebAssembly build can triangulate a part differently from the native build when
+other shapes were made earlier in the same script (same volume and triangle count, different
+triangles). The demo's `holes` part shows it; the native result matches the part built on its own,
+the WebAssembly one depends on what came before. `core:export` reports it as a WARN line; the volume
+checks in `core:diff` do not see it. Not yet investigated to the cause.
 
 ## Why a prelude in JavaScript rather than a full C port
 
