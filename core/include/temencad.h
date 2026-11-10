@@ -108,6 +108,30 @@ int temen_cut_mesh(TemenCore *core, const float *positions, size_t n_verts, cons
 /* Milliseconds the last run took. */
 double temen_last_run_ms(const TemenCore *core);
 
+/* ---- .temen archives (a plain zip), independent of any TemenCore --------------------------- */
+typedef struct TemenArchive TemenArchive;
+
+/* Reads a zip held in memory (CRCs checked; at most 65535 entries and 1 GiB uncompressed).
+ * NULL on failure, with a static message in *error when error is not NULL. */
+TemenArchive    *temen_archive_read(const void *bytes, size_t len, const char **error);
+size_t           temen_archive_count(const TemenArchive *archive);
+/* Reads a .temen project with the web app's rules (Project.fromZip in src/project.js): paths normalized
+ * ('\\' to '/', '.' and '..' resolved), folders, __MACOSX/, dotfiles and paths outside the project
+ * dropped, and main.js guaranteed (a lone script becomes main.js, otherwise no main.js is an error).
+ * Entries under .assistant/ (the app's own data, e.g. the conversation) are kept apart as extras. */
+TemenArchive    *temen_project_read(const void *bytes, size_t len, const char **error);
+size_t           temen_archive_extra_count(const TemenArchive *archive);
+const TemenFile *temen_archive_extra(const TemenArchive *archive, size_t index);
+/* Entry `index` (folders are never entries): its name and bytes, owned by the archive until
+ * temen_archive_free. For temen_archive_read the names are exactly as stored. */
+const TemenFile *temen_archive_entry(const TemenArchive *archive, size_t index);
+void             temen_archive_free(TemenArchive *archive);
+
+/* Writes files as a zip, deflated at `level` 0..9 (6 when out of range). Returns a buffer of *out_len
+ * bytes to release with temen_buffer_free, or NULL with a static message in *error. */
+void *temen_archive_write(const TemenFile *files, size_t n_files, int level, size_t *out_len, const char **error);
+void  temen_buffer_free(void *buffer);
+
 /* Version strings of the pieces, for a report or an about box. */
 const char *temen_version(void);
 

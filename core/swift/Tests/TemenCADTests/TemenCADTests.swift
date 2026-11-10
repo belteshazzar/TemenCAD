@@ -40,4 +40,31 @@ final class TemenCADTests: XCTestCase {
         // and the core keeps working afterwards
         XCTAssertTrue(core.build(script: "return sphere(2)").ok)
     }
+
+    /// core/test/project.temen was written by fflate, as the web app saves projects.
+    func testReadsAWebProject() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../test/project.temen").standardized
+        let project = try TemenArchive.readProject(try Data(contentsOf: url))
+        XCTAssertEqual(project.files.keys.sorted(), ["main.js", "parts/peg.js"])
+        XCTAssertEqual(project.extras.keys.sorted(), [".assistant/chat.json"])
+        let r = try TemenCore().build(files: project.files)
+        XCTAssertTrue(r.ok, r.error?.message ?? "")
+        XCTAssertEqual(r.parts.map(\.name), ["a"])
+    }
+
+    func testArchiveRoundTripAndRules() throws {
+        let files: [String: Data] = [
+            "widget.js": Data("return sphere(5)".utf8), "Logo.ttf": Data([0, 1, 2, 255]), "empty.txt": Data(),
+            ".assistant/chat.json": Data("{}".utf8), "parts/./x/../.hidden": Data("x".utf8), "__MACOSX/._widget.js": Data("x".utf8),
+        ]
+        let zip = try TemenArchive.write(files, level: 9)
+        XCTAssertEqual(try TemenArchive.read(zip), files)
+        let project = try TemenArchive.readProject(zip)
+        XCTAssertEqual(project.files, ["main.js": files["widget.js"]!, "Logo.ttf": files["Logo.ttf"]!, "empty.txt": Data()])
+        XCTAssertEqual(project.extras, [".assistant/chat.json": Data("{}".utf8)])
+        XCTAssertThrowsError(try TemenArchive.readProject(try TemenArchive.write(["a.js": Data(), "b.js": Data()]))) {
+            XCTAssertEqual(($0 as? TemenArchiveError)?.message, "the project has no main.js")
+        }
+        XCTAssertThrowsError(try TemenArchive.read(Data("not a zip".utf8)))
+    }
 }

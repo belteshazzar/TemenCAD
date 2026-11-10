@@ -123,6 +123,40 @@ final class AppModel: ObservableObject, AgentHost {
         Task { await rebuild(); preview.frame(view: "iso") }
     }
 
+    // MARK: - .temen files
+
+    /// Opens a .temen (from the Files picker, AirDrop or "Open in"): it replaces the current model and
+    /// starts a new conversation. A conversation the web app kept in the file is not shown here (the two
+    /// apps keep conversations differently) but is kept and written back when the project is saved.
+    func open(url: URL) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let opened = try Project(temen: try Data(contentsOf: url), name: url.deletingPathExtension().lastPathComponent)
+            newChat()
+            project = opened
+            let kept = opened.extras.isEmpty ? "" : " The conversation saved with it in the web app is kept in the file but not shown here."
+            entries.append(ChatEntry(kind: .status, text: "Opened \(url.lastPathComponent).\(kept)"))
+            saveChat()
+            Task { await rebuild(); preview.frame(view: "iso") }
+        } catch {
+            entries.append(ChatEntry(kind: .error, text: "Could not open \(url.lastPathComponent): \(error)"))
+        }
+    }
+
+    /// The project as a .temen document for the save sheet, or nil (with the reason in the chat).
+    func temenDocument() -> TemenDocument? {
+        do { return TemenDocument(data: try project.temen()) }
+        catch { entries.append(ChatEntry(kind: .error, text: "Could not save the project: \(error)")); return nil }
+    }
+
+    /// After a save: the project takes the saved file's name.
+    func saved(to url: URL) {
+        project.name = url.deletingPathExtension().lastPathComponent
+        entries.append(ChatEntry(kind: .status, text: "Saved \(url.lastPathComponent)."))
+        saveChat()
+    }
+
     static let toolLabels = [
         "read_script": "Reading the script", "edit_script": "Editing the script", "write_script": "Writing the script",
         "remove_file": "Removing a file", "run_model": "Building the model", "take_screenshot": "Taking a screenshot",
@@ -146,8 +180,19 @@ final class AppModel: ObservableObject, AgentHost {
 
     #if DEBUG
     /// Development: send a prompt at launch (`-TemenAutoPrompt "make a box"`), for driving the app in the simulator.
+    /// Also `-TemenOpen /path/a.temen` opens a project and `-TemenSaveTo /path/b.temen` writes the
+    /// project there, so .temen handling can be checked without the system file sheets.
     func runAutoPrompt() {
-        if let p = UserDefaults.standard.string(forKey: "TemenAutoPrompt"), !p.isEmpty { send(p) }
+        let defaults = UserDefaults.standard
+        if let path = defaults.string(forKey: "TemenOpen"), !path.isEmpty { open(url: URL(fileURLWithPath: path)) }
+        if let path = defaults.string(forKey: "TemenSaveTo"), !path.isEmpty {
+            let url = URL(fileURLWithPath: path)
+            if let doc = temenDocument() {
+                do { try doc.data.write(to: url); saved(to: url) }
+                catch { entries.append(ChatEntry(kind: .error, text: "Could not save the project: \(error)")) }
+            }
+        }
+        if let p = defaults.string(forKey: "TemenAutoPrompt"), !p.isEmpty { send(p) }
     }
     #endif
 }

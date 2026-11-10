@@ -13,9 +13,19 @@ Swift package. Nothing in `src/` depends on the host platform.
  ───────────────────────────────
  src/natives.c   the __cad namespace     C: flat natives over manifoldc, shapes as numeric handles
  src/host.c      engine + modules + run  C: one VM, a module loader over the project files, the run loop
+ src/archive.c   .temen archives         C: zip read / write in memory, the web app's project rules
  ───────────────────────────────
- lamassu-js (third_party)   manifold + Clipper2 (third_party)
+ lamassu-js (third_party)   manifold + Clipper2 (third_party)   miniz (core/third_party)
 ```
+
+`.temen` projects are plain zips. `temen_archive_read` / `temen_archive_write` read and write them in
+memory with the vendored miniz 3.1.2 (MIT, compiled without stdio and without zlib names, so it cannot
+clash with a system zlib); `temen_project_read` applies the rules of the web app's `Project.fromZip`
+(`src/project.js`: paths normalized, folders, `__MACOSX/` and dotfiles dropped, a lone script becomes
+`main.js`, `.assistant/` kept apart as extras) and must stay in step with it. None of this needs a
+`TemenCore`. The browser keeps using fflate, so the WebAssembly build does not link it. The native
+`temencore` tool builds a `.temen` directly; `core/test/project.temen` and `lone.temen` are fixtures
+written by fflate, built by `core/test/run-native.sh` and read by the Swift tests.
 
 ## Why a prelude in JavaScript rather than a full C port
 

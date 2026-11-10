@@ -24,7 +24,12 @@ straight from the device to api.anthropic.com, billed to the key's account).
 ## What is in the app
 
 - `App/MainApp.swift` the app entry; `Model/AppModel.swift` the state: the project, builds, the preview
-  and the conversation, kept on disk in Application Support (`Current/files/` and `Current/chat.json`).
+  and the conversation, kept on disk in Application Support (`Current/files/`, `Current/chat.json`).
+- `.temen` files: Open… and Save as .temen… in the ⋯ menu, and opening one from Files, AirDrop or another
+  app (Info.plist declares the `com.temencad.project` type). Reading and writing is the core's
+  (`TemenArchive` in the Swift package, miniz underneath), with the web app's rules. A conversation the web
+  app saved in the file is not shown (the two apps keep conversations differently) but is kept and
+  written back on save (`Current/extras/`).
 - `Model/ModelBuilder.swift` builds on the native core (`TemenCore` in an actor: it is single-threaded) and
   makes the build report the assistant reads, in the same shape as the web app's.
 - `Agent/AnthropicClient.swift` the Messages API over HTTP with server-sent events (there is no official
@@ -50,12 +55,14 @@ xcrun simctl launch booted com.temencad.app \
 ```
 
 `-TemenAPIBase` points the client at another server, `-TemenAPIKey` supplies a key, and
-`-TemenAutoPrompt` sends a message at launch. None of them exist in release builds.
+`-TemenAutoPrompt` sends a message at launch; `-TemenOpen /path/a.temen` opens a project and
+`-TemenSaveTo /path/b.temen` saves it, without the system file sheets (the simulator can read and write
+the Mac's paths). None of them exist in release builds.
 
 ## Not yet
 
-Pointing at faces and measuring, photo attachments, undo per reply, more than one project and opening /
-saving `.temen` files (which needs a zip library), STL / 3MF export and share, the plate and printer
+Pointing at faces and measuring, photo attachments, undo per reply, more than one project, showing a
+conversation saved by the web app, STL / 3MF export and share, the plate and printer
 profile, and a Mac or visionOS build. SceneKit is the preview for now: Apple has stopped adding features
 to it in favour of RealityKit, and everything SceneKit touches is in `Views/ModelPreview.swift`, so moving
 is contained.

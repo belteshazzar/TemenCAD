@@ -8,6 +8,8 @@ struct ChatView: View {
     @State private var draft = ""
     @State private var confirmNew = false
     @State private var enlarged: ChatEntry?
+    @State private var opening = false
+    @State private var saving: TemenDocument?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,6 +48,13 @@ struct ChatView: View {
         .confirmationDialog("Start a new model? The current model and this conversation are replaced.", isPresented: $confirmNew, titleVisibility: .visible) {
             Button("New model", role: .destructive) { app.newProject() }
         }
+        .fileImporter(isPresented: $opening, allowedContentTypes: [.temenProject, .zip]) { result in
+            if case .success(let url) = result { app.open(url: url) }
+        }
+        .fileExporter(isPresented: Binding(get: { saving != nil }, set: { if !$0 { saving = nil } }),
+                      document: saving, contentType: .temenProject, defaultFilename: app.project.fileName) { result in
+            if case .success(let url) = result { app.saved(to: url) }
+        }
     }
 
     private var header: some View {
@@ -58,6 +67,10 @@ struct ChatView: View {
             Menu {
                 Button("New chat") { app.newChat() }
                 Button("New model…") { confirmNew = true }
+                Divider()
+                Button("Open…") { opening = true }
+                Button("Save as .temen…") { saving = app.temenDocument() }
+                Divider()
                 Button("Settings…") { showSettings = true }
             } label: { Image(systemName: "ellipsis.circle") }
         }

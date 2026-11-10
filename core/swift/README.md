@@ -27,6 +27,13 @@ Mesh buffers go straight into a `SCNGeometry` (SceneKit) or a `MeshResource` (Re
 annotations are the JSON records `dimension()` and `mark()` produce, and `profile` is the printer
 profile the script declared.
 
+`.temen` projects (plain zips) open and save without a `TemenCore`, with the web app's rules:
+
+```swift
+let opened = try TemenArchive.readProject(data)   // .files for build(files:), .extras = the .assistant/ entries
+let saved = try TemenArchive.write(opened.files.merging(opened.extras) { file, _ in file })
+```
+
 ## Building the binary
 
 The C library is shipped to Swift as `TemenCore.xcframework`, built from the CMake project one

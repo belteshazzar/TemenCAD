@@ -1,8 +1,20 @@
 import Foundation
+import TemenCAD
+import UniformTypeIdentifiers
+
+extension UTType {
+    /// A .temen project: a zip of the project's files (declared in Info.plist).
+    static let temenProject = UTType(exportedAs: "com.temencad.project", conformingTo: .zip)
+}
 
 /// A project: named files (main.js is the entry; other scripts, fonts, meshes, images), as in the web app.
 struct Project: Equatable {
     var files: [String: Data]
+    /// What it is called: the .temen file name it came from or is saved as, without the extension.
+    var name = "Model"
+    /// Entries under .assistant/ in the .temen it came from (the web app's conversation), written back
+    /// unchanged when the project is saved so a round trip through the phone does not lose them.
+    var extras: [String: Data] = [:]
 
     static let entry = "main.js"
     static let textExtensions = ["js", "mjs", "json", "txt", "md", "svg"]
@@ -20,6 +32,26 @@ struct Project: Equatable {
         return String(decoding: d, as: UTF8.self)
     }
     var names: [String] { files.keys.sorted { $0 == Self.entry ? true : $1 == Self.entry ? false : $0 < $1 } }
+
+    /// Reads a .temen with the web app's rules (in the core: temen_project_read).
+    init(temen data: Data, name: String) throws {
+        let read = try TemenArchive.readProject(data)
+        self.init(files: read.files, name: name, extras: read.extras)
+    }
+    init(files: [String: Data], name: String = "Model", extras: [String: Data] = [:]) {
+        self.files = files
+        self.name = name
+        self.extras = extras
+    }
+
+    /// The .temen archive bytes, as the web app writes them.
+    func temen() throws -> Data { try TemenArchive.write(files.merging(extras) { file, _ in file }) }
+
+    /// A file name for saving: the project's name with characters Files does not like replaced.
+    var fileName: String {
+        let cleaned = name.components(separatedBy: CharacterSet(charactersIn: "/\\:?%*|\"<>")).joined(separator: "-").trimmingCharacters(in: .whitespaces)
+        return (cleaned.isEmpty ? "Model" : cleaned) + ".temen"
+    }
 }
 
 /// The current project and conversation on disk, in Application Support (the app keeps one project for now).
@@ -30,24 +62,38 @@ enum ProjectStore {
     }
     static var filesFolder: URL { folder.appendingPathComponent("files", isDirectory: true) }
     static var chatFile: URL { folder.appendingPathComponent("chat.json") }
+    static var extrasFolder: URL { folder.appendingPathComponent("extras", isDirectory: true) }
+    static var nameFile: URL { folder.appendingPathComponent("name.txt") }
 
     static func load() -> Project {
-        let fm = FileManager.default
-        guard let enumerator = fm.enumerator(at: filesFolder, includingPropertiesForKeys: [.isRegularFileKey]) else { return .starter }
-        var files: [String: Data] = [:]
-        let root = filesFolder.standardizedFileURL.path + "/"
-        for case let url as URL in enumerator where (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
-            let name = String(url.standardizedFileURL.path.dropFirst(root.count))
-            files[name] = try? Data(contentsOf: url)
-        }
-        return files[Project.entry] == nil ? .starter : Project(files: files)
+        let files = readTree(filesFolder)
+        guard files[Project.entry] != nil else { return .starter }
+        let name = (try? String(contentsOf: nameFile, encoding: .utf8)).flatMap { $0.isEmpty ? nil : $0 } ?? "Model"
+        return Project(files: files, name: name, extras: readTree(extrasFolder))
     }
 
     static func save(_ project: Project) {
+        writeTree(project.files, to: filesFolder)
+        writeTree(project.extras, to: extrasFolder)
+        try? project.name.write(to: nameFile, atomically: true, encoding: .utf8)
+    }
+
+    private static func readTree(_ root: URL) -> [String: Data] {
+        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]) else { return [:] }
+        var files: [String: Data] = [:]
+        let prefix = root.standardizedFileURL.path + "/"
+        for case let url as URL in enumerator where (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+            files[String(url.standardizedFileURL.path.dropFirst(prefix.count))] = try? Data(contentsOf: url)
+        }
+        return files
+    }
+
+    private static func writeTree(_ files: [String: Data], to root: URL) {
         let fm = FileManager.default
-        try? fm.removeItem(at: filesFolder)
-        for (name, data) in project.files {
-            let url = filesFolder.appendingPathComponent(name)
+        try? fm.removeItem(at: root)
+        try? fm.createDirectory(at: root, withIntermediateDirectories: true)
+        for (name, data) in files {
+            let url = root.appendingPathComponent(name)
             try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: url, options: .atomic)
         }

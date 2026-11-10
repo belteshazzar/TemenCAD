@@ -3,6 +3,7 @@
  *
  *   temencore model.js [-o out.stl]        a single script (it becomes main.js)
  *   temencore project-dir [-o out.stl]     a folder with main.js and its imports
+ *   temencore project.temen [-o out.stl]   a .temen project archive (a zip)
  *
  * Prints messages as the build emits them, then one line per part with its
  * triangle count and volume; writes a binary STL of every visible part when -o
@@ -64,6 +65,31 @@ static void add_dir(Files *fs, const char *root, const char *rel) {
     closedir(d);
 }
 
+static int ends_with(const char *s, const char *suffix) {
+    size_t a = strlen(s), b = strlen(suffix);
+    return a >= b && strcmp(s + a - b, suffix) == 0;
+}
+
+static int add_archive(Files *fs, const char *path) {
+    size_t len;
+    void *bytes = read_file(path, &len);
+    if (!bytes) { perror(path); return 0; }
+    const char *error = NULL;
+    TemenArchive *a = temen_project_read(bytes, len, &error);
+    free(bytes);
+    if (!a) { fprintf(stderr, "%s: cannot open the project (%s)\n", path, error ? error : "unknown error"); return 0; }
+    for (size_t i = 0; i < temen_archive_count(a); i++) {
+        const TemenFile *e = temen_archive_entry(a, i);
+        void *data = malloc(e->len + 1);
+        if (!data) { temen_archive_free(a); return 0; }
+        memcpy(data, e->data, e->len);
+        ((char *)data)[e->len] = 0;
+        add_file(fs, e->name, data, e->len);
+    }
+    temen_archive_free(a);
+    return 1;
+}
+
 static void on_message(void *ud, TemenMessageKind kind, const char *text, const char *file, int line) {
     (void)ud;
     if (kind == TEMEN_WARN) {
@@ -111,12 +137,13 @@ int main(int argc, char **argv) {
         else if (strcmp(argv[i], "--version") == 0) { puts(temen_version()); return 0; }
         else input = argv[i];
     }
-    if (!input) { fprintf(stderr, "usage: temencore <model.js | project-dir> [-o out.stl]\n"); return 2; }
+    if (!input) { fprintf(stderr, "usage: temencore <model.js | project-dir | project.temen> [-o out.stl]\n"); return 2; }
 
     Files fs = {0};
     struct stat st;
     if (stat(input, &st) != 0) { perror(input); return 2; }
     if (S_ISDIR(st.st_mode)) add_dir(&fs, input, "");
+    else if (ends_with(input, ".temen")) { if (!add_archive(&fs, input)) return 2; }
     else {
         size_t len;
         void *data = read_file(input, &len);

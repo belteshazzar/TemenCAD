@@ -5,7 +5,7 @@
 #   core/swift/build-xcframework.sh            all three slices
 #   core/swift/build-xcframework.sh macos      one slice (macos | ios | simulator), e.g. for `swift test`
 #
-# Each slice compiles the core, lamassu, Manifold and Clipper2 into static libraries and merges them
+# Each slice compiles the core, lamassu, Manifold, Clipper2 and miniz into static libraries and merges them
 # into one libTemenCAD.a (a distinct name: the file system is case-insensitive, so libTemenCore.a would clobber libtemencore.a); the framework carries include/temencad.h with a module map so Swift can
 # `import CTemenCore`. Needs the Xcode command line tools and CMake 3.24+.
 set -e
@@ -20,10 +20,10 @@ build_slice() {
   dir="$BUILD/$name"
   cmake -S "$CORE" -B "$dir" -DCMAKE_BUILD_TYPE=Release "$@" > "$dir.configure.log" 2>&1 || { cat "$dir.configure.log"; exit 1; }
   cmake --build "$dir" --target temencore -j8 > "$dir.build.log" 2>&1 || { tail -40 "$dir.build.log"; exit 1; }
-  # one archive from the five static libraries CMake produced
+  # one archive from the six static libraries CMake produced
   rm -f "$dir/libTemenCAD.a"
-  libs=$(find "$dir" \( -name 'libtemencore.a' -o -name 'liblamassu.a' -o -name 'libmanifoldc.a' -o -name 'libmanifold.a' -o -name 'libClipper2.a' \) -print)
-  [ "$(echo "$libs" | wc -l | tr -d ' ')" = 5 ] || { echo "expected 5 libraries, found:"; echo "$libs"; exit 1; }
+  libs=$(find "$dir" \( -name 'libtemencore.a' -o -name 'liblamassu.a' -o -name 'libmanifoldc.a' -o -name 'libmanifold.a' -o -name 'libClipper2.a' -o -name 'libminiz.a' \) -print)
+  [ "$(echo "$libs" | wc -l | tr -d ' ')" = 6 ] || { echo "expected 6 libraries, found:"; echo "$libs"; exit 1; }
   libtool -static -o "$dir/libTemenCAD.a" $libs
   [ -f "$dir/libTemenCAD.a" ] || exit 1
   echo "built $name: $(du -h "$dir/libTemenCAD.a" | cut -f1)"
