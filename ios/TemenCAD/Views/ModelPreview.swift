@@ -89,18 +89,51 @@ final class PreviewController: NSObject, ObservableObject {
         view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped(_:))))
     }
 
+    /// Wireframe display (the View menu's, and the assistant's set_view).
+    var wireframe = false {
+        didSet { for n in modelNode.childNodes { n.geometry?.materials.forEach { $0.fillMode = wireframe ? .lines : .fill } } }
+    }
+    private let plateNode = SCNNode()
+
+    /// Show a printer's build plate (centred on the origin at y = 0), red when the model does not fit; nil hides it.
+    func showPlate(_ plate: Plate?, fits: Bool) {
+        plateNode.childNodes.forEach { $0.removeFromParentNode() }
+        guard let plate else { return }
+        if plateNode.parent == nil { view.scene?.rootNode.addChildNode(plateNode) }
+        let w = Float(plate.w) / 2, d = Float(plate.d) / 2
+        let corners = [SCNVector3(-w, 0, -d), SCNVector3(w, 0, -d), SCNVector3(w, 0, d), SCNVector3(-w, 0, d)]
+        let color = fits ? UIColor(red: 0.3, green: 0.45, blue: 0.75, alpha: 1) : UIColor(red: 0.85, green: 0.2, blue: 0.2, alpha: 1)
+        let outline = SCNGeometry(sources: [SCNGeometrySource(vertices: corners)],
+                                  elements: [SCNGeometryElement(indices: [Int32(0), 1, 1, 2, 2, 3, 3, 0], primitiveType: .line)])
+        let lm = SCNMaterial(); lm.lightingModel = .constant; lm.diffuse.contents = color
+        outline.materials = [lm]
+        let fill = SCNGeometry(sources: [SCNGeometrySource(vertices: corners.map { SCNVector3($0.x, -0.05, $0.z) })],
+                               elements: [SCNGeometryElement(indices: [Int32(0), 2, 1, 0, 3, 2], primitiveType: .triangles)])
+        let fm = SCNMaterial(); fm.lightingModel = .constant; fm.diffuse.contents = color.withAlphaComponent(0.08)
+        fm.isDoubleSided = true; fm.writesToDepthBuffer = false
+        fill.materials = [fm]
+        plateNode.addChildNode(SCNNode(geometry: outline))
+        plateNode.addChildNode(SCNNode(geometry: fill))
+    }
+
     /// Show a build's parts (hidden parts skipped, ghosts translucent). The first build frames the camera.
     func show(_ result: TemenBuildResult?) {
         guard let result, result.ok else { return }
+        show(parts: result.parts)
+    }
+
+    /// Show parts as the app displays them (the Parts list's overrides applied).
+    func show(parts: [TemenPart]) {
         modelNode.childNodes.forEach { $0.removeFromParentNode() }
         // new geometry: picks and the measurement referred to the old mesh, so they go (chips stay in the composer)
         clearPicks(notify: false)
         clearMeasure()
         pickers = [:]
-        shownParts = result.parts
+        shownParts = parts
         var lo = SCNVector3(Float.infinity, .infinity, .infinity), hi = SCNVector3(-Float.infinity, -.infinity, -.infinity)
-        for (index, part) in result.parts.enumerated() where !part.hidden {
+        for (index, part) in parts.enumerated() where !part.hidden {
             let node = SCNNode(geometry: Self.geometry(part))
+            if wireframe { node.geometry?.materials.forEach { $0.fillMode = .lines } }
             node.name = "part:\(index)"
             modelNode.addChildNode(node)
             if part.ghost { continue }

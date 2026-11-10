@@ -93,6 +93,8 @@ jobs:
           npm run core:export -- build/native/temencore
       - name: Pointing and measuring in the native core match the web app's, word for word
         run: npm run core:pick -- build/native/temencore
+      - name: The render sheet from the native core matches the web app's, pixel for pixel
+        run: npm run core:render -- build/native/temencore
       - name: The site
         run: npm run build
 

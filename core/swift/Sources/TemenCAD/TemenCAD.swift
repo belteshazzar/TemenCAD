@@ -21,6 +21,11 @@ public struct TemenPart: Sendable {
     public let positions: [Float]
     /// three vertex indices per triangle.
     public let indices: [UInt32]
+
+    /// The same part shown differently (the app's part display: hidden, or a translucent reference).
+    public func displayed(hidden: Bool, ghost: Bool) -> TemenPart {
+        TemenPart(name: name, named: named, color: color, ghost: ghost, hidden: hidden, volume: volume, positions: positions, indices: indices)
+    }
 }
 
 /// A log line or a warning the script produced, with the script file and line when known.
@@ -61,7 +66,7 @@ public struct TemenBuildResult: Sendable {
 
 /// The modelling runtime. Create one and build projects with it; each build starts from a clean script state.
 public final class TemenCore {
-    private let core: OpaquePointer
+    let core: OpaquePointer // internal: TemenRender.swift draws with it
     private var messages: [TemenMessage] = []
 
     public init() throws {

@@ -16,7 +16,8 @@
     "core:test": "node core/test/smoke.mjs",
     "core:diff": "node core/test/diff.mjs",
     "core:export": "node core/test/export-parity.mjs",
-    "core:pick": "node core/test/pick-parity.mjs"
+    "core:pick": "node core/test/pick-parity.mjs",
+    "core:render": "node core/test/render-parity.mjs"
   },
   "devDependencies": {
     "vite": "^8.3.6"

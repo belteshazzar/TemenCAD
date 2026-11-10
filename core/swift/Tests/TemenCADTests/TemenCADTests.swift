@@ -112,4 +112,15 @@ final class TemenCADTests: XCTestCase {
         XCTAssertEqual(m.label, "Measured 10 mm")
         XCTAssertTrue(m.text.contains("(a corner)") && m.text.hasSuffix("the two faces are parallel and 10 mm apart"), m.text)
     }
+
+    func testRendersAViewSheet() throws {
+        let core = try TemenCore()
+        let r = core.build(script: "dimension([0, 0, 0], [20, 0, 0]); return { a: box(20).onPlate().name('block') }")
+        XCTAssertTrue(r.ok, r.error?.message ?? "")
+        let png = try core.render(parts: r.parts, views: ["iso", "top"], width: 320, height: 240, section: ("y", 5), annotations: r.annotations)
+        XCTAssertEqual(Array(png.prefix(8)), [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+        let w = png.subdata(in: 16..<20).reduce(0) { $0 << 8 | Int($1) }, h = png.subdata(in: 20..<24).reduce(0) { $0 << 8 | Int($1) }
+        XCTAssertEqual([w, h], [640, 240]) // two views side by side
+        XCTAssertThrowsError(try core.render(parts: r.parts, views: ["sideways"]))
+    }
 }

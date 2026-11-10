@@ -139,6 +139,16 @@ struct ChatView: View {
             replyActions(e)
         case .event:
             eventLine(e)
+        case .file:
+            HStack(spacing: 8) {
+                Image(systemName: "doc").foregroundStyle(.secondary)
+                Text(e.text).font(.caption).lineLimit(2)
+                Spacer(minLength: 4)
+                Button { app.shareExported(e.fileName ?? "") } label: { Label("Share", systemImage: "square.and.arrow.up") }
+                    .font(.caption).buttonStyle(.bordered).controlSize(.small)
+            }
+            .padding(8)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
         case .tool:
             Text("\(e.text)…").font(.caption).foregroundStyle(.secondary).padding(.leading, 4)
         case .status:

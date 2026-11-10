@@ -44,6 +44,12 @@ let m = TemenPicker.measure(.init(picker: picker, triangle: t1, point: p1, snapp
                             .init(picker: picker, triangle: t2, point: p2, snapped: true))  // m.distance, m.gap, m.text
 ```
 
+The render sheet (labelled views, sections, the web app's picture pixel for pixel):
+
+```swift
+let png = try core.render(parts: result.parts, views: ["iso", "top"], section: ("y", 5), annotations: result.annotations)
+```
+
 STL and 3MF come from the core too, the same bytes the web app writes:
 
 ```swift

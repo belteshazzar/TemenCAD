@@ -154,13 +154,25 @@ static void pick_dump(TemenCore *core, size_t samples) {
 int main(int argc, char **argv) {
     const char *input = NULL, *out = NULL;
     size_t pick_every = 0;
+    const char *png = NULL, *views = "iso";
+    int view_w = 480, view_h = 360, labels = 1, has_section = 0, section_axis = 0;
+    double section_value = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) out = argv[++i];
         else if (strcmp(argv[i], "--pick") == 0 && i + 1 < argc) pick_every = (size_t)atol(argv[++i]);
+        else if (strcmp(argv[i], "--png") == 0 && i + 1 < argc) png = argv[++i];
+        else if (strcmp(argv[i], "--views") == 0 && i + 1 < argc) views = argv[++i];
+        else if (strcmp(argv[i], "--size") == 0 && i + 1 < argc) { if (sscanf(argv[++i], "%dx%d", &view_w, &view_h) != 2) { fprintf(stderr, "--size is WIDTHxHEIGHT\n"); return 2; } }
+        else if (strcmp(argv[i], "--no-labels") == 0) labels = 0;
+        else if (strcmp(argv[i], "--section") == 0 && i + 1 < argc) {
+            const char *s = argv[++i];
+            if ((s[0] != 'x' && s[0] != 'y' && s[0] != 'z') || s[1] != '=') { fprintf(stderr, "--section is axis=value, e.g. y=5\n"); return 2; }
+            has_section = 1; section_axis = s[0] - 'x'; section_value = atof(s + 2);
+        }
         else if (strcmp(argv[i], "--version") == 0) { puts(temen_version()); return 0; }
         else input = argv[i];
     }
-    if (!input) { fprintf(stderr, "usage: temencore <model.js | project-dir | project.temen> [-o out.stl | out.3mf]\n"); return 2; }
+    if (!input) { fprintf(stderr, "usage: temencore <model.js | project-dir | project.temen> [-o out.stl | out.3mf] [--png out.png [--views iso,top] [--size 480x360] [--section y=5] [--no-labels]]\n"); return 2; }
 
     Files fs = {0};
     struct stat st;
@@ -192,6 +204,23 @@ int main(int argc, char **argv) {
         printf("%zu part%s, %zu triangles, %.0f ms\n", temen_part_count(core), temen_part_count(core) == 1 ? "" : "s", tris, temen_last_run_ms(core));
         if (out && !write_model(core, out)) status = 2;
         if (pick_every) pick_dump(core, pick_every);
+        if (png) {
+            size_t np = temen_part_count(core), na = temen_annotation_count(core), len = 0;
+            TemenPart *parts = malloc((np + 1) * sizeof *parts);
+            const char **ann = malloc((na + 1) * sizeof *ann);
+            for (size_t i = 0; i < np; i++) parts[i] = *temen_part(core, i);
+            for (size_t i = 0; i < na; i++) ann[i] = temen_annotation(core, i);
+            TemenRenderOptions ro = { views, view_w, view_h, 2, labels, 0, has_section, section_axis, section_value, ann, na };
+            const char *error = NULL;
+            void *bytes = temen_render_views(core, parts, np, &ro, &len, &error);
+            FILE *f = bytes ? fopen(png, "wb") : NULL;
+            if (!bytes) { fprintf(stderr, "%s: %s\n", png, error ? error : "cannot render"); status = 2; }
+            else if (!f || fwrite(bytes, 1, len, f) != len) { perror(png); status = 2; }
+            else printf("Rendered %s (%s)\n", png, views);
+            if (f) fclose(f);
+            temen_buffer_free(bytes);
+            free(parts); free(ann);
+        }
     }
     temen_free(core);
     for (size_t i = 0; i < fs.n; i++) { free((void *)fs.files[i].name); free((void *)fs.files[i].data); }

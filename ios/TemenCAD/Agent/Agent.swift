@@ -13,6 +13,12 @@ protocol AgentHost: AnyObject {
     /// A photo the user attached (attachment n, from 1), full size as JPEG; nil when there is none.
     func attachment(_ n: Int) -> Data?
     var attachmentCount: Int { get }
+    /// The app as tools: the render sheet, export, the view, the plate, the parts' display.
+    func renderViews(views: [String], section: (axis: String, value: Double)?, save: Bool) async throws -> Data
+    func exportModel(format: String, parts: [String]?, filename: String?) throws -> JSONValue
+    func setView(_ view: String?, wireframe: Bool?) -> JSONValue
+    func setPlate(_ id: String, size: [Double]?) throws -> JSONValue
+    func setPartDisplay(names: [String]?, visible: Bool?, ghost: Bool?, solo: Bool, reset: Bool) throws -> JSONValue
 }
 
 /// The modelling assistant: the same job as the web app's (src/agent.js), with the tools a phone needs.
@@ -55,7 +61,8 @@ final class Agent {
         - After every change call run_model and read the report. Fix any error or warning it reports (they include line numbers) before replying. run_model also shows the result in the user's preview.
         - The user can attach photos to a message (labelled Attachment 1, 2, … in order across the conversation), often taken with the phone's camera. Use them as references: a broken part next to a ruler, a hand sketch with dimensions, a drawing. Read dimensions from a drawing's labels first; when you scale from a photo, say which reference you used (a ruler, a coin, a known part) and how sure you are, and ask for the one or two measurements that matter most (hole spacing, mating diameters) rather than guessing them. To use a photo in the model itself (lithophane, heightmap), save_attachment puts it in the project as a .jpg to import from main.js (`import photo from './photo.jpg'`).
         - The user can point at surfaces in the 3D view ("make this thicker"): such a message carries Reference n blocks (part name, which way the face points and where its plane is, its extent and area; or a hole / boss / fillet with its diameter or radius and axis) and a snapshot of their view with each reference highlighted in its colour. Work out which line of the script made that surface (the part name, the face's plane and extent against the shapes' sizes and positions) before editing, and say which feature you took it to be; if two features could match, ask. They can also measure between two points (distances, and the gap between parallel faces); trust those numbers, they come from the built mesh.
-        - Use take_screenshot when the shape of the result matters and the build report can't confirm it (the first version of a new model, a visual arrangement, anything you are unsure of). It frames the model from the view you name; the user sees the picture in the chat too.
+        - Use render_views when the shape of the result matters and the build report can't confirm it (first version of a new model, visual arrangement, fit against a ghost reference, anything you are unsure of): it returns labelled views (part names, sizes, scale bar, axes) with ghosts translucent, and can cut the model open with a section. take_screenshot gives the live 3D view instead. Both images also appear in the chat as thumbnails the user can open, so you can refer to them.
+        - set_view, set_plate and set_part_display change what the user sees (the view direction and wireframe, a printer's build plate with a fit check, which parts show or are ghosts); export_model puts an STL or 3MF in the chat with a Share button.
         \(rules)
         - Each of your replies that changed the project gets an Undo button (and STL / 3MF share buttons when the build succeeded), so you don't need to offer those. When the user undoes a reply (or puts an undo back), an <app_events> note says so at the top of their next message; the <project> block is then the restored state.
         - Reply briefly in plain prose, short enough to read on a phone: what you changed and anything the user should decide. No code in the reply unless asked. Never claim a build succeeded unless run_model said so.
@@ -83,6 +90,27 @@ final class Agent {
         tool("run_model", "Build the project and return the report: parts with names, sizes, volumes and triangle counts, warnings with lines, logs, or the error with its file and line. Also shows the result in the user's preview.", [:]),
         tool("take_screenshot", "Frame the model from a view and return a picture of the preview. Y is up; +Z is the front. Build with run_model first.",
              ["view": ["type": "string", "enum": .array(views.map(JSONValue.string))]]),
+        tool("rename_file", "Rename a script file in the project (e.g. to move it into a folder). main.js, fonts and meshes cannot be renamed. Update any imports of it afterwards.",
+             ["file": ["type": "string"], "new_name": ["type": "string"]], required: ["file", "new_name"]),
+        tool("render_views", "Render the last build as a sheet of labelled views (part names, sizes in each view, scale bar, axes; ghost parts translucent). views: a list from iso, top, bottom, front, back, left, right (default iso, top, front, right). section: { axis, value } cuts the model open at that plane (y keeps what is below; x and z keep the negative side) and paints cut faces red. save: true also puts the PNG at full size in the chat, where the user can share it. Build with run_model first.",
+             ["views": ["type": "array", "items": ["type": "string", "enum": .array(views.map(JSONValue.string))]],
+              "section": ["type": "object", "properties": ["axis": ["type": "string", "enum": ["x", "y", "z"]], "value": ["type": "number"]],
+                          "required": ["axis", "value"], "additionalProperties": false],
+              "save": ["type": "boolean", "description": "Also give the user the PNG at full size in the chat"]]),
+        tool("export_model", "Export the visible, non-ghost parts for printing; the file goes in the chat with a Share button (AirDrop to a Mac, Files, a slicer app). format: stl (one mesh) or 3mf (named, coloured objects, what Prusa, Bambu, Orca and Cura prefer). parts: export only these part names (each must be visible and not a ghost). Build first.",
+             ["format": ["type": "string", "enum": ["stl", "3mf"]],
+              "parts": ["type": "array", "items": ["type": "string"], "description": "Only these part names (default: every visible, non-ghost part)"],
+              "filename": ["type": "string", "description": "File name without extension (default: the project name, or the part name)"]], required: ["format"]),
+        tool("set_view", "Point the user's 3D view: view is one of iso, top, bottom, front, back, left, right, or reset to frame the model. wireframe turns wireframe display on or off.",
+             ["view": ["type": "string", "enum": .array((views + ["reset"]).map(JSONValue.string))], "wireframe": ["type": "boolean"]]),
+        tool("set_plate", "Show a printer build plate in the view and check the parts fit it. plate: a preset id, custom (with size [width, depth, height] in mm) or none. Returns whether the visible parts fit.",
+             ["plate": ["type": "string", "enum": .array(Plate.presets.map { JSONValue.string($0.id) }),
+                        "description": .string(Plate.presets.map { "\($0.id): \($0.label)" }.joined(separator: "; "))],
+              "size": ["type": "array", "items": ["type": "number"], "minItems": 3, "maxItems": 3, "description": "[width, depth, height] in mm, for plate: custom"]],
+             required: ["plate"]),
+        tool("set_part_display", "Show, hide, ghost or solo parts in the view. parts: part names (default all). visible / ghost set those flags; solo: true shows only the named parts; reset: true goes back to what the script says. Display only: it does not edit the script, and hidden or ghost parts are left out of exports.",
+             ["parts": ["type": "array", "items": ["type": "string"], "description": "Part names (default: every part)"],
+              "visible": ["type": "boolean"], "ghost": ["type": "boolean"], "solo": ["type": "boolean"], "reset": ["type": "boolean"]]),
         tool("save_attachment", "Add a photo the user attached to a message (Attachment n) to the project as a .jpg file, e.g. for lithophane() or heightmap(); then import it from main.js.",
              ["attachment": ["type": "integer", "description": "The attachment number from the message"],
               "name": ["type": "string", "description": "File name in the project (default photo-n.jpg); .jpg is added if missing"],
@@ -129,6 +157,45 @@ final class Agent {
             guard let png = host.screenshotForAgent(view: view) else { return "Error: the preview could not be captured." }
             return [["type": "image", "source": ["type": "base64", "media_type": "image/png", "data": .string(png.base64EncodedString())]],
                     ["type": "text", "text": .string("Screenshot from the \(view ?? "current") view. Y is up; +Z is the front.")]]
+        case "rename_file":
+            guard let new = input["new_name"]?.string else { return "Error: file and new_name are required." }
+            let isScript = { (n: String) in ["js", "mjs"].contains((n as NSString).pathExtension.lowercased()) }
+            guard isScript(file), isScript(new) else { return "Error: only script files can be renamed, and the new name must end in .js." }
+            if file == Project.entry { return "Error: main.js is the entry script and cannot be renamed." }
+            guard let data = host.project.files[file] else { return .string("Error: no file named \(file). Files: \(host.project.names.joined(separator: ", "))") }
+            let parts = new.replacingOccurrences(of: "\\", with: "/").split(separator: "/").filter { $0 != "." }
+            guard !parts.isEmpty, !parts.contains("..") else { return .string("Error: \(new) is not a file name in the project.") }
+            let name = parts.joined(separator: "/")
+            if host.project.files[name] != nil { return .string("Error: \(name) already exists.") }
+            host.project.files.removeValue(forKey: file)
+            host.project.files[name] = data
+            return .string("Renamed \(file) to \(name). Update imports that referred to it. Files: \(host.project.names.joined(separator: ", "))")
+        case "render_views":
+            let list = (input["views"]?.array?.compactMap(\.string)).flatMap { $0.isEmpty ? nil : $0 } ?? ["iso", "top", "front", "right"]
+            var section: (axis: String, value: Double)?
+            if let s = input["section"]?.object, let axis = s["axis"]?.string, let value = s["value"]?.number { section = (axis, value) }
+            let save = input["save"]?.bool == true
+            do {
+                let png = try await host.renderViews(views: list, section: section, save: save)
+                let cut = section.map { ", cut at \($0.axis) = \(BuildReport.number($0.value))" } ?? ""
+                return [["type": "image", "source": ["type": "base64", "media_type": "image/png", "data": .string(png.base64EncodedString())]],
+                        ["type": "text", "text": .string("Views: \(list.joined(separator: ", "))\(cut). Each view is titled with its axes and the model size; ghosts are translucent reference parts.\(save ? " The full-size PNG is in the chat for the user to share." : "")")]]
+            } catch { return .string("Error: \(error)") }
+        case "export_model":
+            do {
+                return .string(try host.exportModel(format: input["format"]?.string ?? "", parts: input["parts"]?.array?.compactMap(\.string),
+                                                    filename: input["filename"]?.string).text(pretty: true))
+            } catch { return .string("Error: \(error)") }
+        case "set_view":
+            return .string(host.setView(input["view"]?.string, wireframe: input["wireframe"]?.bool).text(pretty: true))
+        case "set_plate":
+            do { return .string(try host.setPlate(input["plate"]?.string ?? "", size: input["size"]?.array?.compactMap(\.number)).text(pretty: true)) }
+            catch { return .string("Error: \(error)") }
+        case "set_part_display":
+            do {
+                return .string(try host.setPartDisplay(names: input["parts"]?.array?.compactMap(\.string), visible: input["visible"]?.bool,
+                                                       ghost: input["ghost"]?.bool, solo: input["solo"]?.bool == true, reset: input["reset"]?.bool == true).text(pretty: true))
+            } catch { return .string("Error: \(error)") }
         case "save_attachment":
             guard let n = input["attachment"]?.number.map({ Int($0) }) else { return "Error: attachment (a number) is required." }
             guard let jpeg = host.attachment(n) else {

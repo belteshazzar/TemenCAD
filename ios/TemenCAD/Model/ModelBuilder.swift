@@ -9,6 +9,13 @@ actor ModelBuilder {
         if core == nil { core = try? TemenCore() }
         return core?.build(files: project.files)
     }
+
+    /// The render sheet of built parts (the web app's, pixel for pixel).
+    func render(parts: [TemenPart], views: [String], width: Int, height: Int, section: (axis: String, value: Double)?, annotations: [String]) throws -> Data {
+        if core == nil { core = try? TemenCore() }
+        guard let core else { throw AppError( "The modelling core could not start.") }
+        return try core.render(parts: parts, views: views, width: width, height: height, labels: true, section: section, annotations: annotations)
+    }
 }
 
 /// What the assistant reads after a build: the same shape as the web app's build report.
@@ -33,6 +40,11 @@ enum BuildReport {
         }
         return ["ok": true, "parts": .array(parts), "warnings": .array(warnings), "log": .array(logs),
                 "ms": .number((r.milliseconds * 10).rounded() / 10)]
+    }
+
+    /// A number as JS prints it for these captions: no trailing zeros ("5", "2.5").
+    static func number(_ v: Double) -> String {
+        v == v.rounded() && abs(v) < 1e15 ? String(Int(v)) : String(v)
     }
 
     static func bounds(_ p: [Float]) -> ([Double], [Double]) {

@@ -56,8 +56,12 @@ straight from the device to api.anthropic.com, billed to the key's account).
 - `Agent/AnthropicClient.swift` the Messages API over HTTP with server-sent events (there is no official
   Swift SDK). The message is rebuilt from the stream with every block kept as JSON, so thinking blocks and
   their signatures go back to the API unchanged, as it requires.
-- `Agent/Agent.swift` the assistant: system prompt, tools (read / edit / write / remove a script, build,
-  screenshot) and the tool loop. Opus 5.5 by default, adaptive thinking at medium effort, the system
+- `Agent/Agent.swift` the assistant: system prompt, tools (read / edit / write / remove / rename a script,
+  build, screenshot, render_views, save_attachment, export_model, set_view, set_plate, set_part_display)
+  and the tool loop. The tools behave as the web assistant's: render_views draws the same sheet (the
+  core's renderer); export_model puts the file in the chat with a Share button; set_plate shows a
+  printer's plate (red when the model does not fit, `Model/Plate.swift`); set_part_display keeps the web
+  Parts list's overrides, which decide what shows and what is exported. Opus 5.5 by default, adaptive thinking at medium effort, the system
   prompt cached, refusal fallbacks on, eager input streaming on the tools.
 - `Views/` SwiftUI: the adaptive layout, the chat, settings and the code sheet; `ModelPreview.swift` is the
   SceneKit preview (flat-shaded parts, ghosts, grid, orbit, snapshots for the assistant).

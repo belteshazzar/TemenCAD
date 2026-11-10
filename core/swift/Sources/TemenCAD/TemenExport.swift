@@ -28,7 +28,7 @@ public enum TemenExport {
     }
 
     /// The C view of the parts, with every string and buffer pinned while `body` runs.
-    private static func withCParts<R>(_ parts: [TemenPart], _ body: ([CTemenCore.TemenPart]) -> R) -> R {
+    static func withCParts<R>(_ parts: [TemenPart], _ body: ([CTemenCore.TemenPart]) -> R) -> R {
         let names = parts.map { strdup($0.name)! }, colors = parts.map { strdup($0.color)! }
         defer { names.forEach { free($0) }; colors.forEach { free($0) } }
         func recurse(_ i: Int, _ acc: [CTemenCore.TemenPart]) -> R {

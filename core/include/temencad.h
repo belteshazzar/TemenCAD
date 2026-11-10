@@ -139,6 +139,24 @@ void  temen_buffer_free(void *buffer);
 void *temen_write_stl(const TemenPart *parts, size_t n_parts, size_t *out_len, const char **error); /* binary, one solid */
 void *temen_write_3mf(const TemenPart *parts, size_t n_parts, size_t *out_len, const char **error); /* named, coloured objects */
 
+/* ---- the render sheet (the web app's src/render.js, pixel for pixel) ----------------------------- */
+typedef struct TemenRenderOptions {
+    const char *views;          /* comma-separated, in order: iso, top, bottom, front, back, left, right (NULL: iso) */
+    int width, height;          /* one view in pixels (0: 480 x 360) */
+    int supersample;            /* 0: 2 */
+    int labels;                 /* view titles with the size, part names, scale bar, axis triad */
+    int no_ghosts;              /* leave ghost parts out (they are drawn translucent otherwise) */
+    int has_section;            /* cut every part open at section_axis = section_value (0 x, 1 y, 2 z), */
+    int section_axis;           /* keeping coordinates <= value, and paint the cut faces */
+    double section_value;
+    const char *const *annotations; size_t n_annotations; /* temen_annotation records: dimensions and marks */
+} TemenRenderOptions;
+/* A sheet of the views as PNG (*out_len bytes, release with temen_buffer_free), or NULL with a static
+ * message in *error. Hidden parts are left out. The core draws the labels, so it needs the TemenCore
+ * (its bundled fonts); the parts may come from any build. */
+void *temen_render_views(TemenCore *core, const TemenPart *parts, size_t n_parts, const TemenRenderOptions *options,
+                         size_t *out_len, const char **error);
+
 /* ---- pointing and measuring (the web app's src/pick-geometry.js, word for word) -------------------
  * A pick holds one part's mesh topology (vertices welded, faces found as needed); build it once per mesh.
  * The positions and indices are copied out; Y up, millimetres, as temen_part gives them. */

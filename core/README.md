@@ -16,6 +16,7 @@ Swift package. Nothing in `src/` depends on the host platform.
  src/archive.c   .temen archives         C: zip read / write in memory, the web app's project rules
  src/export.c    STL and 3MF             C: the web app's src/export.js, byte for byte
  src/pick.c      pointing and measuring  C: the web app's src/pick-geometry.js, word for word
+ src/render.c    the render sheet        C: the web app's src/render.js, pixel for pixel
  ───────────────────────────────
  lamassu-js (third_party)   manifold + Clipper2 (third_party)   miniz (core/third_party)
 ```
@@ -44,6 +45,14 @@ summation order, V8's `Math.hypot` and `Math.atan2` (lamassu's fdlibm kernel), s
 `npm run core:pick` (`core/test/pick-parity.mjs`) compares about 60 picks and measurements per part on
 every test script and the demo against the JavaScript module (13,429 at the time of writing). The web
 app still uses the JavaScript module; keep the two in step.
+
+`temen_render_views` (`src/render.c`) draws the render sheet: labelled views (titles with the size,
+part names, scale bar, axes), ghosts translucent, section cuts with red cut faces, the script's
+dimensions and marks, as PNG through miniz. It ports `src/render.js` with its float32 colour and depth
+buffers, V8's `Math.hypot`, `Math.round` and `toFixed`, lamassu's fdlibm `sin` / `cos`, and the same text
+outlines, so `npm run core:render` (`core/test/render-parity.mjs`) finds every pixel identical on every
+test script, the demo, sections and unlabelled renders. The native `temencore --png` uses it (`--views`,
+`--size`, `--section`, `--no-labels`, as the JavaScript command line takes them).
 
 Same mesh everywhere: Manifold evaluates booleans lazily, and when it flattens a chain such as
 `(a - b) - c` into `a - (b + c)` it only collapses a node nothing else holds (`shared_ptr` use

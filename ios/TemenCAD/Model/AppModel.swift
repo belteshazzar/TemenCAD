@@ -5,7 +5,7 @@ import TemenCAD
 
 /// One line of the conversation as the user sees it.
 struct ChatEntry: Identifiable, Codable, Equatable {
-    enum Kind: String, Codable { case user, assistant, tool, image, error, status, reply, event }
+    enum Kind: String, Codable { case user, assistant, tool, image, error, status, reply, event, file }
     var id = UUID()
     var kind: Kind
     var text: String
@@ -18,6 +18,8 @@ struct ChatEntry: Identifiable, Codable, Equatable {
     var reply: ReplyInfo? = nil
     /// .event: an undo or a put back. `text` is the message of the reply it was about.
     var event: EventInfo? = nil
+    /// .file: a file the assistant exported (in Current/exports), with `text` as its description.
+    var fileName: String? = nil
 }
 
 /// A turn's result: whether it changed the project, and the checkpoints either side when it did.
@@ -62,6 +64,13 @@ final class AppModel: ObservableObject, AgentHost {
     private let builder = ModelBuilder()
     private let agent: Agent
     private(set) var lastReport: JSONValue?
+    /// The last successful build, as the script made it (render_views draws this).
+    private(set) var lastResult: TemenBuildResult?
+    /// The Parts list's display overrides by part name: they survive rebuilds and decide what is shown and exported.
+    private var partOverrides: [String: (visible: Bool, ghost: Bool)] = [:]
+    /// A printer's build plate shown under the model, with whether the visible parts fit.
+    @Published private(set) var plate: Plate? { didSet { savePlate() } }
+    @Published private(set) var plateFit: (fits: Bool, problems: [String]) = (true, [])
     private var task: Task<Void, Never>?
     /// The project at moments in the conversation, for undo (see Checkpoints).
     private(set) var checkpoints = Checkpoints()
@@ -79,6 +88,7 @@ final class AppModel: ObservableObject, AgentHost {
         apiKey = key
         model = UserDefaults.standard.string(forKey: "model") ?? Agent.defaultModel
         project = ProjectStore.load()
+        if let d = UserDefaults.standard.data(forKey: "plate") { plate = try? JSONDecoder().decode(Plate.self, from: d) }
         agent.host = self
         agent.model = model
         preview.onReference = { [weak self] ref in self?.pendingRefs.append(ref) }
@@ -97,9 +107,142 @@ final class AppModel: ObservableObject, AgentHost {
         let result = await builder.build(project)
         lastReport = BuildReport.make(result)
         buildStatus = BuildReport.summary(result)
-        preview.show(result)
-        printableParts = result?.ok == true ? result!.parts.filter { !$0.ghost && !$0.hidden } : []
+        if let result, result.ok {
+            lastResult = result
+            let names = Set(result.parts.map(\.name))
+            partOverrides = partOverrides.filter { names.contains($0.key) } // stale overrides go
+            applyDisplay()
+        }
         return result
+    }
+
+    /// The parts as displayed: the script's flags with the Parts list's overrides.
+    var displayedParts: [TemenPart] {
+        (lastResult?.parts ?? []).map { p in
+            guard let o = partOverrides[p.name] else { return p }
+            return p.displayed(hidden: !o.visible, ghost: o.ghost)
+        }
+    }
+
+    private func applyDisplay() {
+        let shown = displayedParts
+        preview.show(parts: shown)
+        printableParts = shown.filter { !$0.ghost && !$0.hidden }
+        checkPlate()
+    }
+
+    private func checkPlate() {
+        guard let plate else { plateFit = (true, []); preview.showPlate(nil, fits: true); return }
+        let (lo, hi) = BuildReport.bounds(printableParts.flatMap(\.positions))
+        plateFit = printableParts.isEmpty ? (true, []) : (plate.problems(min: lo, max: hi).isEmpty, plate.problems(min: lo, max: hi))
+        preview.showPlate(plate, fits: plateFit.fits)
+    }
+
+    private func savePlate() {
+        if let plate, let d = try? JSONEncoder().encode(plate) { UserDefaults.standard.set(d, forKey: "plate") }
+        else { UserDefaults.standard.removeObject(forKey: "plate") }
+    }
+
+    // MARK: - The app as tools (render_views, export_model, set_view, set_plate, set_part_display)
+
+    /// The render sheet of the last build, shown in the chat; with `save`, a larger copy goes in the chat too.
+    func renderViews(views: [String], section: (axis: String, value: Double)?, save: Bool) async throws -> Data {
+        guard let r = lastResult else { throw AppError( "Nothing built yet; call run_model first") }
+        let caption = views.joined(separator: ", ") + (section.map { ", cut at \($0.axis) = \(BuildReport.number($0.value))" } ?? "")
+        let png = try await builder.render(parts: r.parts, views: views, width: 640, height: 480, section: section, annotations: r.annotations)
+        entries.append(ChatEntry(kind: .image, text: caption, image: png))
+        if save {
+            let big = try await builder.render(parts: r.parts, views: views, width: 1280, height: 960, section: section, annotations: r.annotations)
+            let name = "\(project.fileStem)-views.png"
+            try keepExport(big, name: name)
+            entries.append(ChatEntry(kind: .file, text: "\(name), the views at full size", fileName: name))
+        }
+        return png
+    }
+
+    /// Writes the visible, non-ghost parts (or the named ones) as STL or 3MF and puts the file in the chat
+    /// with a Share button (the web app downloads it and leaves a link).
+    func exportModel(format: String, parts names: [String]?, filename: String?) throws -> JSONValue {
+        guard let r = lastResult, !r.parts.isEmpty else { throw AppError( "Nothing built yet; call run_model first") }
+        guard format == "stl" || format == "3mf" else { throw AppError( "format must be stl or 3mf") }
+        var chosen = printableParts
+        if let names, !names.isEmpty {
+            let all = displayedParts
+            let missing = names.filter { n in !all.contains { $0.name == n } }
+            if !missing.isEmpty {
+                throw AppError( "no part named \(missing.map { "\"\($0)\"" }.joined(separator: ", ")); parts are \(all.map { "\"\($0.name)\"" }.joined(separator: ", "))")
+            }
+            chosen = names.compactMap { n in all.first { $0.name == n } }
+            if chosen.contains(where: { $0.hidden || $0.ghost }) { throw AppError( "That part is hidden or a ghost; nothing to export") }
+        }
+        guard !chosen.isEmpty else { throw AppError( "Nothing to export: no visible, non-ghost parts") }
+        let data = format == "stl" ? try TemenExport.stl(chosen) : try TemenExport.threeMF(chosen)
+        let stem = (filename?.isEmpty == false ? filename! : names?.count == 1 ? names![0] : project.fileStem)
+            .replacingOccurrences(of: "\\.(stl|3mf)$", with: "", options: [.regularExpression, .caseInsensitive])
+            .components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-")).inverted).joined(separator: "_")
+        let name = "\(stem.isEmpty ? "model" : stem).\(format)"
+        try keepExport(data, name: name)
+        let count = format == "stl" ? chosen.reduce(0) { $0 + $1.indices.count / 3 } : chosen.count
+        let what = format == "stl" ? "\(count) triangles" : "\(count) part\(count == 1 ? "" : "s")"
+        entries.append(ChatEntry(kind: .file, text: "\(name), \(what)", fileName: name))
+        return ["done": true, "file": .string(name), "bytes": .number(Double(data.count)), format == "stl" ? "triangles" : "parts": .number(Double(count)),
+                "in_chat": true, "note": "The file is in the chat with a Share button (AirDrop, Files, a slicer app)."]
+    }
+
+    func setView(_ view: String?, wireframe: Bool?) -> JSONValue {
+        if let view { preview.frame(view: view == "reset" ? "iso" : view) }
+        if let wireframe { preview.wireframe = wireframe }
+        return ["view": .string(view ?? "unchanged"), "wireframe": .bool(preview.wireframe)]
+    }
+
+    func setPlate(_ id: String, size: [Double]?) throws -> JSONValue {
+        guard let preset = Plate.presets.first(where: { $0.id == id }) else { throw AppError( "unknown plate \"\(id)\"") }
+        if id == "none" { plate = nil }
+        else if id == "custom" {
+            guard let s = size, s.count == 3, s.allSatisfy({ $0.isFinite && $0 > 0 }) else { throw AppError( "plate custom needs size: [width, depth, height] in mm") }
+            plate = Plate(id: id, w: s[0], d: s[1], h: s[2])
+        } else if let s = preset.size { plate = Plate(id: id, w: s[0], d: s[1], h: s[2]) }
+        checkPlate()
+        return ["plate": plate?.json ?? .null, "fits": .bool(plateFit.fits), "problems": .array(plateFit.problems.map(JSONValue.string))]
+    }
+
+    /// The Parts list's logic (parts-panel.js apply): names (default all); visible / ghost set flags; solo shows
+    /// only the named parts; reset drops every override.
+    func setPartDisplay(names: [String]?, visible: Bool?, ghost: Bool?, solo: Bool, reset: Bool) throws -> JSONValue {
+        let parts = lastResult?.parts ?? []
+        if reset { partOverrides = [:] }
+        let unknown = (names ?? []).filter { n in !parts.contains { $0.name == n } }
+        if !unknown.isEmpty {
+            throw AppError( "no part named \(unknown.map { "\"\($0)\"" }.joined(separator: ", ")); parts are \(parts.isEmpty ? "none" : parts.map { "\"\($0.name)\"" }.joined(separator: ", "))")
+        }
+        let flags = { (p: TemenPart) in self.partOverrides[p.name] ?? (visible: !p.hidden, ghost: p.ghost) }
+        for p in parts {
+            let picked = names == nil || names!.contains(p.name)
+            if solo { var f = flags(p); f.visible = picked; partOverrides[p.name] = f }
+            guard picked, visible != nil || ghost != nil else { continue }
+            var f = flags(p)
+            if let visible { f.visible = visible }
+            if let ghost { f.ghost = ghost }
+            partOverrides[p.name] = f
+        }
+        applyDisplay()
+        var out: JSONValue = ["parts": .array(parts.map { p in let f = flags(p); return ["name": .string(p.name), "visible": .bool(f.visible), "ghost": .bool(f.ghost)] })]
+        if plate != nil { out["fits_plate"] = .bool(plateFit.fits) }
+        return out
+    }
+
+    static var exportsFolder: URL { ProjectStore.folder.appendingPathComponent("exports", isDirectory: true) }
+
+    private func keepExport(_ data: Data, name: String) throws {
+        try FileManager.default.createDirectory(at: Self.exportsFolder, withIntermediateDirectories: true)
+        try data.write(to: Self.exportsFolder.appendingPathComponent(name), options: .atomic)
+    }
+
+    /// Opens the share sheet for a file the assistant exported.
+    func shareExported(_ name: String) {
+        let url = Self.exportsFolder.appendingPathComponent(name)
+        if FileManager.default.fileExists(atPath: url.path) { sharing = SharedFile(url: url) }
+        else { entries.append(ChatEntry(kind: .status, text: "\(name) is no longer available; ask for it again.")) }
     }
 
     func buildForAgent() async -> JSONValue {
@@ -268,6 +411,7 @@ final class AppModel: ObservableObject, AgentHost {
         pendingRefs = []
         preview.clearPicks()
         checkpoints.clear()
+        try? FileManager.default.removeItem(at: Self.exportsFolder)
         try? FileManager.default.removeItem(at: ProjectStore.attachmentsFolder) // attachment numbers start again
         saveChat()
     }
@@ -368,6 +512,8 @@ final class AppModel: ObservableObject, AgentHost {
         "read_script": "Reading the script", "edit_script": "Editing the script", "write_script": "Writing the script",
         "remove_file": "Removing a file", "run_model": "Building the model", "take_screenshot": "Taking a screenshot",
         "save_attachment": "Adding the photo to the project",
+        "rename_file": "Renaming a file", "render_views": "Rendering views", "export_model": "Exporting the model",
+        "set_view": "Changing the view", "set_plate": "Setting the build plate", "set_part_display": "Changing which parts show",
     ]
 
     // MARK: - Keeping the conversation
