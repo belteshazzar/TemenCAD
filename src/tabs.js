@@ -83,7 +83,21 @@ export class Tabs {
       if (action === 'rename') this.rename();
       if (action === 'remove') this.remove();
     });
-    o.fileInput.addEventListener('change', () => this.addFiles([...o.fileInput.files]));
+    o.fileInput.addEventListener('change', async () => {
+      const added = await this.addFiles([...o.fileInput.files]);
+      this._picked?.(added); this._picked = null;
+    });
+    o.fileInput.addEventListener('cancel', () => { this._picked?.([]); this._picked = null; });
+  }
+
+  /** Open the file picker to add files (needs a user click); resolves with the names added. */
+  pickFiles() {
+    this._picked?.([]);
+    return new Promise((resolve) => {
+      this._picked = resolve;
+      this.o.fileInput.value = '';
+      this.o.fileInput.click();
+    });
   }
 
   /** Open the rename/remove menu under the active tab's caret. */
@@ -270,8 +284,10 @@ export class Tabs {
     this.select(n);
   }
 
+  /** Add files from disk; returns the names added. */
   async addFiles(files) {
     let last = null;
+    const added = [];
     for (const f of files) {
       if (!ACCEPTED_EXT.includes(extOf(f.name))) { alert(`Skipped "${f.name}": use ${ACCEPTED_EXT.join(', ')}.`); continue; }
       if (this.project.has(f.name) && !(await askName({ title: 'Replace file', message: `"${f.name}" is already in the project. Replace it?`, ok: 'Replace', input: false }))) continue;
@@ -279,8 +295,10 @@ export class Tabs {
       this.project.set(f.name, content);
       this.states.delete(f.name);
       last = f.name;
+      added.push(f.name);
     }
     if (last) { this.changed(last); this.select(last); }
+    return added;
   }
 
   async rename() {

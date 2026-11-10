@@ -192,6 +192,14 @@ button.secondary:hover { background: var(--hover); }
 .msg pre { background: var(--sunken); padding: 6px 8px; border-radius: 4px; overflow: auto; font-size: 12px; margin: 6px 0; }
 .msg code { font-family: ui-monospace, monospace; font-size: 12px; }
 .msg.empty { color: var(--muted); align-self: center; background: transparent; border: 0; text-align: center; }
+.msg.card { align-self: flex-start; background: var(--surface); border: 1px solid var(--accent); display: flex; flex-direction: column; gap: 6px; }
+.msg.card.download { flex-direction: row; align-items: baseline; gap: 8px; flex-wrap: wrap; border-color: var(--border); }
+.msg.card.download .card-text { flex-basis: 100%; }
+.msg.card a { color: var(--accent); font-weight: 600; text-decoration: none; }
+.msg.card a:hover { text-decoration: underline; }
+.card-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.card-note { color: var(--muted); font-size: 11px; }
+.card-actions button:disabled { opacity: 0.45; cursor: default; }
 .chat-form { display: flex; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--border); align-items: flex-end; }
 .chat-input { flex: 1; resize: none; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
 .chat-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }

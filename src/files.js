@@ -45,8 +45,9 @@ export class FileManager {
     return !this.dirty || confirm(`Discard unsaved changes to ${this.name}?`);
   }
 
-  newProject(template = '') {
-    if (!this.confirmDiscard()) return false;
+  /** Start a project from one script. force skips the discard prompt (the caller already asked). */
+  newProject(template = '', { force = false } = {}) {
+    if (!force && !this.confirmDiscard()) return false;
     this.handle = null;
     this.setProject(Project.fromScript(template));
     this._update(UNTITLED);
@@ -59,30 +60,40 @@ export class FileManager {
     return Project.fromScript(await file.text());
   }
 
-  async open() {
-    if (!this.confirmDiscard()) return;
+  /** Pick and open a project or script. Resolves true once one is open, false if cancelled. force skips the discard prompt. */
+  async open({ force = false } = {}) {
+    if (!force && !this.confirmDiscard()) return false;
     if (hasFSAccess) {
       let handle;
       try { [handle] = await window.showOpenFilePicker({ types: TYPES, multiple: false }); }
-      catch (e) { if (e.name === 'AbortError') return; throw e; }
+      catch (e) { if (e.name === 'AbortError') return false; throw e; }
       const file = await handle.getFile();
       const project = await this._load(file);
       this.handle = file.name.toLowerCase().endsWith(PROJECT_EXT) ? handle : null; // a .js opens as a new, unsaved project
       this.setProject(project);
       this._update(this.handle ? file.name : file.name.replace(/\.[^.]*$/, '') + PROJECT_EXT);
-    } else {
+      return true;
+    }
+    return new Promise((resolve, reject) => {
       this.fileInput.value = '';
+      this.fileInput.oncancel = () => resolve(false);
       this.fileInput.onchange = async () => {
         const file = this.fileInput.files?.[0];
-        if (!file) return;
-        const project = await this._load(file);
-        this.handle = null;
-        this.setProject(project);
-        this._update(file.name.toLowerCase().endsWith(PROJECT_EXT) ? file.name : file.name.replace(/\.[^.]*$/, '') + PROJECT_EXT);
+        if (!file) return resolve(false);
+        try {
+          const project = await this._load(file);
+          this.handle = null;
+          this.setProject(project);
+          this._update(file.name.toLowerCase().endsWith(PROJECT_EXT) ? file.name : file.name.replace(/\.[^.]*$/, '') + PROJECT_EXT);
+          resolve(true);
+        } catch (e) { reject(e); }
       };
       this.fileInput.click();
-    }
+    });
   }
+
+  /** Save would write the opened file in place (no picker, no click needed). */
+  get canSaveInPlace() { return !!this.handle; }
 
   async save() {
     if (this.handle) {
@@ -90,7 +101,7 @@ export class FileManager {
       await w.write(this.getProject().toZip());
       await w.close();
       this._update(this.name);
-      return;
+      return true;
     }
     return this.saveAs();
   }
@@ -101,15 +112,16 @@ export class FileManager {
     if (hasFSAccess) {
       let handle;
       try { handle = await window.showSaveFilePicker({ suggestedName: suggested, types: SAVE_TYPES }); }
-      catch (e) { if (e.name === 'AbortError') return; throw e; }
+      catch (e) { if (e.name === 'AbortError') return false; throw e; }
       const w = await handle.createWritable();
       await w.write(bytes);
       await w.close();
       this.handle = handle;
       this._update(handle.name);
+      return true;
     } else {
       let name = prompt('Save as:', suggested);
-      if (!name) return;
+      if (!name) return false;
       if (!name.toLowerCase().endsWith(PROJECT_EXT)) name += PROJECT_EXT;
       const blob = new Blob([bytes], { type: 'application/zip' });
       const url = URL.createObjectURL(blob);
@@ -117,6 +129,7 @@ export class FileManager {
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       this._update(name);
+      return true;
     }
   }
 }

@@ -7,7 +7,7 @@ import { indentWithTab } from '@codemirror/commands';
 import { apiCompletions } from './completions.js';
 import { lintGutter } from '@codemirror/lint';
 import { Viewer } from './viewer.js';
-import { exportSTL, export3MF } from './export.js';
+import { exportSTL, export3MF, exportFile, downloadBlob } from './export.js';
 import { FileManager } from './files.js';
 import { PLATES, fitProblems } from './plate.js';
 import { Builder } from './build.js';
@@ -106,10 +106,11 @@ const tabs = new Tabs(document.getElementById('tabs'), {
   panels: [{ id: 'assistant', label: 'Assistant', el: chatEl, onShow: () => chat?.focus() }],
   onCatalog: () => catalog.openBrowser(),
 });
-function projectChanged() {
+/** The project changed: store it, update the unsaved marker and (unless told not to) schedule an auto-run. */
+function projectChanged({ run = true } = {}) {
   persist();
   files?.markChanged();
-  scheduleRun();
+  if (run) scheduleRun();
 }
 
 const files = new FileManager({
@@ -311,19 +312,21 @@ viewMenu.addEventListener('click', (e) => {
   if (!action) return;
   if (action === 'run') run();
   if (action === 'reset-view') viewer.resetView();
-  if (action === 'wireframe') {
-    wireframe = !wireframe;
-    viewer.setWireframe(wireframe);
-    viewMenu.querySelector('[data-action="wireframe"] .check').textContent = wireframe ? '✓' : '';
-  }
-  if (action === 'autorun') {
-    autorun = !autorun;
-    store.set('temencad.autorun', autorun ? '1' : '0');
-    reflectAutorun();
-    if (autorun) scheduleRun(0);
-  }
+  if (action === 'wireframe') toggleWireframe();
+  if (action === 'autorun') toggleAutorun();
   menus.closeMenus();
 });
+function toggleWireframe() {
+  wireframe = !wireframe;
+  viewer.setWireframe(wireframe);
+  viewMenu.querySelector('[data-action="wireframe"] .check').textContent = wireframe ? '✓' : '';
+}
+function toggleAutorun() {
+  autorun = !autorun;
+  store.set('temencad.autorun', autorun ? '1' : '0');
+  reflectAutorun();
+  if (autorun) scheduleRun(0);
+}
 
 // ---- Assistant (first tab of the editor pane) ----
 const chat = initChat({
@@ -331,9 +334,10 @@ const chat = initChat({
   host: {
     listFiles: () => project.names(),
     getScript: (file = ENTRY) => tabs.text(file),
-    setScript: (file, text) => { tabs.setText(file, text); clearTimeout(timer); }, // the assistant builds explicitly via run_model, so no auto-run
-    removeFile: (file) => { tabs.removeFile(file); projectChanged(); clearTimeout(timer); },
-    renameFile: (file, to) => { const n = tabs.renameFile(file, to); projectChanged(); clearTimeout(timer); return n; },
+    // the assistant builds explicitly via run_model, so its edits store the project without an auto-run
+    setScript: (file, text) => { tabs.setText(file, text); clearTimeout(timer); projectChanged({ run: false }); },
+    removeFile: (file) => { tabs.removeFile(file); clearTimeout(timer); projectChanged({ run: false }); },
+    renameFile: (file, to) => { const n = tabs.renameFile(file, to); clearTimeout(timer); projectChanged({ run: false }); return n; },
     runAndWait: () => builder.runAndWait(),
     lastReport: () => lastReport,
     renderViews: (opts) => renderSheet(opts),
@@ -342,8 +346,131 @@ const chat = initChat({
       await new Promise((r) => requestAnimationFrame(r));
       return viewer.snapshot(1024);
     },
+    ...appActions(),
   },
 });
+
+/**
+ * The menus' actions for the assistant (agent.js appTools). Each returns a plain object for the
+ * model to read. Actions that need a click (file pickers) put a button card in the chat and wait;
+ * anything that would switch the editor to a file tab switches back to the chat afterwards.
+ */
+function appActions() {
+  const stayInChat = () => tabs.select('assistant');
+  const baseName = () => files.name.replace(/\.[^.]*$/, '');
+  const projectInfo = () => ({ file: files.name, unsaved: files.dirty, files: project.names() });
+  /** Unsaved changes: ask in the chat. Resolves true to go ahead. */
+  async function okToDiscard() {
+    if (!files.dirty) return true;
+    const r = await chat.ask(`${files.name} has unsaved changes. Discard them?`, [
+      { label: 'Discard changes', value: 'discard', primary: true },
+      { label: 'Keep working', value: 'keep' },
+    ]);
+    return r.value === 'discard';
+  }
+  return {
+    appState: () => ({
+      ...projectInfo(), files: undefined,
+      plate: plate ? { id: plate.id, size: [plate.w, plate.d, plate.h] } : null,
+      autorun, wireframe,
+      parts: parts.describe(),
+    }),
+    newProject: async (script) => {
+      if (!(await okToDiscard())) return { done: false, reason: 'the user kept the unsaved changes' };
+      files.newProject(typeof script === 'string' ? script : DEFAULT_SCRIPT, { force: true });
+      stayInChat();
+      return { done: true, ...projectInfo(), build: await builder.runAndWait() };
+    },
+    openProject: async () => {
+      if (!(await okToDiscard())) return { done: false, reason: 'the user kept the unsaved changes' };
+      const r = await chat.ask('Choose a TemenCAD project (.temen) or a script (.js) to open.', [
+        { label: 'Open…', value: 'open', primary: true, run: () => files.open({ force: true }) }, // unsaved changes were asked about above
+        { label: 'Cancel', value: 'cancel' },
+      ]);
+      if (r.error) return { done: false, error: r.error };
+      if (r.value !== 'open' || !r.result) return { done: false, reason: 'cancelled' };
+      stayInChat();
+      return { done: true, ...projectInfo(), build: await builder.runAndWait() };
+    },
+    saveProject: async (asNew) => {
+      if (!asNew && files.canSaveInPlace) {
+        await files.save();
+        return { done: true, saved_in_place: true, ...projectInfo() };
+      }
+      const r = await chat.ask(asNew || files.name.startsWith('untitled') ? 'Choose where to save the project.' : `Save ${files.name}: choose where to save it.`, [
+        { label: 'Save as…', value: 'save', primary: true, run: () => files.saveAs() },
+        { label: 'Cancel', value: 'cancel' },
+      ]);
+      if (r.error) return { done: false, error: r.error };
+      if (r.value !== 'save' || !r.result) return { done: false, reason: 'cancelled' };
+      return { done: true, ...projectInfo() };
+    },
+    exportModel: async ({ format, parts: names, filename }) => {
+      if (!lastMeshes?.length) throw new Error('Nothing built yet; call run_model first');
+      let only;
+      if (names?.length) {
+        const all = lastMeshes.map((m) => m.name);
+        const missing = names.filter((n) => !all.includes(n));
+        if (missing.length) throw new Error(`no part named ${missing.map((n) => `"${n}"`).join(', ')}; parts are ${all.map((n) => `"${n}"`).join(', ')}`);
+        only = names.map((n) => all.indexOf(n));
+      }
+      const stem = (filename || (names?.length === 1 ? names[0] : baseName())).replace(/\.(stl|3mf)$/i, '').replace(/[^\w.-]+/g, '_');
+      const f = exportFile(viewer.modelGroup, format, `${stem}.${format}`, { only });
+      downloadBlob(f.blob, f.filename);
+      const what = format === 'stl' ? `${f.count} triangles` : `${f.count} part${f.count === 1 ? '' : 's'}`;
+      chat.offerDownload(f.blob, f.filename);
+      logLine(`Exported ${what} to ${f.filename}`);
+      return { done: true, file: f.filename, bytes: f.blob.size, [format === 'stl' ? 'triangles' : 'parts']: f.count, downloaded: true, link_in_chat: true };
+    },
+    saveRender: async ({ views, section }) => {
+      const png = await renderSheet({ views, section, width: 1280, height: 960, labels: true });
+      const name = `${baseName()}-views.png`;
+      chat.offerDownload(new Blob([png], { type: 'image/png' }), name);
+      return name;
+    },
+    shareProject: (prefill) => {
+      catalog.openShare(prefill);
+      return { done: true, note: 'The Share form is open with your values; the user reviews it and presses Share (or Cancel).' };
+    },
+    setView: ({ view, wireframe: wf }) => {
+      if (view === 'reset') viewer.resetView();
+      else if (view) viewer.setView(view);
+      if (typeof wf === 'boolean' && wf !== wireframe) toggleWireframe();
+      return { view: view ?? 'unchanged', wireframe };
+    },
+    setPlate: async (id, size) => {
+      if (id === 'custom') {
+        if (!Array.isArray(size) || size.length !== 3 || !size.every((n) => Number.isFinite(n) && n > 0)) throw new Error('plate custom needs size: [width, depth, height] in mm');
+        store.set('temencad.plate.custom', JSON.stringify(size));
+      }
+      if (!PLATES.some((p) => p[0] === id)) throw new Error(`unknown plate "${id}"`);
+      await applyPlate(id);
+      const fit = checkFit();
+      return { plate: plate ? { id: plate.id, size: [plate.w, plate.d, plate.h] } : null, fits: fit.fits, problems: fit.problems };
+    },
+    setPartDisplay: (opts) => ({ parts: parts.apply(opts), fits_plate: plate ? checkFit().fits : undefined }),
+    setAutorun: (on) => { if (!!on !== autorun) toggleAutorun(); return { autorun }; },
+    searchCatalog: async (query) => {
+      const found = await catalog.search(query);
+      return { count: found.length, packages: found.slice(0, 30) };
+    },
+    addFromCatalog: async (name) => {
+      const m = await catalog.add(name);
+      stayInChat();
+      return { done: true, name: m.name, version: m.version, import_line: m.importLine, exports: m.exports, note: 'The import line was added to main.js; use the exports there, then run_model.' };
+    },
+    addFiles: async (reason) => {
+      const r = await chat.ask(reason || 'Add files to the project.', [
+        { label: 'Add files…', value: 'add', primary: true, run: () => tabs.pickFiles() },
+        { label: 'Cancel', value: 'cancel' },
+      ]);
+      stayInChat();
+      if (r.error) return { done: false, error: r.error };
+      if (r.value !== 'add' || !r.result?.length) return { done: false, reason: 'cancelled or no files chosen' };
+      return { done: true, added: r.result, files: project.names() };
+    },
+  };
+}
 document.querySelector('#menu-root > .menu-items').addEventListener('click', (e) => {
   const action = e.target.closest('button')?.dataset.action;
   if (action === 'assistant-settings') { chat.openSettings(); menus.closeMenus(); }

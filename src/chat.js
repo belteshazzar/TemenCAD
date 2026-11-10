@@ -5,7 +5,14 @@
 import { Agent, MODELS, DEFAULT_MODEL, describeAgentError } from './agent.js';
 
 const SETTINGS_KEY = 'temencad.assistant';
-const TOOL_LABELS = { read_script: 'Reading the script', edit_script: 'Editing the script', write_script: 'Writing the script', remove_file: 'Removing a file', rename_file: 'Renaming a file', run_model: 'Building the model', take_screenshot: 'Taking a screenshot', render_views: 'Rendering views' };
+const TOOL_LABELS = {
+  read_script: 'Reading the script', edit_script: 'Editing the script', write_script: 'Writing the script', remove_file: 'Removing a file',
+  rename_file: 'Renaming a file', run_model: 'Building the model', take_screenshot: 'Taking a screenshot', render_views: 'Rendering views',
+  new_project: 'Starting a new project', open_project: 'Opening a project', save_project: 'Saving the project', export_model: 'Exporting',
+  share_project: 'Preparing to share', set_view: 'Changing the view', set_plate: 'Setting the build plate', set_part_display: 'Changing part display',
+  set_autorun: 'Changing auto-run', search_catalog: 'Searching the catalogue', add_from_catalog: 'Adding from the catalogue', add_files: 'Adding files',
+};
+const fmtBytes = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 
 /** Minimal markdown: fenced code blocks and inline code. */
 function renderMarkdown(el, text) {
@@ -53,6 +60,57 @@ export function initChat({ root, host }) {
     log.scrollTop = log.scrollHeight;
     return el;
   }
+  // ---- Cards the assistant puts in the conversation ----
+  const pending = new Set(); // cards still waiting for a click; settled as cancelled on Stop / New chat
+  const downloads = [];      // object URLs behind download links, revoked on New chat
+  function cancelPending() { for (const settle of [...pending]) settle({ cancelled: true }); }
+
+  /**
+   * A card with buttons; resolves once one is clicked with { value, result } (result is what the
+   * button's run() returned), or { cancelled: true } if the conversation is stopped first. run()
+   * is called straight from the click, so it may open a file picker or start a download.
+   * buttons: [{ label, value, primary?, run? }]
+   */
+  function ask(text, buttons) {
+    const card = addMsg('card');
+    card.appendChild(Object.assign(document.createElement('div'), { className: 'card-text', textContent: text }));
+    const row = Object.assign(document.createElement('div'), { className: 'card-actions' });
+    card.appendChild(row);
+    return new Promise((resolve) => {
+      const settle = (outcome, note) => {
+        pending.delete(settle);
+        for (const b of row.querySelectorAll('button')) b.disabled = true;
+        if (note) row.appendChild(Object.assign(document.createElement('span'), { className: 'card-note', textContent: note }));
+        resolve(outcome);
+      };
+      pending.add(settle);
+      for (const btn of buttons) {
+        const b = Object.assign(document.createElement('button'), { type: 'button', textContent: btn.label, className: btn.primary ? '' : 'secondary' });
+        b.addEventListener('click', async () => {
+          if (!pending.has(settle)) return;
+          for (const x of row.querySelectorAll('button')) x.disabled = true;
+          try {
+            const result = btn.run ? await btn.run() : undefined;
+            // a run() that resolves false was cancelled in the picker
+            settle({ value: btn.value, result }, btn.run && result === false ? 'Cancelled' : btn.run ? 'Done' : btn.label);
+          } catch (err) { settle({ value: btn.value, error: err?.message ?? String(err) }, err?.message); }
+        });
+        row.appendChild(b);
+      }
+    }).then((outcome) => { if (outcome.cancelled) row.appendChild(Object.assign(document.createElement('span'), { className: 'card-note', textContent: 'Cancelled' })); return outcome; });
+  }
+
+  /** A download link in the conversation (the file can be saved again later). */
+  function offerDownload(blob, filename, text = '') {
+    const url = URL.createObjectURL(blob);
+    downloads.push(url);
+    const card = addMsg('card download');
+    if (text) card.appendChild(Object.assign(document.createElement('div'), { className: 'card-text', textContent: text }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: filename, textContent: `⤓ ${filename}` });
+    card.append(a, Object.assign(document.createElement('span'), { className: 'card-note', textContent: fmtBytes(blob.size) }));
+    return a;
+  }
+
   function showEmpty() {
     if (!log.children.length) addMsg('empty', settings.apiKey
       ? 'Describe what you want to build or change. The assistant edits the script, builds it, and checks the result.'
@@ -78,6 +136,7 @@ export function initChat({ root, host }) {
         onDone: (final) => { if (final?.stop_reason === 'refusal') addMsg('error', 'The model declined this request.'); },
       });
     } catch (err) {
+      cancelPending();
       addMsg('error', describeAgentError(err));
       if (err instanceof Error && /API key/.test(err.message)) openSettings();
     } finally {
@@ -86,8 +145,15 @@ export function initChat({ root, host }) {
     }
   });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
-  stop.addEventListener('click', () => agent.stop());
-  root.querySelector('.chat-new').addEventListener('click', () => { if (agent.busy) agent.stop(); agent.reset(); log.textContent = ''; showEmpty(); });
+  stop.addEventListener('click', () => { cancelPending(); agent.stop(); });
+  root.querySelector('.chat-new').addEventListener('click', () => {
+    cancelPending();
+    if (agent.busy) agent.stop();
+    agent.reset();
+    for (const u of downloads.splice(0)) URL.revokeObjectURL(u);
+    log.textContent = '';
+    showEmpty();
+  });
 
   // Settings dialog
   for (const [id, label] of MODELS) dialogForm.elements.model.appendChild(Object.assign(document.createElement('option'), { value: id, textContent: label }));
@@ -111,5 +177,5 @@ export function initChat({ root, host }) {
 
   /** Called by the tab bar when the Assistant tab is shown. */
   const focus = () => { showEmpty(); input.focus(); };
-  return { openSettings, focus };
+  return { openSettings, focus, ask, offerDownload };
 }

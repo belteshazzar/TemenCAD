@@ -40,6 +40,31 @@ export class PartsPanel {
 
   changed() { this.render(); this.h.onChange?.(); }
 
+  /** Each part's display state: { name, visible, ghost }. */
+  describe() { return this.parts.map((p) => ({ name: p.name, ...this.flags(p) })); }
+
+  /**
+   * Change how parts are displayed (the assistant's set_part_display). names: part names, or omitted
+   * for every part. visible / ghost set those flags; solo shows only the named parts; reset drops every
+   * override so the script's own flags apply. Throws on a name that is not a part.
+   */
+  apply({ names, visible, ghost, solo = false, reset = false } = {}) {
+    if (reset) this.state.clear();
+    const unknown = (names ?? []).filter((n) => !this.parts.some((p) => p.name === n));
+    if (unknown.length) throw new Error(`no part named ${unknown.map((n) => `"${n}"`).join(', ')}; parts are ${this.parts.map((p) => `"${p.name}"`).join(', ') || 'none'}`);
+    const picked = (p) => !names || names.includes(p.name);
+    for (const p of this.parts) {
+      if (solo) this.state.set(p.name, { ...this.flags(p), visible: picked(p) });
+      if (!picked(p)) continue;
+      const patch = {};
+      if (visible !== undefined) patch.visible = visible;
+      if (ghost !== undefined) patch.ghost = ghost;
+      if (Object.keys(patch).length) this.state.set(p.name, { ...this.flags(p), ...patch });
+    }
+    this.changed();
+    return this.describe();
+  }
+
   render() {
     const { viewer } = this.h;
     this.body.textContent = '';
