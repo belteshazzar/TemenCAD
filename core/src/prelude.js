@@ -218,13 +218,52 @@ P.toString = function () { return fmt(this); };
 
 // ---- primitives (cad.js) ---------------------------------------------------
 
+/** A 3D size: a number (all three), [x, y, z] or { x, y, z }. Returns [x, y, z]; the caller checks the values. */
+function size3(fn, v) {
+  if (typeof v === 'number') return [v, v, v];
+  if (Array.isArray(v)) {
+    if (v.length !== 3) throw new TypeError(`${fn}: size must be [x, y, z], got ${describe(v)}`);
+    return [v[0], v[1], v[2]];
+  }
+  if (v !== null && typeof v === 'object' && (v.x !== undefined || v.y !== undefined || v.z !== undefined)) {
+    for (const k of ['x', 'y', 'z']) if (v[k] === undefined) throw new TypeError(`${fn}: a size object needs x, y and z, got ${describe(v)}`);
+    return [v.x, v.y, v.z];
+  }
+  throw new TypeError(`${fn}: size must be a number, [x, y, z] or { x, y, z }, got ${describe(v)}`);
+}
+/**
+ * The size and options of a box-like primitive whose first argument is a size array, a { x, y, z }
+ * object (which may carry options too), or an options object with size. Returns { size, opts }.
+ * optionKeys: the options the primitive takes (anything else in the object is an error, so a
+ * misspelt key is not silently ignored).
+ */
+function boxArgs(fn, first, optionKeys) {
+  let size, opts;
+  if (Array.isArray(first)) { size = size3(fn, first); opts = {}; }
+  else if (first.x !== undefined || first.y !== undefined || first.z !== undefined) { size = size3(fn, first); opts = first; }
+  else { size = first.size === undefined ? [1, 1, 1] : size3(fn, first.size); opts = first; }
+  for (const k of Object.keys(opts)) {
+    if (k !== 'x' && k !== 'y' && k !== 'z' && k !== 'size' && optionKeys.indexOf(k) < 0) {
+      throw new TypeError(`${fn}: unknown option '${k}' (size is a number, [x, y, z] or { x, y, z }; options are ${optionKeys.join(', ')})`);
+    }
+  }
+  return { size, opts };
+}
+
+/** box(w, h, d), box(size) for a cube, box([x, y, z]), box({ x, y, z, center }), box({ size, center }); box([x, y, z], { center }) */
 function box(w = 1, h, d) {
   let center = true;
   if (typeof w === 'object' && w !== null) {
-    const o = w;
-    center = o.center === undefined ? true : o.center;
-    const size = o.size === undefined ? [1, 1, 1] : o.size;
-    w = size[0]; h = size[1]; d = size[2];
+    const a = boxArgs('box', w, ['center']);
+    let opts = a.opts;
+    if (Array.isArray(w) && h !== undefined) {
+      if (h === null || typeof h !== 'object' || Array.isArray(h)) throw new TypeError(`box: after a size array the only argument is options ({ center }), got ${describe(h)}`);
+      const merged = { size: a.size };
+      for (const k of Object.keys(h)) merged[k] = h[k];
+      opts = boxArgs('box', merged, ['center']).opts;
+    } else if (h !== undefined || d !== undefined) throw new TypeError(`box: give the size once: box(w, h, d), box([x, y, z]) or box({ x, y, z })`);
+    if (opts.center !== undefined) center = opts.center;
+    w = a.size[0]; h = a.size[1]; d = a.size[2];
   }
   if (h === undefined) h = w;
   if (d === undefined) d = w;
@@ -630,20 +669,33 @@ function prism(sides = 6, r = 1, h = 1, opts = {}) {
   checkInt('prism', 'sides', sides, 3); checkPositive('prism', 'radius', r); checkPositive('prism', 'height', h);
   return extrude(regularPolygon(sides, r), h, { center });
 }
-/** Box with rounded edges. opts: { edges: 'all' | 'vertical', segments, center } */
+/**
+ * Box with rounded edges. roundedBox(w, h, d, r, opts), roundedBox([x, y, z], r, opts),
+ * roundedBox({ x, y, z, r, ...opts }) or roundedBox({ size, r, ...opts }).
+ * opts: { edges: 'all' | 'vertical', segments, center }
+ */
 function roundedBox(w = 1, h, d, r = 0.1, opts = {}) {
-  let edges = opts.edges === undefined ? 'all' : opts.edges;
-  let segments = opts.segments;
-  let center = opts.center === undefined ? true : opts.center;
   if (typeof w === 'object' && w !== null) {
-    const o = w;
-    const size = o.size === undefined ? [1, 1, 1] : o.size;
-    w = size[0]; h = size[1]; d = size[2];
-    r = o.r !== undefined ? o.r : o.radius !== undefined ? o.radius : 0.1;
-    edges = o.edges === undefined ? 'all' : o.edges;
-    segments = o.segments;
-    center = o.center === undefined ? true : o.center;
+    const keys = ['r', 'radius', 'edges', 'segments', 'center'];
+    let o;
+    if (Array.isArray(w)) { // roundedBox([x, y, z], r, opts)
+      if (h !== undefined && typeof h !== 'number') throw new TypeError(`roundedBox: after a size array come the radius and options: roundedBox([x, y, z], r, { edges }), got ${describe(h)}`);
+      if (d !== undefined && (d === null || typeof d !== 'object' || Array.isArray(d))) throw new TypeError(`roundedBox: options must be an object, got ${describe(d)}`);
+      const merged = { size: w };
+      if (d !== undefined) for (const k of Object.keys(d)) merged[k] = d[k];
+      if (h !== undefined) merged.r = h;
+      o = boxArgs('roundedBox', merged, keys);
+    } else {
+      if (h !== undefined || d !== undefined) throw new TypeError(`roundedBox: give the size once: roundedBox(w, h, d, r), roundedBox([x, y, z], r) or roundedBox({ x, y, z, r })`);
+      o = boxArgs('roundedBox', w, keys);
+    }
+    w = o.size[0]; h = o.size[1]; d = o.size[2];
+    r = o.opts.r !== undefined ? o.opts.r : o.opts.radius !== undefined ? o.opts.radius : 0.1;
+    opts = o.opts;
   }
+  const edges = opts.edges === undefined ? 'all' : opts.edges;
+  const segments = opts.segments;
+  const center = opts.center === undefined ? true : opts.center;
   if (h === undefined) h = w;
   if (d === undefined) d = w;
   checkPositive('roundedBox', 'width', w); checkPositive('roundedBox', 'height', h); checkPositive('roundedBox', 'depth', d);

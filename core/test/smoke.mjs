@@ -418,6 +418,17 @@ check('an unfinished last line is reported on it', !r.ok && r.error?.line === 2,
 r = rt.run({ 'main.js': 'box(2);' });
 check('no return: nothing but what is shown', r.ok && r.parts.length === 0, r.error?.message);
 
+// 4r. box takes its size as three numbers, an array or { x, y, z }; anything else is an error, not a 1 mm cube
+r = rt.run({ 'main.js': 'return { a: box(2, 3, 4), b: box([2, 3, 4]), c: box({ x: 2, y: 3, z: 4, center: false }), d: box({ size: [2, 3, 4] }), e: roundedBox([20, 10, 4], 1), f: roundedBox(20, 10, 4, 1) };' });
+check('box size forms', r.ok && r.parts.slice(0, 4).every((p) => near(p.volume, 24)), r.error?.message ?? r.parts?.map((p) => p.volume).join());
+const minOf = (pos) => [0, 1, 2].map((k) => Math.min(...pos.filter((_, i) => i % 3 === k)));
+check('box { center: false } has its corner on the origin', r.ok && minOf(r.parts[2].positions).every((v) => near(v, 0)), r.ok ? minOf(r.parts[2].positions).join() : '');
+check('roundedBox size array', r.ok && near(r.parts[4].volume, r.parts[5].volume) && r.parts[4].volume < 800, r.ok ? `${r.parts[4].volume} vs ${r.parts[5].volume}` : '');
+for (const [src, re] of [['box([1, 2])', /box: size must be \[x, y, z\]/], ['box({ w: 1, h: 2, d: 3 })', /box: unknown option 'w'/], ['box({ x: 1, y: 2 })', /needs x, y and z/], ['roundedBox({ x: 1, y: 1, z: 1, edge: "all" })', /unknown option 'edge'/]]) {
+  r = rt.run({ 'main.js': `return ${src};` });
+  check(`${src} is an error`, !r.ok && re.test(r.error?.message ?? ''), r.error?.message);
+}
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);

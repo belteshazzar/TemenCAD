@@ -9,9 +9,9 @@ const method = (label, snippet, detail, info, on) => ({ label, snippet, detail, 
 
 export const GLOBALS = [
   // 3D primitives
-  fn('box', 'box(${w}, ${h}, ${d})', '(w, h, d)', 'Box centred on the origin; one size makes a cube.'),
+  fn('box', 'box(${w}, ${h}, ${d})', '(w, h, d) | ([x, y, z]) | ({ x, y, z, center })', 'Box centred on the origin; one size makes a cube; the size may also be [x, y, z] or { x, y, z }.'),
   fn('cube', 'cube(${size})', '(size)', 'Alias of box().'),
-  fn('roundedBox', "roundedBox(${w}, ${h}, ${d}, ${r}, { edges: '${vertical}' })", '(w, h, d, r, { edges })', "Box with rounded edges; edges: 'all' or 'vertical' (only the four vertical edges, prints flat)."),
+  fn('roundedBox', "roundedBox(${w}, ${h}, ${d}, ${r}, { edges: '${vertical}' })", '(w, h, d, r, { edges }) | ([x, y, z], r, { edges })', "Box with rounded edges; edges: 'all' or 'vertical' (only the four vertical edges, prints flat). The size may also be [x, y, z] or { x, y, z, r }."),
   fn('sphere', 'sphere(${r})', '(r, { segments })', 'Sphere centred on the origin.'),
   fn('cylinder', 'cylinder(${r}, ${h})', '(r, h) | ({ r1, r2, h })', 'Cylinder along Y, centred; r1/r2 give a tapered cylinder.'),
   fn('cone', 'cone(${r}, ${h})', '(r, h)', 'Cone along Y with its base radius r.'),

@@ -29,6 +29,8 @@
       <p class="lead">Your script is JavaScript (a strict subset; see <em>Script language</em> at the end). Return a shape (or an array of shapes), or call <code>show(shape)</code>. Units are millimetres, Y is up, the build plate is y&nbsp;=&nbsp;0. Every operation returns a new shape; nothing is mutated.</p>
       <h3>3D primitives</h3>
       <pre>box(w, h, d)                                      // box centred on the origin; box(10) is a cube
+box([x, y, z]) / box({ x, y, z })                 // the size as an array or an object (vectors you already have)
+box({ x, y, z, center: false })                   // corner on the origin; also box([x, y, z], { center }), box({ size, center })
 cone(r, h)                                        // cone along Y with base radius r
 cube(size)                                        // alias of box
 cylinder(r, h, { segments, center })              // along Y, centred; center: false puts the base on y = 0
@@ -38,6 +40,7 @@ polygon([[x, y], ...], h)                         // 2D point list extruded up a
 polyhedron(points, faces)                         // raw vertices and faces, like OpenSCAD; winding is fixed
 prism(sides, r, h, { center })                    // regular n-sided prism with circumradius r
 roundedBox(w, h, d, r, { edges, segments })       // edges: 'all' | 'vertical' (vertical edges only, prints flat)
+roundedBox([x, y, z], r, { edges })               // size as an array; or roundedBox({ x, y, z, r, edges })
 sphere(r, { segments })                           // sphere centred on the origin
 text3d(str, { size, height, font, align })        // extruded text, baseline on the plate
 torus(r, tube, { segments, tubeSegments })        // ring in the XZ plane, ring radius r, tube radius tube</pre>
