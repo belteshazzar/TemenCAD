@@ -1,0 +1,407 @@
+# TemenCAD API
+Your script is JavaScript (a strict subset; see Script language at the end). Return a shape (or an array of shapes), or call show(shape). Units are millimetres, Y is up, the build plate is y = 0. Every operation returns a new shape; nothing is mutated.
+
+## 3D primitives
+
+```
+box(w, h, d)                                      // box centred on the origin; box(10) is a cube
+box([x, y, z]) / box({ x, y, z })                 // the size as an array or an object (vectors you already have)
+box({ x, y, z, center: false })                   // corner on the origin; also box([x, y, z], { center }), box({ size, center })
+cone(r, h)                                        // cone along Y with base radius r
+cube(size)                                        // alias of box
+cylinder(r, h, { segments, center })              // along Y, centred; center: false puts the base on y = 0
+cylinder({ r1, r2, h })                           // tapered: bottom radius r1, top radius r2
+loft([sk1, sk2, ...], height | [y1, y2, ...])     // skin between profiles stacked along Y (no holes)
+polygon([[x, y], ...], h)                         // 2D point list extruded up along Y by h
+polyhedron(points, faces)                         // raw vertices and faces, like OpenSCAD; winding is fixed
+prism(sides, r, h, { center })                    // regular n-sided prism with circumradius r
+roundedBox(w, h, d, r, { edges, segments })       // edges: 'all' | 'vertical' (vertical edges only, prints flat)
+roundedBox([x, y, z], r, { edges })               // size as an array; or roundedBox({ x, y, z, r, edges })
+sphere(r, { segments })                           // sphere centred on the origin
+text3d(str, { size, height, font, align })        // extruded text, baseline on the plate
+torus(r, tube, { segments, tubeSegments })        // ring in the XZ plane, ring radius r, tube radius tube
+```
+
+## 2D sketches
+
+```
+sk.add(other) / sk.union(other)                   // 2D union
+sk.area()                                         // area in mm²
+sk.bounds()                                       // { min, max, size, center } in sketch units
+sk.center()                                       // centre the sketch on the origin
+sk.chamfer(d)                                     // cut every corner back by d along both edges
+circle(r, { segments })                           // circle
+ellipse(rx, ry, { segments })                     // ellipse
+sk.fillet(r, { segments })                        // round every corner (clamped so corners never overlap)
+sk.hull(other)                                    // 2D convex hull
+sk.intersect(other)                               // 2D intersection
+sk.isEmpty()                                      // true when the sketch has no area
+sk.mirror('x' | 'y')                              // mirror across an axis
+sk.offset(delta, { join, segments })              // grow (+) / shrink (−); join 'round' | 'miter' | 'square'
+polygon2d([[x, y], ...], { holes })               // any polygon; holes: [[[x, y], ...], ...]
+rect(w, h, { center })                            // rectangle, centred by default
+regularPolygon(sides, r)                          // circumradius r, first vertex on +x
+sk.resize([w, h], { auto })                       // to a bounding-box size; 0 keeps an axis, auto keeps proportions
+sk.rotate(deg)                                    // rotate about the origin
+roundedRect(w, h, r, { center, segments })        // rectangle with rounded corners
+sk.scale(x, y)                                    // scale; one factor scales both
+slot(length, r, { segments })                     // capsule: semicircles length apart, centre to centre
+teardrop(r, { angle, flat, segments })            // circle with a point at +y: a horizontal hole that prints without sagging
+bridgedCircle(r, { angle, segments })             // circle with a flat ceiling above `angle` from vertical, for the slicer to bridge
+square(size)                                      // alias of rect
+sk.subtract(other)                                // 2D difference
+text(str, { size, font, align, letterSpacing })   // outline, baseline y = 0; align 'left' | 'center' | 'right'
+sk.toPolygons()                                   // outline rings as [[x, y], ...][]
+sk.translate(x, y)                                // move
+// fonts: 'Inter' (default), 'Inter Bold', 'Nunito Bold', 'Source Serif 4', 'JetBrains Mono', or an imported .ttf
+```
+
+## Drawing a profile
+
+```
+sketch() / sketch([[x, y], ...])                 // a pen for one closed outline; close() turns it into a sketch
+b.arcTo(x, y, { r, side, large, segments })       // circular arc of radius r to (x, y); side 'left' (anticlockwise, default) | 'right'; large: the long way
+b.close({ mirror, segments })                     // finish: the Sketch. mirror 'x' | 'y' appends the mirror image, for symmetric outlines
+b.fillet(r)                                       // round the corner just drawn (clamped when the corner is too short)
+b.horizontal(dx) / b.vertical(dy)                 // axis-aligned relative segments
+b.line(dx, dy)                                    // relative segment
+b.lineTo(x, y)                                    // segment to a point
+b.moveTo(x, y)                                    // where the outline starts
+b.points()                                        // the points so far, for inspection
+b.tangentArcTo(x, y, { segments })                // arc tangent to the previous segment, ending at (x, y)
+b.quadTo(cx, cy, x, y, { segments })              // quadratic Bézier to (x, y), pulled toward the control point (cx, cy)
+b.bezierTo(c1x, c1y, c2x, c2y, x, y, { segments })  // cubic Bézier to (x, y) with two control points (16 segments by default)
+// sketch().moveTo(0, 0).lineTo(30, 0).arcTo(30, 10, { r: 5 }).lineTo(0, 10).fillet(2).close().extrude(3)
+// revolve(sketch().moveTo(0, 0).lineTo(12, 0).lineTo(14, 20).fillet(3).lineTo(10, 40).lineTo(0, 40).close())
+```
+
+## 2D → 3D and back
+
+```
+extrude(sk, h, { center, twist, scale, slices })  // up along Y; twist in degrees, scale at the top
+sk.extrude(h, opts)                               // method form of extrude
+projection(s)                                     // 3D → 2D: the solid's footprint seen from above
+projection(s, { cut: true | y })                  // 3D → 2D: the slice where the plane y cuts the solid
+s.projection(opts)                                // method form of projection
+revolve(sk, { angle, segments })                  // around Y; sketch x is the radius (≥ 0), y the height
+sk.revolve(opts)                                  // method form of revolve
+roof(sk, { angle, segments, tolerance })          // height = distance to the outline: pyramid, hip roof
+sk.roof(opts)                                     // method form of roof
+// Sketch x is world X, sketch y is world −Z: seen from above, a sketch reads like a drawing.
+```
+
+## Paths and sweeps
+
+```
+arc(r, angle, { segments })                       // arc on the ground plane, centred on the origin, from +X anticlockwise seen from above
+bezier(p0, p1, p2, p3, { segments })              // cubic Bézier from p0 to p3 with control points p1, p2
+helix(r, height, turns, { segments })             // around Y from [r, 0, 0]; negative turns wind the other way
+line(a, b)                                        // straight path from a to b
+path([[x, y, z], ...], { closed, smooth })        // polyline; [x, y] points lie on the ground plane like a sketch
+p.append(other)                                   // continue with another path, moved to start where this one ends
+p.bounds()                                        // { min, max, size, center }
+p.close()                                         // join the ends: the sweep becomes a ring with no caps
+p.length()                                        // length in mm
+p.mirror('x' | 'y' | 'z')                         // mirror across the axis plane through the origin
+p.pointAt(t) / p.tangentAt(t)                     // point and unit direction at fraction t (0..1) of the length
+p.points                                          // the vertices as [x, y, z][]
+p.reverse()                                       // travel the other way
+p.rotate(xDeg, yDeg, zDeg)                        // rotate in degrees about X, then Y, then Z
+p.scale(f) / p.scale(x, y, z)                     // scale uniformly or per axis
+p.smooth({ segments })                            // replace the corners with a smooth curve through the same points
+p.translate(x, y, z)                              // move
+sweep(sk, p, { frame, up, twist, scale, segments })  // sweep a sketch along a path; closed paths make rings
+sweep((t) => sk, p, opts)                         // the profile may vary: t is the fraction of the length (0..1)
+sk.sweep(p, opts)                                 // method form of sweep
+// The sketch sits across the path: sketch x to the right, sketch y up (a vertical path matches extrude).
+// frame 'minimal' (default) never twists the profile; 'upright' keeps sketch y pointing to `up` (default +Y).
+// twist in degrees over the whole path; scale a factor or [sx, sy] reached at the end.
+// Corners are mitred; a bend tighter than the profile is wide warns, because the surface folds into itself.
+```
+
+## SVG drawings
+
+```
+import logo from './logo.svg'                     // the drawing's filled shapes as a Sketch, in mm, Y up, viewBox bottom-left at the origin
+import { markup } from './logo.svg'               // the file's text, for svg(markup, opts)
+svg(markup, { segments, id, width, height })      // SVG markup as a Sketch; id: only that element and its children;
+//   width or height: scale uniformly to that size in mm; segments per curve (16)
+svgPath(d, { segments, evenOdd })                 // SVG path data ('M0 0 h10 v10 Z') as a Sketch in its own units, Y flipped
+// Reads path (every command, arcs included), rect, circle, ellipse, polygon and polyline, through group transforms,
+//   with fill and fill-rule from attributes, style="" and simple <style> rules (tag, .class, #id); all filled shapes are unioned.
+// Size: width/height in mm, cm, in, pt, pc or px scale the viewBox; without units one user unit is 1 mm.
+// Skipped with a warning: strokes (outline them: stroke to path), <text> (convert to paths), <use> and <image>.
+// extrude(logo, 2) makes it a solid; logo.offset(-0.2) shrinks it for an inlay.
+```
+
+## Images: heightmaps and lithophanes
+
+```
+heightmap(img, { width, depth, height, base, invert, smooth, gamma, resolution })  // relief: brightness becomes height
+heightmap((x, z) => 0..1, opts)                   // the same from a function of position in mm
+lithophane(img, { width, depth, minThickness, maxThickness, border, smooth, gamma, resolution, upright })
+img.at(x, y) / img.sample(x, y)                   // brightness 0..1 at a pixel (sample: bilinear, fractional)
+img.blur(radius)                                  // soften by a radius in pixels
+img.crop(x, y, w, h)                              // cut out a rectangle in pixels
+img.flip('x' | 'y')                               // mirror
+img.gamma(g)                                      // < 1 lightens the mid-tones, > 1 darkens them
+img.invert()                                      // light ↔ dark
+img.normalize()                                   // stretch so the darkest pixel is 0 and the lightest 1
+img.resize(w, h)                                  // resample in pixels; h follows the aspect ratio when omitted
+img.width / img.height                            // size in pixels
+// import photo from './photo.png' (or .jpg) gives an image: brightness 0 (black) .. 1 (white), transparency on white.
+// heightmap: a plate width × depth (depth from the aspect ratio) rising from base (black) to base + height (white),
+//   seen from above like a drawing, centred on the origin. resolution = samples across the width (default 200).
+// lithophane: dark is thick (maxThickness, default 3), light is thin (minThickness, 0.8); border adds a rim;
+//   upright stands it on its edge facing the front, ready to print. Light it from behind.
+```
+
+## Transforms (return a new shape)
+
+```
+s.align({ x, y, z }, [tx, ty, tz])                // each axis 'min' | 'center' | 'max' to the point
+s.center()                                        // centre on the origin
+s.centerXZ()                                      // centre in X and Z, keeping Y
+s.color(css)                                      // '#f80', a CSS name, rgb() or hsl()
+s.mirror('x' | 'y' | 'z')                         // mirror across the axis plane through the origin
+s.onPlate(y = 0)                                  // put the bottom on the build plate
+s.resize([w, h, d], { auto })                     // to a bounding-box size; 0 keeps an axis, auto keeps proportions
+s.rotate(xDeg, yDeg, zDeg)                        // rotate in degrees about X, then Y, then Z
+s.scale(f) / s.scale(x, y, z)                     // scale uniformly or per axis
+s.translate(x, y, z)                              // move; also accepts [x, y, z]
+```
+
+## Edges: fillets and chamfers
+
+```
+s.chamfer(d, { edges, minAngle })                 // bevel the sharp edges by d along each face
+s.fillet(r, { edges, segments, minAngle })        // round the sharp edges with radius r
+fillet(s, r, opts) / chamfer(s, d, opts)          // function forms; on a sketch they round or cut its corners
+sharpEdges(s, minAngle)                           // the edges found: [{ p0, p1, t, nA, nB, convex, angle, length }]
+// edges: 'all' (default) | 'top' | 'bottom' | 'horizontal' | 'vertical' | 'convex' | 'concave',
+//        a list that must all hold (['top', 'convex']), or (edge) => boolean over the sharpEdges() records.
+// Works on solids with flat faces: boxes, prisms, extrusions, unions of those. Edges between faces that meet at
+// less than minAngle (30°) are left alone, so the facets of cylinders and spheres are not treated as edges.
+// Convex edges lose material, concave edges (where a boss meets a plate) gain a fillet. Corners are mitred.
+```
+
+## Lettering on a face
+
+```
+s.emboss(sketch | 'text', face | anchor, { depth, at, angle, size, font, center })  // raise a sketch or text out of a face by depth (default 1)
+s.engrave(sketch | 'text', face | anchor, opts)   // cut it in by depth
+// Laid on the face so it reads from outside: top as a drawing seen from above; front, back, left and right upright with
+// x to the viewer's right; bottom seen from below. Centred on the face (or on at: [u, v]) unless center is false;
+// angle turns it in the plane. A string becomes text(str, { size (6), font, align: 'center' }).
+// box(40, 20, 30).onPlate().emboss('TEMEN', s.face('front'), { depth: 1, size: 7 }).engrave('v2', s.face('top'), { depth: 0.6 })
+```
+
+## Placement by named features
+
+```
+s.face('top' | 'bottom' | 'front' | 'back' | 'left' | 'right')  // a face of the bounding box: { center, normal, min, max, size, u, v }
+face.point([u, v]) / face.point({ x, y, z })      // a point on the face: [u, v] along its in-plane axes (top: x, z; front: x, y; right: z, y)
+s.anchor(name, [x, y, z], [nx, ny, nz]?)          // record a named point (and optional direction) that moves with the shape through every transform and boolean
+s.anchor(name)                                    // get it back: { name, point, normal }; s.anchors lists them all
+s.at(anchor, [dx, dy, dz]?, { gap })              // put s's origin on an anchor, +Y turned along its direction (if it has one)
+a.alignTo(b, { x, y, z }, { gap })                // per axis: 'min' | 'center' | 'max' match that side of b, or sit against it:
+//   x: 'left' | 'right', y: 'below' | 'above', z: 'back' | 'front'; axes left out stay put
+s.at(face, [u, v], { gap, orient })               // put s's origin on the face with +Y along the normal: cutters and bosses built on y = 0 land on it
+part.placeOn(base, 'top', { at, gap, align })     // part's opposite face touches base's face, centred on it (align 'keep' only moves along the normal)
+distance(a, b)                                    // between faces (along the first one's normal), anchors, [x, y, z] points, in any mix
+gridPattern(nu, nv, du, dv)                       // nu × nv [u, v] points at that pitch, centred
+rectPattern(w, d)                                 // the four corners of a w × d rectangle as [u, v] points
+// const pin = cylinder(1, 10, { center: false }).anchor('tip', [0, 10, 0], [0, 1, 0]);  cap.at(pin.rotate(0, 0, -90).anchor('tip'))
+// const top = plate.face('top');
+// const risers = union(rectPattern(21, 12.5).map((p) => cylinder(2.5, 4, { center: false }).at(top, p)));
+// plate = plate.add(risers).subtract(rectPattern(21, 12.5).map((p) => screwHole('M2', 6, { type: 'tap' }).at(risers.face('top'), p)));
+// const board = box(25, 1.2, 24).placeOn(risers, 'top');   lid.alignTo(body, { x: 'center', z: 'center', y: 'above' }, { gap: 0.3 })
+```
+
+## Booleans, hull, Minkowski
+
+```
+a.add(b) / a.union(b)                             // method form of union
+difference(a, b, ...)                             // subtract every following shape from the first
+a.erode(t, { segments })                          // shrink inward by t on every face
+hull(a, b, ...)                                   // convex hull of shapes or raw [x, y, z] points
+a.hull(b)                                         // method form of hull
+intersect(a, b, ...)                              // keep only the common volume
+a.intersect(b)                                    // method form of intersect
+minkowski(a, b) / a.minkowski(b)                  // Minkowski sum: sweep b over every point of a
+a.round(r, { segments })                          // round all edges (Minkowski with a sphere; grows by r)
+shell(a, t, { open, segments })                   // hollow to wall t; open: 'top' | ['top', 'front', ...]
+a.shell(t, opts)                                  // method form of shell
+a.subtract(b)                                     // method form of difference
+union(a, b, ...)                                  // merge; arrays of shapes are accepted everywhere
+```
+
+## Arrays (return arrays; wrap in union() to merge)
+
+```
+grid(s, [nx, nz], [dx, dz], { center })           // nx × nz copies on the ground plane
+linearArray(s, count, [dx, dy, dz])               // count copies stepped by a vector (a number = X step)
+polarArray(s, count, { radius, axis, start, sweep }) // count copies around an axis; sweep in degrees
+```
+
+## Gears
+
+```
+gear({ module, teeth, pressureAngle, thickness, helix, backlash, bore })  // involute spur gear (helix: angle in degrees, sign is the hand);
+//   axis Y, base on y = 0, tooth 0 along +X. Defaults: module 1, 20 teeth, 20°, 5 mm thick
+gear2d({ module, teeth, pressureAngle, backlash, bore, addendum, dedendum })  // its outline as a 2D sketch;
+//   addendum / dedendum: tooth height above / below the pitch circle in modules (1, 1.25)
+gearDistance(module, teeth1, teeth2)              // centre distance of a meshing pair: module × (teeth1 + teeth2) / 2
+gearPair({ module, teeth: [t1, t2], ... })        // [first, second]: second along +X at gearDistance, turned to mesh; helical pairs get opposite hands
+rack({ module, teeth, pressureAngle, thickness, height, backlash })  // straight rack: pitch line along X at z = 0, teeth toward -Z
+ringGear({ module, teeth, thickness, rim, backlash, helix, addendum })  // internal gear: teeth inside a rim, centred, a tooth space along +X;
+//   an external gear meshes inside it at module × (ring - gear teeth) / 2
+ringAddendum(ringTeeth, pinionTeeth, pressureAngle)  // the ring tooth height (≤ 1 module) that keeps that pinion clear of the ring's tips;
+//   pinions under about 15 teeth need it: ringGear({ ..., addendum: ringAddendum(36, 12) })
+planetary({ module, sun, planet, planets, thickness, backlash, helix, rim, sunBore, planetBore })  // { sun, planets: [...], ring },
+//   assembled and phased; ring teeth = sun + 2 × planet; (sun + ring) must divide by planets;
+//   the ring's tips are shortened with ringAddendum() when the planets are small
+// Give printed pairs backlash: 0.1–0.2 mm (gearPair splits it between the two). Cut gears under 17 teeth (at 20°) are undercut at the root;
+// these profiles are not, so a very small pinion may want a little more backlash.
+```
+
+## Threads
+
+```
+thread({ size, length, internal, pitch, profile, starts, left, tolerance, chamfer, segments })  // along Y from y = 0 to length, centred;
+//   external: a threaded rod; internal: true: the cutter for a threaded hole (subtract it)
+// size: 'M8' (ISO coarse pitch, M2–M24), 'M8x1' (fine pitch), 'Tr8x8(P2)' (trapezoidal lead screw: diameter, lead, pitch), or a diameter with pitch
+// profile: 'iso' (60°, default) | 'trapezoid' (30°) | 'square'; starts: multi-start threads; left: true for a left-hand thread
+// tolerance: mm on the diameter (the rod shrinks, the hole grows); a hole defaults to printer()'s holeCompensation. Printed pairs want ~0.3–0.4.
+// chamfer (default true): a 45° lead-in on rods, flared entries on holes, at both ends; give a hole cutter the hole's exact length
+// segments: samples per turn (32); an M8 × 20 rod is about 40k triangles
+```
+
+## Holes and screw helpers (cutters to subtract)
+
+```
+hole(r, length, { axis, shape, angle, flat, tolerance })  // centred on the origin along axis 'x' | 'y' | 'z'; horizontal holes get shape
+//   'teardrop' (default: a 45° point on top) | 'bridge' (flat ceiling) | 'round'
+heatInsert(size, { depth, tolerance })            // hole for a heat-set insert (axis Y, top surface at y = 0)
+nutPocket(size, { depth, tolerance })             // hexagonal nut pocket
+screw(size)                                       // dimensions: { d, clearance, head, csk, nut, insert, tap }
+screwHole(size, length, { type, tolerance, bridge })  // type 'clearance' | 'tap' | 'countersunk' | 'counterbore' (axis Y, top at y = 0);
+//   bridge: 0.2 leaves one layer between head recess and shank to print head-down, then drill out
+SCREWS                                            // the table those come from
+// sizes 'M2' 'M2.5' 'M3' 'M4' 'M5' 'M6' 'M8'. Translate a cutter to the part's top face, then subtract it.
+// Horizontal round holes sag when printed; use hole() with its teardrop, or clip the point with flat when the hole is near a surface.
+```
+
+## Splitting for printing
+
+```
+split(s, { y: 40 })                               // cut across one axis: [part 1, part 2] in order along the axis
+split(s, { x: [-30, 30] }, { dowels, dowelDiameter, dowelLength, tolerance, wall, layout, gap })  // several cuts: three pieces
+s.split({ z: 0 }, { dowels: 2, layout: true })    // method form
+// dowels: per cut, holes in both faces placed as far apart as the cut face allows (wall: least material around them);
+//   the dowels come after the pieces in the result, to print separately. tolerance: added to the hole diameter (0.2).
+// layout: true turns every piece onto a cut face and lines them up on the plate, ready to print without supports.
+```
+
+## Printer profile and fits
+
+```
+printer({ nozzle, layer, holeCompensation, material })  // declare the printer once at the top (defaults 0.4, 0.2, 0.2); returns the profile
+printProfile()                                    // the profile in force
+fit(d, kind)                                      // hole diameter to model so a d mm part fits: 'press' | 'snug' | 'slide' | 'clearance' (default) | 'loose', or an allowance in mm
+layers(h) / layers(0, { count })                  // a height rounded up to whole layers, or a number of layers
+peg(d, kind)                                      // peg diameter to model so it fits a d mm hole the same way
+wall(t) / wall(0, { lines })                      // a wall rounded up to whole extrusion lines, or a number of lines: wall(1) is 1.2 with a 0.4 nozzle
+// Once printer() is declared, hole() oversizes by holeCompensation by itself (pass tolerance to override).
+// fit adds holeCompensation plus the allowance (press −0.1, snug 0, slide 0.15, clearance 0.3, loose 0.6);
+// peg subtracts half the compensation and the allowance. FITS holds those numbers.
+```
+
+## Named parts
+
+```
+s.ghost()                                         // draw transparent as a reference; never exported
+s.hide()                                          // listed in the Parts panel but not drawn
+s.name('lid')                                     // Parts panel, 3MF object name, STL file name
+return { body, lid }                              // returned object: keys become part names
+return [a, b]                                     // returned array: parts named Part 1, Part 2, ...
+show(s, { name, color, ghost, hidden })           // display a shape without returning it
+// The Parts panel toggles visibility and ghosts, solos on double-click, and exports each part.
+```
+
+## Measurements
+
+```
+s.bounds()                                        // { min, max, size, center } as [x, y, z] arrays
+s.isEmpty()                                       // true when the shape has no volume
+s.surfaceArea()                                   // surface area in mm²
+s.volume()                                        // volume in mm³
+clearance(a, b) / a.clearance(b)                  // smallest gap between two shapes in mm; 0 when they touch or overlap
+interference(a, b) / a.interference(b)            // shared volume in mm³; 0 when they do not overlap
+intersects(a, b) / a.intersects(b)                // true when they share any volume
+overlap(a, b) / a.overlap(b)                      // the shared volume as a Shape, to show() or subtract
+// Check a design in the script: assert(clearance(lid, body) >= 0.3, 'lid binds'); assert(!intersects(screw, wall)).
+```
+
+## Annotations on renders
+
+```
+dimension(a, b, { label, offset })               // a measured line between points, faces, anchors or shape centres; returns the length in mm
+mark(point, text)                                 // a dot with a label; point is [x, y, z], a face, an anchor or a shape
+// Drawn over the rendered views (Menu → Render views…, the assistant's render_views, temencad --png) and listed in --report.
+// Never geometry. label defaults to the length; offset: [dx, dy, dz] moves the line clear of the part.
+// dimension(plate.face('left'), plate.face('right'), { offset: [0, 0, 20] }); mark(lens.face('top'), 'lens');
+```
+
+## Printability
+
+```
+minWallThickness(s) / s.minWallThickness()       // { thickness, at }: the thinnest wall, by casting rays inward from the surface
+overhangs(s, { angle }) / s.overhangs(opts)       // { area, worstAngle, lowest, faces }: undersides steeper than angle (45°) from vertical
+printability(s, { angle, minWall, maxUnsupported })  // { ok, problems: [...], overhangs, unsupported, minWall, bounds }: the verdict
+s.printability(opts)                              // method form
+unsupported(s, { angle }) / s.unsupported(opts)   // the overhangs with nothing of the shape below them: islands and bridges
+// Faces resting on the plate (y = 0) never count. Supports from other parts are not seen: check an assembly part by part.
+// assert(printability(part).ok, 'needs supports') makes the build fail until the design prints cleanly;
+// the command line runs the same check with --check and writes everything to JSON with --report.
+```
+
+## Projects and imports
+
+```
+import { lid, WALL } from './lid.js'              // another script; lid.js uses export const / function
+import logo from './Logo.ttf'                     // a font in the project: text3d('Hi', { font: logo })
+import part from './part.stl'                     // a mesh in the project, as a Shape (Z-up STL becomes Y-up)
+import logo from './logo.svg'                     // a drawing in the project, as a Sketch (see SVG drawings)
+import { hinge } from './catalog/parametric-hinge/hinge.js'  // a shape added from the catalogue
+// A project is a .temen zip. main.js is the entry and the only file that may use a top-level return.
+```
+
+## Helpers
+
+```
+assert(cond, message)                             // error on this line when cond is falsy
+deg(radians)                                      // radians to degrees
+echo(...values)                                   // OpenSCAD-style output with line number; returns the first value
+log(...values)                                    // print to the console
+Math.*                                            // the usual JavaScript maths
+rad(degrees)                                      // degrees to radians
+```
+
+## Script language
+Scripts are strict-mode ES modules in a JavaScript subset that every TemenCAD host runs (browser, command line, phone). Stay within it:
+
+```
+// Use: let / const, functions and arrows (default and rest parameters), closures,
+//      object and array literals, destructuring, spread, template literals,
+//      if / for / for...of / while / do / switch, try / catch / finally, regular expressions,
+//      async / await (top-level await too), import / export, Math, JSON, Array, String, Object, Map, Set.
+// Not available: class, var, for...in, generators (function* / yield), eval and new Function,
+//      Proxy, Reflect, Symbol, typed arrays and ArrayBuffer, Intl, with, labels, __proto__,
+//      instanceof (a syntax error), getters/setters in object literals, object rest in destructuring, flatMap, Array.from({ length: n }) and holes (Array(n)).
+// Build arrays with a counted for loop and push(), or map an existing array.
+// Group helpers as plain functions or object literals instead of classes.
+```
+
+Geometry kernel: Manifold (C++ via WebAssembly). All output is watertight.
+Units are millimetres, Y is up, the build plate is y = 0. Every operation returns a new shape; nothing is mutated.

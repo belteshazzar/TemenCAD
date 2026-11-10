@@ -24,6 +24,7 @@ The build prints `ECHO` lines from `echo()`, warnings with file and line, and er
 - `src/main.js` wires the app; `src/tabs.js` file tabs; `src/chat.js` and `src/agent.js` the in-app assistant (its system prompt embeds the API reference); `src/completions.js` autocomplete.
 - `api.html` the reference; `README.md` the user guide; `src/default-script.js` the demo script that shows every feature.
 - `core/` the runtime as one C library (branch `lamassu-runtime`): lamassu-js runs the script, Manifold's C binding does the geometry, `core/src/prelude.js` defines the API on top of the `__cad` natives. `core/README.md` has the build, what works and the lamassu changes still needed; `core/swift/` is the Swift package (XCFramework built by `build-xcframework.sh`). `third_party/lamassu-js` and `third_party/manifold` are git submodules (`git submodule update --init --recursive`).
+- `ios/` the iPhone and iPad app (SwiftUI chat with a SceneKit preview, the core through the Swift package, the assistant ported to Swift); `ios/README.md` has the build. Its assistant shares `src/assistant-rules.txt` and `public/api.txt` with the web one (`ios/scripts/sync-resources.sh` copies them).
 - Related repositories: `TemenCAD-catalog` (shared shapes, static site, publish worker) and `TemenCAD-web` (product site), both depend on this one via `github:belteshazzar/TemenCAD`.
 
 ## When adding an API function

@@ -3,7 +3,7 @@ name: Core on every platform
 # The TemenCAD core (lamassu-js + Manifold + the API) built and tested on each target it ships for:
 #   native Linux and macOS (CMake, the temencore CLI over every test script and the demo)
 #   WebAssembly (Emscripten; the smoke test and the old-runner-vs-core differential test)
-#   Apple (TemenCore.xcframework for macOS, iOS and the simulator; the Swift package tests)
+#   Apple (TemenCore.xcframework for macOS, iOS and the simulator; the Swift package tests; the iOS app builds)
 
 on:
   push:
@@ -110,6 +110,11 @@ jobs:
       - name: Swift tests
         working-directory: core/swift
         run: swift test
+      - name: iOS app (simulator and device, unsigned)
+        working-directory: ios
+        run: |
+          xcodebuild -project TemenCAD.xcodeproj -scheme TemenCADApp -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build -quiet
+          xcodebuild -project TemenCAD.xcodeproj -scheme TemenCADApp -sdk iphoneos -configuration Release CODE_SIGNING_ALLOWED=NO build -quiet
       - uses: actions/upload-artifact@v4
         with:
           name: TemenCore.xcframework
