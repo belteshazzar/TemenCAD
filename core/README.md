@@ -17,6 +17,7 @@ Swift package. Nothing in `src/` depends on the host platform.
  src/export.c    STL and 3MF             C: the web app's src/export.js, byte for byte
  src/pick.c      pointing and measuring  C: the web app's src/pick-geometry.js, word for word
  src/render.c    the render sheet        C: the web app's src/render.js, pixel for pixel
+ src/conversation.c  the chat in a .temen    C: format 2 (CONVERSATION.md), over json.c and codec.c (SHA-256, base64)
  ───────────────────────────────
  lamassu-js (third_party)   manifold + Clipper2 (third_party)   miniz (core/third_party)
 ```
@@ -53,6 +54,17 @@ buffers, V8's `Math.hypot`, `Math.round` and `toFixed`, lamassu's fdlibm `sin` /
 outlines, so `npm run core:render` (`core/test/render-parity.mjs`) finds every pixel identical on every
 test script, the demo, sections and unlabelled renders. The native `temencore --png` uses it (`--views`,
 `--size`, `--section`, `--no-labels`, as the JavaScript command line takes them).
+
+`temen_conversation_pack` / `temen_conversation_unpack` (`src/conversation.c`) are the assistant
+conversation inside a `.temen`, format 2, specified in `CONVERSATION.md`: `.assistant/conversation.json`
+and content-addressed `.assistant/blobs/<sha256>`. Packing moves inline base64 sources into blobs and
+rewrites references to the app's own blobs to their SHA-256; unpacking checks the format and every
+blob's hash and restores the base64 inline. One implementation for every app: the web app calls it in
+its worker (`packConversation` / `unpackConversation` in `wasm/index.js`), the iPhone app through
+`TemenConversation` in the Swift package. `src/json.c` is a JSON tree that round-trips (key order and
+number text kept). `core/test/conversation-test.c` tests it on its own (run by `run-native.sh`, and
+under the sanitizers with `cc -fsanitize=address,undefined`); the WebAssembly smoke test and the Swift
+tests check the bindings.
 
 Same mesh everywhere: Manifold evaluates booleans lazily, and when it flattens a chain such as
 `(a - b) - c` into `a - (b + c)` it only collapses a node nothing else holds (`shared_ptr` use

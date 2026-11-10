@@ -120,7 +120,11 @@ let chat = null; // the assistant panel, made below (the file manager asks it fo
 const files = new FileManager({
   getProject: () => project,
   // an opened or new project brings its own conversation (or none); if the assistant opened it, its chat carries on
-  setProject: (p) => { project = p; tabs.setProject(p); persist(); clearTimeout(timer); if (chat?.loadArchive(p.extras)) tabs.select('assistant'); run(); },
+  setProject: (p) => {
+    project = p; tabs.setProject(p); persist(); clearTimeout(timer);
+    chat?.loadArchive(p.extras).then((had) => { if (had) tabs.select('assistant'); });
+    run();
+  },
   fileInput: document.getElementById('file-input'),
   onChange: (f) => { document.title = `${f.dirty ? '• ' : ''}${f.name} — TemenCAD`; },
   extras: () => chat?.archive() ?? null,
@@ -347,6 +351,9 @@ chat = initChat({
     removeFile: (file) => { tabs.removeFile(file); clearTimeout(timer); projectChanged({ run: false }); },
     renameFile: (file, to) => { const n = tabs.renameFile(file, to); clearTimeout(timer); projectChanged({ run: false }); return n; },
     runAndWait: () => builder.runAndWait(),
+    // the conversation in the project file, packed and read by the core in the worker (core/CONVERSATION.md)
+    packConversation: (json, blobs) => builder.conversation('pack', { json, blobs }),
+    unpackConversation: (entries) => builder.conversation('unpack', { entries }),
     lastReport: () => lastReport,
     renderViews: (opts) => renderSheet(opts),
     screenshot: async (view) => {

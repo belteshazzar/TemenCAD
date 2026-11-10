@@ -1,19 +1,10 @@
 /**
- * Keeping the conversation: across page reloads (IndexedDB) and inside saved .temen files
- * (under .assistant/). Everything heavy (images, PDFs, attachments, checkpoint file contents)
- * goes into a content-addressed blob store, so a checkpoint per reply costs only the files
- * that changed, and the JSON stays small.
- *
- * Archive layout:  .assistant/chat.json      the conversation (format below, v: 1)
- *                  .assistant/blobs/<key>    raw bytes, key = content hash
+ * Keeping the conversation across page reloads (IndexedDB). Everything heavy (images, PDFs,
+ * attachments, checkpoint file contents) goes into a content-addressed blob store, so a checkpoint
+ * per reply costs only the files that changed, and the JSON stays small. The conversation inside a
+ * saved .temen is format 2, packed and read by the core (core/CONVERSATION.md; chat.js maps to it).
  */
 import { strToU8, strFromU8 } from 'fflate';
-import { APP_DATA_DIR } from './project.js';
-
-export const ARCHIVE_DIR = APP_DATA_DIR;
-const CHAT_JSON = `${ARCHIVE_DIR}chat.json`;
-const BLOB_DIR = `${ARCHIVE_DIR}blobs/`;
-const FORMAT = 1;
 
 /** 64-bit FNV-1a over the bytes (two 32-bit halves), plus the length: a dedupe key, not a security hash. */
 function hashBytes(bytes) {
@@ -123,29 +114,13 @@ function referencedKeys(json) {
     if (Array.isArray(v)) return v.forEach(walk);
     if (!v || typeof v !== 'object') return;
     for (const [k, x] of Object.entries(v)) {
-      if ((k === '$blob' || k === 'key' || k === 't' || k === 'b') && typeof x === 'string' && /^[0-9a-f]{16}-/.test(x)) keys.add(x);
+      // local keys (FNV, "hhhh…-len") or SHA-256 ones from a conversation read from a file
+      if ((k === '$blob' || k === 'key' || k === 't' || k === 'b') && typeof x === 'string' && /^([0-9a-f]{16}-|[0-9a-f]{64}$)/.test(x)) keys.add(x);
       else walk(x);
     }
   };
   walk(json);
   return keys;
-}
-
-/** { json, blobs: Map } -> archive entries { path: Uint8Array } */
-export function toArchive(state) {
-  const out = { [CHAT_JSON]: strToU8(JSON.stringify({ v: FORMAT, ...state.json })) };
-  for (const [k, b] of state.blobs) out[BLOB_DIR + k] = b;
-  return out;
-}
-/** archive entries -> { json, blobs } or null when there is no conversation in the file */
-export function fromArchive(extras) {
-  const raw = extras?.[CHAT_JSON];
-  if (!raw) return null;
-  const json = JSON.parse(strFromU8(raw));
-  if (json.v !== FORMAT) throw new Error(`The conversation in this file is format ${json.v}; this version of TemenCAD reads format ${FORMAT}`);
-  const blobs = new Map();
-  for (const [path, b] of Object.entries(extras)) if (path.startsWith(BLOB_DIR)) blobs.set(path.slice(BLOB_DIR.length), b);
-  return { json, blobs };
 }
 
 /** Restrict a state's blobs to those its JSON references. */

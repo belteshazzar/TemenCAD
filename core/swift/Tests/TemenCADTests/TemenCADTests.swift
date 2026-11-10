@@ -123,4 +123,26 @@ final class TemenCADTests: XCTestCase {
         XCTAssertEqual([w, h], [640, 240]) // two views side by side
         XCTAssertThrowsError(try core.render(parts: r.parts, views: ["sideways"]))
     }
+
+    func testConversationRoundTrips() throws {
+        let png = Data([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])
+        let json = """
+        {"format":2,"app":"swift test","entries":[{"kind":"user","text":"hi"}],
+         "messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"\(png.base64EncodedString())"}}]}],
+         "checkpoints":[{"main.js":{"$blob":"one"}}]}
+        """
+        let entries = try TemenConversation.pack(json: Data(json.utf8), blobs: ["one": Data("return box(1);".utf8)])
+        XCTAssertEqual(entries.count, 3) // the json, the image, main.js
+        // through a whole .temen and back
+        let archive = try TemenArchive.write(entries.merging(["main.js": Data("return box(1);".utf8)]) { a, _ in a })
+        let project = try TemenArchive.readProject(archive)
+        let c = try XCTUnwrap(try TemenConversation.unpack(project.extras))
+        let doc = try XCTUnwrap(try JSONSerialization.jsonObject(with: c.json) as? [String: Any])
+        let source = (((doc["messages"] as? [[String: Any]])?[0]["content"] as? [[String: Any]])?[0]["source"] as? [String: Any])
+        XCTAssertEqual(source?["data"] as? String, png.base64EncodedString())
+        let key = (((doc["checkpoints"] as? [[String: Any]])?[0]["main.js"]) as? [String: Any])?["$blob"] as? String
+        XCTAssertEqual(key.flatMap { c.blobs[$0] }, Data("return box(1);".utf8))
+        XCTAssertNil(try TemenConversation.unpack(["main.js": Data()]))
+        XCTAssertThrowsError(try TemenConversation.pack(json: Data(#"{"format":1,"entries":[],"messages":[]}"#.utf8)))
+    }
 }

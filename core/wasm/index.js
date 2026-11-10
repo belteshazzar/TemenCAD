@@ -92,5 +92,57 @@ export async function createRuntime(moduleOptions = {}) {
     return { positions: Float32Array.from(M.HEAPF32.subarray(po, po + nv * 3)), indices: Uint32Array.from(M.HEAPU32.subarray(io, io + nt * 3)) };
   };
 
-  return { run, textOutlines, cutMesh, version: str(M._tw_version()) };
+  const putBytes = (u8) => { const p = M._malloc(u8.length || 1); M.HEAPU8.set(u8, p); return p; };
+  const putString = (s) => { const n = M.lengthBytesUTF8(s) + 1; const p = M._malloc(n); M.stringToUTF8(s, p, n); return p; };
+  const bytesAt = (ptr, len) => M.HEAPU8.slice(ptr, ptr + len);
+
+  /**
+   * The conversation as archive entries (core/CONVERSATION.md): `json` is the format-2 document as the
+   * app holds it (a string or an object), with base64 sources inline and { $blob: key } references to
+   * `blobs` (a Map or object of key -> Uint8Array). Returns { '.assistant/conversation.json': bytes,
+   * '.assistant/blobs/<sha256>': bytes, ... }. Throws with the core's message.
+   */
+  const packConversation = (json, blobs = new Map()) => {
+    M._tw_conv_clear();
+    for (const [key, bytes] of blobs instanceof Map ? blobs : Object.entries(blobs)) {
+      const k = putString(key);
+      M._tw_conv_add_blob(k, putBytes(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)), bytes.byteLength ?? bytes.length);
+      M._free(k);
+    }
+    const text = new TextEncoder().encode(typeof json === 'string' ? json : JSON.stringify(json));
+    const jp = putBytes(text);
+    const n = M._tw_conv_pack(jp, text.length);
+    M._free(jp);
+    if (n < 0) { const e = str(M._tw_conv_error()); M._tw_conv_clear(); throw new Error(e); }
+    const out = {};
+    for (let i = 0; i < n; i++) out[str(M._tw_conv_file_name(i))] = bytesAt(M._tw_conv_file_data(i), M._tw_conv_file_len(i));
+    M._tw_conv_clear();
+    return out;
+  };
+
+  /**
+   * The conversation in a project's archive entries ({ path: Uint8Array }, e.g. its extras), or null
+   * when there is none: { json: string, blobs: Map<sha256, Uint8Array> } with base64 sources inline.
+   * Throws when it cannot be read (another format, a missing or damaged blob).
+   */
+  const unpackConversation = (entries) => {
+    M._tw_conv_clear();
+    for (const [name, bytes] of Object.entries(entries ?? {})) {
+      if (!name.startsWith('.assistant/')) continue;
+      const k = putString(name);
+      const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      M._tw_conv_add_file(k, putBytes(u8), u8.length);
+      M._free(k);
+    }
+    const status = M._tw_conv_unpack();
+    if (status < 0) { const e = str(M._tw_conv_error()); M._tw_conv_clear(); throw new Error(e); }
+    if (status === 0) { M._tw_conv_clear(); return null; }
+    const json = new TextDecoder().decode(bytesAt(M._tw_conv_json(), M._tw_conv_json_len()));
+    const blobs = new Map();
+    for (let i = 0; i < M._tw_conv_blob_count(); i++) blobs.set(str(M._tw_conv_blob_key(i)), bytesAt(M._tw_conv_blob_data(i), M._tw_conv_blob_len(i)));
+    M._tw_conv_clear();
+    return { json, blobs };
+  };
+
+  return { run, textOutlines, cutMesh, packConversation, unpackConversation, version: str(M._tw_version()) };
 }

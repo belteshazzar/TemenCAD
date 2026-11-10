@@ -39,9 +39,10 @@ straight from the device to api.anthropic.com, billed to the key's account).
   `com.temencad.project` type). The assistant has `new_project`, `open_project` and `save_project`
   (open and save-as put a card in the chat); its conversation carries on into the project it opens,
   and replies from the earlier project lose their Undo there. Reading and writing is the core's
-  (`TemenArchive` in the Swift package, miniz underneath), with the web app's rules. A conversation the
-  web app saved in the file is not shown (the two apps keep conversations differently) but is kept and
-  written back on save (`extras/`); the iOS conversation stays in the workspace and is not saved in the file.
+  (`TemenArchive` in the Swift package, miniz underneath), with the web app's rules. The
+  conversation is saved in the file too (format 2, `core/CONVERSATION.md`, packed by the core through
+  `TemenConversation`): opening a file brings back its conversation (from this app or the web app),
+  with its undo points and attachments, and Save writes this one. Settings can turn that off.
 - Photos: the photo button beside the message field attaches up to five photos from the library
   (PhotosPicker, no permission needed) or the camera. Each goes to the assistant as "Attachment n",
   downscaled to 1568 px on the long edge as in the web app, and is kept full size in

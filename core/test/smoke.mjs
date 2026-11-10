@@ -446,5 +446,33 @@ r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);
 check('empty part warning', (() => { const x = rt.run({ 'main.js': 'return difference(box(1), box(2))' }); return x.ok && x.parts.length === 0 && x.messages.some((m) => m.kind === 'warn' && /empty/.test(m.text)); })());
 
+// 6. the conversation format (core/CONVERSATION.md): inline base64 and references round-trip, blobs by SHA-256
+{
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUg==', 'base64');
+  const conv = {
+    format: 2, app: 'smoke', notes: [],
+    entries: [{ kind: 'user', text: 'é ✓ "quoted"' }, { kind: 'reply', message: 'x', changed: true, before: 0, after: 1 }],
+    messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: png.toString('base64') } }, { type: 'text', text: 'hi' }] }],
+    checkpoints: [{ 'main.js': { $blob: 'a' } }, { 'main.js': { $blob: 'b' }, 'gear.stl': { $blob: 'big' } }],
+    attachments: [],
+  };
+  const big = new Uint8Array(200000).map((_, i) => i * 7);
+  const blobs = new Map([['a', new TextEncoder().encode('return 1;')], ['b', new TextEncoder().encode('return 2;')], ['big', big]]);
+  const entries = rt.packConversation(conv, blobs);
+  const names = Object.keys(entries);
+  check('conversation packs to json + 4 blobs', names.length === 5 && names.includes('.assistant/conversation.json') && names.filter((n) => /^\.assistant\/blobs\/[0-9a-f]{64}$/.test(n)).length === 4, names.join());
+  const back = rt.unpackConversation({ ...entries, 'main.js': new Uint8Array(1) });
+  const j = back && JSON.parse(back.json);
+  check('conversation unpacks: base64 inline, text intact', j?.messages[0].content[0].source.data === conv.messages[0].content[0].source.data && j.entries[0].text === conv.entries[0].text);
+  const key = j?.checkpoints[1]['gear.stl'].$blob;
+  check('conversation references come back by SHA-256 with their bytes', /^[0-9a-f]{64}$/.test(key ?? '') && back.blobs.get(key)?.length === big.length && back.blobs.get(key).every((v, i) => v === big[i]));
+  check('no conversation is null', rt.unpackConversation({ 'main.js': new Uint8Array(1) }) === null);
+  let msg = '';
+  try { rt.packConversation({ v: 1, entries: [] }); } catch (e) { msg = e.message; }
+  check('format 1 is refused', /format/.test(msg), msg);
+  try { rt.unpackConversation({ ...entries, [names.find((n) => n.includes('blobs'))]: new Uint8Array([1, 2]) }); msg = ''; } catch (e) { msg = e.message; }
+  check('a damaged blob is refused', /damaged/.test(msg), msg);
+}
+
 console.log(failed ? `${failed} failed` : 'all passed');
 process.exit(failed ? 1 : 0);

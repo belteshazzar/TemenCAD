@@ -26,4 +26,11 @@ for f in core/test/project.temen core/test/lone.temen; do
     echo "FAIL $(basename "$f")"; echo "$out" | tail -5; status=1
   fi
 done
+# the conversation format on its own (src/conversation.c, json.c, codec.c)
+mkdir -p "$ROOT/build"
+CC=${CC:-$(command -v cc || command -v gcc)}
+if "$CC" -Wall -Icore/include -Icore/src -Icore/third_party core/test/conversation-test.c core/src/conversation.c \
+     core/src/json.c core/src/codec.c core/src/archive.c core/third_party/miniz/miniz.c -o "$ROOT/build/conversation-test" && "$ROOT/build/conversation-test"; then :; else
+  echo "FAIL conversation format"; status=1
+fi
 exit $status

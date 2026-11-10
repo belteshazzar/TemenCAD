@@ -62,12 +62,31 @@ export class Builder {
     });
   }
 
+  /**
+   * The conversation format in the worker's core (core/CONVERSATION.md): op 'pack' with { json, blobs }
+   * gives archive entries; 'unpack' with { entries } gives { json, blobs } or null.
+   */
+  conversation(op, payload) {
+    return new Promise((resolve, reject) => {
+      const id = `c${++this.renderId}`;
+      this.renders.set(id, { resolve, reject });
+      this.worker.postMessage({ type: `conversation-${op}`, id, ...payload });
+    });
+  }
+
   onMessage(msg) {
     if (msg.type === 'ready') return;
-    if (msg.type === 'rendered' || msg.type === 'render-error') {
+    if (msg.type === 'error' && this.renders.has(msg.id)) { // the core failed to load
+      const r = this.renders.get(msg.id); this.renders.delete(msg.id);
+      r.reject(new Error(msg.message));
+      return;
+    }
+    if (msg.type === 'rendered' || msg.type === 'render-error' || msg.type === 'conversation' || msg.type === 'conversation-error') {
       const r = this.renders.get(msg.id); this.renders.delete(msg.id);
       if (!r) return;
-      if (msg.type === 'rendered') r.resolve(msg.png); else r.reject(new Error(msg.message));
+      if (msg.type === 'rendered') r.resolve(msg.png);
+      else if (msg.type === 'conversation') r.resolve(msg.result);
+      else r.reject(new Error(msg.message));
       return;
     }
     if (msg.id !== this.current?.id) return; // stale message from a superseded run

@@ -20,6 +20,13 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.inline).labelsHidden()
                 }
+                Section {
+                    Toggle("Keep the conversation in the project file", isOn: Binding(
+                        get: { app.keepConversationInFile },
+                        set: { app.objectWillChange.send(); app.keepConversationInFile = $0 }))
+                } footer: {
+                    Text("Saving a project then includes this conversation, its undo points and the photos and PDFs you attached, so it carries on wherever the file is opened (here, another device, or TemenCAD on the web). Anyone you share the file with can read it.")
+                }
                 Section { LabeledContent("Modelling core", value: TemenCoreVersion.string) }
             }
             .navigationTitle("Settings")

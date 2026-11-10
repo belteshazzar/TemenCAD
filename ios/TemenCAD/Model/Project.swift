@@ -70,6 +70,8 @@ struct WorkspaceInfo: Codable, Identifiable, Equatable {
     var fileDate: Date?
     /// Whether it had unsaved changes when last shown (for the project menu's marker).
     var unsaved: Bool?
+    /// The conversation's revision when it was last opened or saved (it is saved in the file too).
+    var savedChatRevision: Int?
 }
 
 /// A .temen closed recently, for Open Recent.
@@ -160,6 +162,17 @@ enum ProjectStore {
             if FileManager.default.fileExists(atPath: url.path) { return (url, ext) }
         }
         return nil
+    }
+    /// The names attachments were sent with (attachments/names.json, by number).
+    static func attachmentNames() -> [Int: String] {
+        guard let d = try? Data(contentsOf: attachmentsFolder.appendingPathComponent("names.json")),
+              let m = try? JSONDecoder().decode([String: String].self, from: d) else { return [:] }
+        return Dictionary(uniqueKeysWithValues: m.compactMap { k, v in Int(k).map { ($0, v) } })
+    }
+    static func setAttachmentNames(_ names: [Int: String]) {
+        try? FileManager.default.createDirectory(at: attachmentsFolder, withIntermediateDirectories: true)
+        let m = Dictionary(uniqueKeysWithValues: names.map { (String($0.key), $0.value) })
+        try? JSONEncoder().encode(m).write(to: attachmentsFolder.appendingPathComponent("names.json"), options: .atomic)
     }
     static func attachmentCount() -> Int {
         var n = 0

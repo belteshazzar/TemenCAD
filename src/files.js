@@ -16,7 +16,7 @@ const UNTITLED = `untitled${PROJECT_EXT}`;
 export class FileManager {
   /**
    * getProject() -> Project, setProject(project), fileInput, onChange(this),
-   * extras() -> more archive entries to save ({ path: Uint8Array }, e.g. the conversation) or null,
+   * extras() -> more archive entries to save ({ path: Uint8Array }, e.g. the conversation) or null, or a promise of them,
    * extrasToken() -> a string that changes whenever extras() would (so they count as unsaved changes)
    */
   constructor({ getProject, setProject, fileInput, onChange, extras, extrasToken }) {
@@ -38,7 +38,7 @@ export class FileManager {
   /** Take the current state as the saved one (after a reload, where the file link is gone anyway). */
   rebase() { this.savedSnapshot = this.snapshot(); if (this.dirty) { this.dirty = false; this.onChange(this); } }
 
-  _zip() { return this.getProject().toZip(this.extras()); }
+  async _zip() { return this.getProject().toZip(await this.extras()); }
 
   _update(name) {
     this.name = name;
@@ -113,7 +113,7 @@ export class FileManager {
   async save() {
     if (this.handle) {
       const w = await this.handle.createWritable();
-      await w.write(this._zip());
+      await w.write(await this._zip());
       await w.close();
       this._update(this.name);
       return true;
@@ -122,12 +122,15 @@ export class FileManager {
   }
 
   async saveAs() {
-    const bytes = this._zip();
+    // started now but awaited after the picker, which must open straight from the click
+    const zipping = this._zip();
+    zipping.catch(() => {});
     const suggested = this.name.endsWith(PROJECT_EXT) ? this.name : this.name.replace(/\.[^.]*$/, '') + PROJECT_EXT;
     if (hasFSAccess) {
       let handle;
       try { handle = await window.showSaveFilePicker({ suggestedName: suggested, types: SAVE_TYPES }); }
       catch (e) { if (e.name === 'AbortError') return false; throw e; }
+      const bytes = await zipping;
       const w = await handle.createWritable();
       await w.write(bytes);
       await w.close();
@@ -138,7 +141,7 @@ export class FileManager {
       let name = prompt('Save as:', suggested);
       if (!name) return false;
       if (!name.toLowerCase().endsWith(PROJECT_EXT)) name += PROJECT_EXT;
-      const blob = new Blob([bytes], { type: 'application/zip' });
+      const blob = new Blob([await zipping], { type: 'application/zip' });
       const url = URL.createObjectURL(blob);
       const a = Object.assign(document.createElement('a'), { href: url, download: name });
       document.body.appendChild(a); a.click(); a.remove();

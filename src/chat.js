@@ -3,12 +3,14 @@
  * conversation; the API key and model live in localStorage.
  *
  * The conversation is a transcript of plain entries (rendered by renderEntry) plus project
- * checkpoints taken around each reply, so it can be kept across reloads (IndexedDB) and inside
- * saved .temen files (chat-store.js), and any reply can be undone, and any undo put back.
+ * checkpoints taken around each reply, so it can be kept across reloads (IndexedDB, chat-store.js)
+ * and inside saved .temen files (format 2, packed by the core: core/CONVERSATION.md), and any reply
+ * can be undone, and any undo put back.
  */
 import { Agent, MODELS, DEFAULT_MODEL, describeAgentError } from './agent.js';
 import { classify, prepareImage, projectImage } from './attachments.js';
-import { BlobStore, toArchive, fromArchive, pruneBlobs, saveLocal, loadLocal, clearLocal, bytesToBase64, base64ToBytes as base64Bytes } from './chat-store.js';
+import { BlobStore, pruneBlobs, saveLocal, loadLocal, clearLocal, bytesToBase64, base64ToBytes as base64Bytes } from './chat-store.js';
+import { isTextFile } from './project.js';
 import { unifiedDiff } from './diff.js';
 
 const SETTINGS_KEY = 'temencad.assistant';
@@ -132,6 +134,84 @@ export function initChat({ root, host, onChange = () => {} }) {
   }
   function push(entry) { entries.push(entry); return renderEntry(entry, true); }
 
+  // ---- The conversation in the project file: format 2 (core/CONVERSATION.md), packed by the core ----
+  const ATT_TO_2 = { ref: 'reference', measure: 'measurement' }, ATT_FROM_2 = { reference: 'ref', measurement: 'measure' };
+  /** { json, blobs } for the core: transcript images and messages inline, checkpoint files and attachments by reference. */
+  function toFormat2() {
+    const generation = host.snapshot().generation;
+    const blobs = new Map();
+    const ref = (key) => { blobs.set(key, store.get(key)); return { $blob: key }; };
+    const inline = (key, type) => ({ type: 'base64', media_type: type, data: bytesToBase64(store.get(key)) });
+    // undo points from before the assistant opened this project cannot be restored here: left empty, unused
+    const ours = checkpoints.map((c) => c.generation === generation);
+    const cps = checkpoints.map((c, i) => {
+      const files = {};
+      if (ours[i]) for (const [name, v] of Object.entries(c.files)) files[name] = ref(typeof v === 'string' ? store.putText(v) : store.putBuffer(v));
+      return files;
+    });
+    const out = entries.map((e) => {
+      switch (e.t) {
+        case 'user': return { kind: 'user', text: e.text, attachments: (e.atts ?? []).map((a) => ({
+          kind: ATT_TO_2[a.kind] ?? a.kind, name: a.name, size: a.size || undefined, text: a.text,
+          color: a.colorHex !== undefined ? `#${a.colorHex.toString(16).padStart(6, '0')}` : undefined, color_name: a.color,
+          image: a.key && a.kind === 'image' ? inline(a.key, a.type) : undefined })) };
+        case 'assistant': case 'error': case 'status': return { kind: e.t, text: e.text };
+        case 'tool': return { kind: 'tool', name: e.name };
+        case 'image': return { kind: 'image', image: inline(e.key, e.type), caption: e.caption };
+        case 'card': return { kind: 'card', text: e.text, answer: e.note, labels: e.labels };
+        case 'download': return { kind: 'file', name: e.filename, size: e.size, text: e.text || undefined };
+        case 'reply': {
+          const ok = e.changed && ours[e.before] && ours[e.after];
+          return { kind: 'reply', message: e.text, changed: !!ok, before: ok ? e.before : undefined, after: ok ? e.after : undefined };
+        }
+        case 'event': return { kind: 'event', message: e.reply, undo: e.kind === 'undo', put_back: e.putBack, used: !!e.used || !ours[e.putBack] };
+        default: return e.text ? { kind: 'status', text: e.text } : null;
+      }
+    }).filter(Boolean);
+    const json = {
+      format: 2, app: 'TemenCAD web', entries: out, messages: agent.messages, notes: agent.notes,
+      attachments: agent.attachments.map((a) => ({ name: a.name, media_type: a.type, data: ref(a.key) })),
+      checkpoints: cps,
+    };
+    return { json, blobs };
+  }
+  /** Show a conversation read from a project file: the core's { json (text), blobs }. */
+  function loadFormat2({ json: text, blobs }) {
+    reset();
+    const j = JSON.parse(text);
+    const generation = host.snapshot().generation;
+    for (const [k, b] of blobs) store.blobs.set(k, b);
+    const put = (src) => (src?.data ? store.put(base64Bytes(src.data)) : undefined);
+    checkpoints = (j.checkpoints ?? []).map((c) => {
+      const files = {};
+      for (const [name, r] of Object.entries(c)) {
+        if (isTextFile(name)) { const s = store.text(r.$blob); store.textKeys.set(s, r.$blob); files[name] = s; }
+        else { const b = store.buffer(r.$blob); store.objKeys.set(b, r.$blob); files[name] = b; }
+      }
+      return { generation: Object.keys(files).length ? generation : -1, files };
+    });
+    entries = (j.entries ?? []).map((e) => {
+      switch (e.kind) {
+        case 'user': return { t: 'user', text: e.text ?? '', atts: (e.attachments ?? []).map((a) => ({
+          kind: ATT_FROM_2[a.kind] ?? a.kind, name: a.name ?? '', size: a.size ?? 0, text: a.text, color: a.color_name,
+          colorHex: a.color ? parseInt(a.color.slice(1), 16) : undefined, key: put(a.image), type: a.image?.media_type })) };
+        case 'assistant': case 'error': case 'status': return { t: e.kind, text: e.text ?? '' };
+        case 'tool': return { t: 'tool', name: e.name ?? '' };
+        case 'image': return e.image ? { t: 'image', key: put(e.image), type: e.image.media_type ?? 'image/png', caption: e.caption ?? '' } : null;
+        case 'card': return { t: 'card', text: e.text ?? '', labels: e.labels ?? [], note: e.answer };
+        case 'file': return { t: 'download', filename: e.name ?? 'file', size: e.size ?? 0, text: e.text ?? '' };
+        case 'reply': return { t: 'reply', text: e.message ?? '', changed: !!e.changed, before: e.before, after: e.after };
+        case 'event': return { t: 'event', kind: e.undo ? 'undo' : 'redo', reply: e.message ?? '', putBack: e.put_back, used: !!e.used };
+        default: return e.text ? { t: 'status', text: e.text } : null; // a kind from a newer app
+      }
+    }).filter(Boolean);
+    agent.messages = j.messages ?? [];
+    agent.notes = j.notes ?? [];
+    agent.attachments = (j.attachments ?? []).map((a) => ({ name: a.name, type: a.media_type, key: a.data?.$blob }));
+    for (const e of entries) renderEntry(e);
+    showEmpty();
+  }
+
   /**
    * Draw one transcript entry. live: drawn as it happens (interactive cards, download links and
    * download buttons exist only then). Entries:
@@ -151,6 +231,7 @@ export function initChat({ root, host, onChange = () => {} }) {
       case 'assistant': { const m = addMsg('assistant'); renderMarkdown(m, e.text); return m; }
       case 'tool': return addMsg('tool', `${TOOL_LABELS[e.name] ?? e.name}…`);
       case 'error': return addMsg('error', e.text);
+      case 'status': return addMsg('tool', e.text); // a line from the app (the iPhone app writes these)
       case 'image': {
         const url = store.url(e.key, e.type);
         const filename = `${e.caption.replace(/[^\w=.-]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'view'}.${e.type === 'image/jpeg' ? 'jpg' : 'png'}`;
@@ -382,7 +463,7 @@ export function initChat({ root, host, onChange = () => {} }) {
     chip.appendChild(el('span', { className: 'att-text' },
       el('span', { className: 'att-name', textContent: a.name }),
       el('span', { className: 'att-role', textContent: a.kind === 'file' ? (mode === 'pending' ? 'adds to the project' : 'added to the project')
-        : a.kind === 'ref' ? `pointed at in the 3D view${a.color ? ` · ${a.color}` : ''}` : a.kind === 'measure' ? 'measured in the 3D view' : `for the assistant · ${fmtBytes(a.size)}` })));
+        : a.kind === 'ref' ? `pointed at in the 3D view${a.color ? ` · ${a.color}` : ''}` : a.kind === 'measure' ? 'measured in the 3D view' : `for the assistant${a.size ? ` · ${fmtBytes(a.size)}` : ''}` })));
     if (mode === 'pending') {
       const x = el('button', { type: 'button', className: 'att-remove', textContent: '×', title: 'Remove' });
       x.addEventListener('click', () => { dropAttached(a); if (a.kind === 'ref') host.removeReference?.(a.id); focusInput(); });
@@ -597,8 +678,12 @@ export function initChat({ root, host, onChange = () => {} }) {
     /** Called by the tab bar when the Assistant tab is shown. */
     focus: () => { showEmpty(); focusInput(); },
     get busy() { return agent.busy; },
-    /** Archive entries for the project file ({ path: bytes }), or null when there is nothing to keep. */
-    archive: () => (keepInFile() && entries.length ? toArchive(pack()) : null),
+    /** A promise of the archive entries for the project file ({ path: bytes }), or of null when there is nothing to keep. */
+    archive: async () => {
+      if (!keepInFile() || !entries.length) return null;
+      const { json, blobs } = toFormat2();
+      return host.packConversation(json, blobs);
+    },
     /** Changes whenever archive() would. */
     token: () => (keepInFile() ? String(revision) : ''),
     /**
@@ -606,11 +691,15 @@ export function initChat({ root, host, onChange = () => {} }) {
      * chat. Not while the assistant is working (it opened the project itself, and carries on).
      * Returns true when the file brought a conversation.
      */
-    loadArchive(extras) {
+    async loadArchive(extras) {
       if (agent.busy) return false;
       let state = null, problem = null;
-      try { state = fromArchive(extras); } catch (err) { problem = err?.message ?? String(err); }
-      load(state);
+      const hasOne = Object.keys(extras ?? {}).some((k) => k.startsWith('.assistant/'));
+      if (hasOne) {
+        try { state = await host.unpackConversation(extras); } catch (err) { problem = err?.message ?? String(err); }
+      }
+      if (agent.busy) return false; // the assistant started working while the file was read
+      if (state) loadFormat2(state); else load(null);
       if (problem) { log.querySelector('.msg.empty')?.remove(); push({ t: 'error', text: `The conversation saved in this file could not be read: ${problem}` }); }
       persist();
       return entries.length > 0;

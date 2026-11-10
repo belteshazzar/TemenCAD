@@ -42,7 +42,11 @@ struct EventInfo: Codable, Equatable {
 /// The app: the project, its builds, the preview and the conversation. Kept on the main actor.
 @MainActor
 final class AppModel: ObservableObject, AgentHost {
-    @Published var project: Project { didSet { ProjectStore.save(project); updateUnsaved() } }
+    @Published var project: Project { didSet { ProjectStore.save(project); projectDigest = ProjectStore.digest(project); updateUnsaved() } }
+    /// ProjectStore.digest(project), kept so the unsaved check is cheap while a reply streams in.
+    private var projectDigest = ""
+    /// Bumped on every change to the conversation, which is saved in the file too (keepConversationInFile).
+    private var chatRevision = 0
     /// The open projects (each a workspace with its own conversation), in the order they were opened.
     @Published private(set) var workspaces: [WorkspaceInfo] = []
     /// .temen files closed recently, for Open Recent.
@@ -56,7 +60,7 @@ final class AppModel: ObservableObject, AgentHost {
     /// Close → Save on a project never saved: close it once the save sheet has saved it.
     private var closeAfterSave: UUID?
     private var saveSheetToken = 0
-    @Published private(set) var entries: [ChatEntry] = []
+    @Published private(set) var entries: [ChatEntry] = [] { didSet { chatRevision &+= 1; updateUnsaved() } }
     @Published private(set) var busy = false
     @Published private(set) var buildStatus = ""
     /// The visible, non-ghost parts of the last successful build: what STL and 3MF export write.
@@ -122,6 +126,7 @@ final class AppModel: ObservableObject, AgentHost {
         var loaded = ProjectStore.load()
         if let info = open.first(where: { $0.id == ProjectStore.currentID }) { loaded.name = info.name }
         project = loaded
+        projectDigest = ProjectStore.digest(loaded)
         ProjectStore.save(loaded) // a new workspace starts with the starter on disk
         ProjectStore.saveIndex(WorkspaceIndex(open: open, current: ProjectStore.currentID, recent: index.recent))
         if let d = UserDefaults.standard.data(forKey: "plate") { plate = try? JSONDecoder().decode(Plate.self, from: d) }
@@ -382,6 +387,7 @@ final class AppModel: ObservableObject, AgentHost {
             do {
                 try FileManager.default.createDirectory(at: ProjectStore.attachmentsFolder, withIntermediateDirectories: true)
                 try photo.original.write(to: ProjectStore.attachmentURL(n, ext: "jpg"), options: .atomic)
+                var names = ProjectStore.attachmentNames(); names[n] = "photo-\(n).jpg"; ProjectStore.setAttachmentNames(names)
             } catch {
                 entries.append(ChatEntry(kind: .error, text: "Could not keep the photo: \(error.localizedDescription)"))
                 return
@@ -395,6 +401,7 @@ final class AppModel: ObservableObject, AgentHost {
             do {
                 try FileManager.default.createDirectory(at: ProjectStore.attachmentsFolder, withIntermediateDirectories: true)
                 try pdf.data.write(to: ProjectStore.attachmentURL(n, ext: "pdf"), options: .atomic)
+                var names = ProjectStore.attachmentNames(); names[n] = pdf.name; ProjectStore.setAttachmentNames(names)
             } catch {
                 entries.append(ChatEntry(kind: .error, text: "Could not keep the PDF: \(error.localizedDescription)"))
                 return
@@ -678,7 +685,8 @@ final class AppModel: ObservableObject, AgentHost {
 
     private func updateUnsaved() {
         guard let i = currentIndex else { return }
-        let now = ProjectStore.digest(project) != workspaces[i].savedDigest
+        let chatChanged = keepConversationInFile && workspaces[i].savedChatRevision.map { $0 != chatRevision } == true
+        let now = projectDigest != workspaces[i].savedDigest || chatChanged
         if now != unsaved { unsaved = now }
         if workspaces[i].unsaved != now { workspaces[i].unsaved = now; saveIndex() }
     }
@@ -728,6 +736,7 @@ final class AppModel: ObservableObject, AgentHost {
             checkpoints.clear()
             loadChat()
         }
+        if let i = currentIndex, workspaces[i].savedChatRevision == nil { workspaces[i].savedChatRevision = chatRevision }
         updateUnsaved()
         saveIndex()
         saveChat()
@@ -805,9 +814,10 @@ final class AppModel: ObservableObject, AgentHost {
             // unchanged here but changed in the file (another device): take the file's version
             if !unsaved, let i = currentIndex, Self.changed(url, since: workspaces[i].fileDate), let date = Self.modified(url),
                let data = try? Self.coordinatedRead(url), let fresh = try? Project(temen: data, name: workspaces[i].name) {
-                workspaces[i].savedDigest = ProjectStore.digest(fresh)
                 workspaces[i].fileDate = date
                 project = fresh
+                adoptConversation(from: fresh)
+                markSaved(digestOnly: false)
                 entries.append(ChatEntry(kind: .status, text: "Reloaded \(url.lastPathComponent): it changed since it was opened."))
                 saveIndex()
                 if build { Task { await rebuild() } }
@@ -821,9 +831,12 @@ final class AppModel: ObservableObject, AgentHost {
             let opened = try Project(temen: try Self.coordinatedRead(url), name: name)
             let bookmark = try? url.bookmarkData()
             addWorkspace(opened, name: name, bookmark: bookmark, fileDate: Self.modified(url), carry: carry, build: build)
+            if carry { project.extras = opened.extras.filter { !Self.isConversationEntry($0.key) } } // this conversation carries on instead
+            else { adoptConversation(from: opened) }
+            markSaved(digestOnly: false)
             if bookmark == nil { entries.append(ChatEntry(kind: .status, text: "\(url.lastPathComponent) can't be saved in place; Save will ask where to save it.")) }
-            let kept = opened.extras.isEmpty ? "" : " The conversation saved with it in the web app is kept in the file but not shown here."
-            entries.append(ChatEntry(kind: .status, text: "Opened \(url.lastPathComponent).\(kept)"))
+            if entries.isEmpty { entries.append(ChatEntry(kind: .status, text: "Opened \(url.lastPathComponent).")) }
+            markSaved(digestOnly: false)
             recent.removeAll { $0.name == name && Self.resolve($0.bookmark)?.url.standardizedFileURL.path == path }
             saveIndex()
             saveChat()
@@ -858,19 +871,17 @@ final class AppModel: ObservableObject, AgentHost {
             return .conflict
         }
         do {
-            let data = try project.temen()
+            let data = try temenData()
             var error: NSError?, writeError: Error?
             // not atomic: an atomic write puts a temporary file beside it, in a folder the app may not have access to
             NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &error) { u in
                 do { try data.write(to: u) } catch { writeError = error }
             }
             if let e = error ?? writeError { throw e }
-            workspaces[i].savedDigest = ProjectStore.digest(project)
             workspaces[i].fileDate = Self.modified(url)
             if stale, let fresh = try? url.bookmarkData() { workspaces[i].bookmark = fresh }
-            updateUnsaved()
-            saveIndex()
             entries.append(ChatEntry(kind: .status, text: "Saved \(url.lastPathComponent)."))
+            markSaved(digestOnly: false)
             saveChat()
             if closeAfterSave == workspaces[i].id { closeAfterSave = nil; close(workspaces[i].id, discard: true) }
             return .saved
@@ -880,6 +891,15 @@ final class AppModel: ObservableObject, AgentHost {
         }
     }
 
+    /// The project and conversation as they are now are what the file holds.
+    private func markSaved(digestOnly: Bool) {
+        guard let i = currentIndex else { return }
+        workspaces[i].savedDigest = projectDigest
+        if !digestOnly { workspaces[i].savedChatRevision = chatRevision }
+        updateUnsaved()
+        saveIndex()
+    }
+
     /// File > Save As…: the save sheet, to pick a name and a place.
     func saveAs() {
         saveAsDocument = temenDocument()
@@ -887,7 +907,7 @@ final class AppModel: ObservableObject, AgentHost {
 
     /// The project as a .temen document for the save sheet, or nil (with the reason in the chat).
     func temenDocument() -> TemenDocument? {
-        do { return TemenDocument(data: try project.temen()) }
+        do { return TemenDocument(data: try temenData()) }
         catch { entries.append(ChatEntry(kind: .error, text: "Could not save the project: \(error)")); return nil }
     }
 
@@ -908,10 +928,8 @@ final class AppModel: ObservableObject, AgentHost {
         workspaces[i].bookmark = try? url.bookmarkData()
         workspaces[i].fileDate = Self.modified(url)
         project.name = name
-        workspaces[i].savedDigest = ProjectStore.digest(project)
-        updateUnsaved()
-        saveIndex()
         entries.append(ChatEntry(kind: .status, text: "Saved \(url.lastPathComponent)."))
+        markSaved(digestOnly: false)
         saveChat()
         if request?.kind == .saveAs { answerRequest(.url(url)) }
         if closeAfterSave == workspaces[i].id { closeAfterSave = nil; close(workspaces[i].id, discard: true) }
@@ -969,6 +987,181 @@ final class AppModel: ObservableObject, AgentHost {
         saveIndex()
     }
 
+    // MARK: - The conversation in the project file (format 2, core/CONVERSATION.md)
+
+    /// Whether saving puts the conversation in the .temen (Settings; on unless turned off).
+    var keepConversationInFile: Bool {
+        get { UserDefaults.standard.object(forKey: "keepConversationInFile") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "keepConversationInFile"); updateUnsaved() }
+    }
+
+    /// The .temen bytes to save: the project's files, the extras it came with (less any conversation) and,
+    /// when kept, this conversation packed by the core.
+    func temenData() throws -> Data {
+        var entries = project.files
+        for (name, data) in project.extras where !Self.isConversationEntry(name) { entries[name] = data }
+        if keepConversationInFile, !self.entries.isEmpty {
+            let (json, blobs) = try conversationJSON()
+            for (name, data) in try TemenConversation.pack(json: json, blobs: blobs) { entries[name] = data }
+        }
+        return try TemenArchive.write(entries)
+    }
+
+    static func isConversationEntry(_ name: String) -> Bool {
+        name == ".assistant/conversation.json" || name.hasPrefix(".assistant/blobs/") || name == ".assistant/chat.json"
+    }
+
+    private static func base64Source(_ data: Data) -> JSONValue {
+        let png = data.starts(with: [0x89, 0x50, 0x4e, 0x47])
+        return ["type": "base64", "media_type": .string(png ? "image/png" : "image/jpeg"), "data": .string(data.base64EncodedString())]
+    }
+    private static func sourceData(_ v: JSONValue?) -> Data? { v?["data"]?.string.flatMap { Data(base64Encoded: $0) } }
+
+    /// This conversation as format 2, with the bytes its references name (checkpoint files, attachments).
+    private func conversationJSON() throws -> (Data, [String: Data]) {
+        var blobs: [String: Data] = [:]
+        func ref(_ key: String, _ data: Data) -> JSONValue { blobs[key] = data; return ["$blob": .string(key)] }
+        let toolNames = Dictionary(Self.toolLabels.map { ($0.value, $0.key) }, uniquingKeysWith: { a, _ in a })
+        let list: [JSONValue] = entries.compactMap { e in
+            switch e.kind {
+            case .user:
+                var atts: [JSONValue] = (e.photos ?? []).map { ["kind": "image", "name": "photo", "image": Self.base64Source($0)] }
+                atts += (e.files ?? []).map { name in ["kind": .string((name as NSString).pathExtension.lowercased() == "pdf" ? "pdf" : "file"), "name": .string(name)] }
+                atts += (e.references ?? []).map { label in ["kind": .string(label.hasPrefix("Measured") ? "measurement" : "reference"), "name": .string(label), "text": .string(label)] }
+                return ["kind": "user", "text": .string(e.text), "attachments": .array(atts)]
+            case .assistant, .status, .error: return ["kind": .string(e.kind.rawValue), "text": .string(e.text)]
+            case .tool: return ["kind": "tool", "name": .string(toolNames[e.text] ?? e.text)]
+            case .image:
+                guard let d = e.image else { return nil }
+                return ["kind": "image", "image": Self.base64Source(d), "caption": .string(e.text)]
+            case .file: return ["kind": "file", "name": .string(e.fileName ?? "file"), "text": .string(e.text)]
+            case .reply:
+                guard let r = e.reply else { return nil }
+                var o: JSONValue = ["kind": "reply", "message": .string(e.text), "changed": .bool(r.changed)]
+                if let b = r.before { o["before"] = .number(Double(b)) }
+                if let a = r.after { o["after"] = .number(Double(a)) }
+                if let s = r.summary { o["summary"] = .string(s) }
+                return o
+            case .event:
+                guard let ev = e.event else { return nil }
+                return ["kind": "event", "message": .string(e.text), "undo": .bool(ev.undo), "put_back": .number(Double(ev.putBack)), "used": .bool(ev.used)]
+            }
+        }
+        var cps: [JSONValue] = []
+        for cp in checkpoints.list {
+            var files: [String: JSONValue] = [:]
+            for (name, key) in cp {
+                guard let d = try? Data(contentsOf: Checkpoints.folder.appendingPathComponent(key)) else { throw AppError("An undo point's file \(name) is missing") }
+                files[name] = ref(key, d)
+            }
+            cps.append(.object(files))
+        }
+        let names = ProjectStore.attachmentNames()
+        let atts: [JSONValue] = (0..<ProjectStore.attachmentCount()).compactMap { i in
+            guard let a = ProjectStore.attachment(i + 1), let d = try? Data(contentsOf: a.url) else { return nil }
+            let pdf = a.ext == "pdf"
+            return ["name": .string(names[i + 1] ?? (pdf ? "document-\(i + 1).pdf" : "photo-\(i + 1).jpg")),
+                    "media_type": .string(pdf ? "application/pdf" : "image/jpeg"), "data": ref("att\(i + 1)", d)]
+        }
+        let doc: JSONValue = ["format": .number(2), "app": "TemenCAD for iPhone and iPad", "entries": .array(list),
+                              "messages": .array(agent.messages), "notes": .array(agent.notes.map(JSONValue.string)),
+                              "attachments": .array(atts), "checkpoints": .array(cps)]
+        return (try JSONEncoder().encode(doc), blobs)
+    }
+
+    /// Replaces this project's conversation with one read from its file (the core's JSON and blobs).
+    private func loadConversation(json: Data, blobs: [String: Data]) throws {
+        let doc = try JSONValue.parse(json)
+        let fm = FileManager.default
+        // undo points: their files into the blob store (the core's keys are SHA-256, as the store's are)
+        try fm.createDirectory(at: Checkpoints.folder, withIntermediateDirectories: true)
+        for (key, data) in blobs where key.count == 64 {
+            let url = Checkpoints.folder.appendingPathComponent(key)
+            if !fm.fileExists(atPath: url.path) { try data.write(to: url, options: .atomic) }
+        }
+        let cps: [[String: String]] = (doc["checkpoints"]?.array ?? []).map { cp in
+            (cp.object ?? [:]).compactMapValues { $0["$blob"]?.string }
+        }
+        // attachments: n.jpg (other images converted) or n.pdf, with their names
+        try? fm.removeItem(at: ProjectStore.attachmentsFolder)
+        try fm.createDirectory(at: ProjectStore.attachmentsFolder, withIntermediateDirectories: true)
+        var names: [Int: String] = [:]
+        for (i, a) in (doc["attachments"]?.array ?? []).enumerated() {
+            guard let key = a["data"]?["$blob"]?.string, let data = blobs[key] else { continue }
+            let n = i + 1
+            if a["media_type"]?.string == "application/pdf" {
+                try data.write(to: ProjectStore.attachmentURL(n, ext: "pdf"), options: .atomic)
+            } else {
+                let jpeg = data.starts(with: [0xff, 0xd8]) ? data : (PhotoAttachment(imageData: data)?.original ?? data)
+                try jpeg.write(to: ProjectStore.attachmentURL(n, ext: "jpg"), options: .atomic)
+            }
+            names[n] = a["name"]?.string
+        }
+        ProjectStore.setAttachmentNames(names)
+        var list: [ChatEntry] = []
+        for e in doc["entries"]?.array ?? [] {
+            let text = e["text"]?.string ?? ""
+            switch e["kind"]?.string {
+            case "user":
+                let atts = e["attachments"]?.array ?? []
+                let photos = atts.compactMap { a -> Data? in
+                    guard a["kind"]?.string == "image", let d = Self.sourceData(a["image"]) else { return nil }
+                    return PhotoAttachment(imageData: d)?.thumbnail ?? d // the web keeps photos full size
+                }
+                let files = atts.filter { ["pdf", "file"].contains($0["kind"]?.string ?? "") }.compactMap { $0["name"]?.string }
+                let refs = atts.filter { ["reference", "measurement"].contains($0["kind"]?.string ?? "") }.compactMap { $0["name"]?.string ?? $0["text"]?.string }
+                list.append(ChatEntry(kind: .user, text: text, photos: photos.isEmpty ? nil : photos, files: files.isEmpty ? nil : files, references: refs.isEmpty ? nil : refs))
+            case "assistant": list.append(ChatEntry(kind: .assistant, text: text))
+            case "error": list.append(ChatEntry(kind: .error, text: text))
+            case "status": list.append(ChatEntry(kind: .status, text: text))
+            case "tool":
+                let name = e["name"]?.string ?? ""
+                list.append(ChatEntry(kind: .tool, text: Self.toolLabels[name] ?? name))
+            case "image":
+                if let d = Self.sourceData(e["image"]) { list.append(ChatEntry(kind: .image, text: e["caption"]?.string ?? "", image: d)) }
+            case "file": list.append(ChatEntry(kind: .file, text: text.isEmpty ? (e["name"]?.string ?? "") : text, fileName: e["name"]?.string))
+            case "card":
+                let answer = e["answer"]?.string.map { " (\($0))" } ?? ""
+                list.append(ChatEntry(kind: .status, text: text + answer))
+            case "reply":
+                let int = { (k: String) in e[k]?.number.map { Int($0) } }
+                let info = ReplyInfo(changed: e["changed"]?.bool == true, before: int("before"), after: int("after"), summary: e["summary"]?.string)
+                list.append(ChatEntry(kind: .reply, text: e["message"]?.string ?? "", reply: info))
+            case "event":
+                let ev = EventInfo(undo: e["undo"]?.bool == true, putBack: e["put_back"]?.number.map { Int($0) } ?? -1, used: e["used"]?.bool == true)
+                list.append(ChatEntry(kind: .event, text: e["message"]?.string ?? "", event: ev))
+            default:
+                if !text.isEmpty { list.append(ChatEntry(kind: .status, text: text)) } // a kind from a newer app
+            }
+        }
+        // replies whose undo points are missing (or empty: from another project) cannot be undone
+        for i in list.indices {
+            if let r = list[i].reply, r.changed, !(r.before.map { cps.indices.contains($0) && !cps[$0].isEmpty } ?? false)
+                || !(r.after.map { cps.indices.contains($0) && !cps[$0].isEmpty } ?? false) {
+                list[i].reply = ReplyInfo(changed: false)
+            }
+            if let ev = list[i].event, !(cps.indices.contains(ev.putBack) && !cps[ev.putBack].isEmpty) { list[i].event?.used = true }
+        }
+        entries = list
+        agent.restore(doc["messages"]?.array ?? [], notes: (doc["notes"]?.array ?? []).compactMap(\.string))
+        checkpoints.restore(cps)
+    }
+
+    /// After a project was read from a file: its conversation, if it has one and nothing here is newer.
+    /// The conversation entries are taken out of the extras (they are written afresh on save).
+    private func adoptConversation(from project: Project) {
+        let conv = project.extras.filter { Self.isConversationEntry($0.key) }
+        guard !conv.isEmpty else { return }
+        self.project.extras = project.extras.filter { !Self.isConversationEntry($0.key) }
+        do {
+            guard let c = try TemenConversation.unpack(conv) else { return }
+            try loadConversation(json: c.json, blobs: c.blobs)
+            saveChat()
+        } catch {
+            entries.append(ChatEntry(kind: .error, text: "The conversation saved in this file could not be read: \(error)"))
+        }
+    }
+
     // MARK: - Project tools
 
     func newProjectForAgent(script: String?) async -> JSONValue {
@@ -1023,10 +1216,11 @@ final class AppModel: ObservableObject, AgentHost {
         var messages: [JSONValue]
         var checkpoints: [[String: String]]? = nil
         var notes: [String]? = nil
+        var revision: Int? = nil
     }
 
     private func saveChat() {
-        let saved = SavedChat(entries: entries, messages: agent.messages, checkpoints: checkpoints.list, notes: agent.notes)
+        let saved = SavedChat(entries: entries, messages: agent.messages, checkpoints: checkpoints.list, notes: agent.notes, revision: chatRevision)
         try? FileManager.default.createDirectory(at: ProjectStore.folder, withIntermediateDirectories: true)
         try? JSONEncoder().encode(saved).write(to: ProjectStore.chatFile, options: .atomic)
     }
@@ -1036,6 +1230,7 @@ final class AppModel: ObservableObject, AgentHost {
         entries = saved.entries
         agent.restore(saved.messages, notes: saved.notes ?? [])
         checkpoints.restore(saved.checkpoints ?? [])
+        if let r = saved.revision { chatRevision = r }
     }
 
     #if DEBUG

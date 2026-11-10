@@ -132,6 +132,30 @@ void             temen_archive_free(TemenArchive *archive);
 void *temen_archive_write(const TemenFile *files, size_t n_files, int level, size_t *out_len, const char **error);
 void  temen_buffer_free(void *buffer);
 
+/* ---- the assistant conversation in a .temen (format 2: core/CONVERSATION.md) ---------------------
+ * Independent of any TemenCore. Packing takes the conversation as an app holds it (JSON, with base64
+ * sources inline and {"$blob": key} references to bytes passed in `blobs` under the app's own keys) and
+ * returns archive entries: .assistant/conversation.json and .assistant/blobs/<sha256>, every blob
+ * referenced, references rewritten to the SHA-256. Unpacking takes a project's entries (or just its
+ * extras from temen_project_read), checks format 2 and every blob's hash, restores base64 sources inline
+ * and returns the JSON with the remaining references (by SHA-256) and their bytes; NULL with *error NULL
+ * means the files hold no conversation. Errors are malloc'd messages to free with temen_buffer_free. */
+typedef struct TemenBlob {
+    const char *key;
+    const void *data;
+    size_t len;
+} TemenBlob;
+TemenFile *temen_conversation_pack(const char *json, size_t len, const TemenBlob *blobs, size_t n_blobs,
+                                   size_t *n_files, char **error);
+void       temen_files_free(TemenFile *files, size_t n_files); /* names and data malloc'd */
+
+typedef struct TemenConversation TemenConversation;
+TemenConversation *temen_conversation_unpack(const TemenFile *files, size_t n_files, char **error);
+const char        *temen_conversation_json(const TemenConversation *conversation, size_t *len); /* 0-terminated */
+size_t             temen_conversation_blob_count(const TemenConversation *conversation);
+const TemenBlob   *temen_conversation_blob(const TemenConversation *conversation, size_t index);
+void               temen_conversation_free(TemenConversation *conversation);
+
 /* ---- STL and 3MF, independent of any TemenCore (the web app's src/export.js, byte for byte) ----
  * Every part given is written, so leave out ghosts and hidden parts as the apps do. Coordinates go out
  * Z up, as slicers expect: (x, y, z) -> (x, -z, y), so the build plate y = 0 becomes z = 0. Returns a
