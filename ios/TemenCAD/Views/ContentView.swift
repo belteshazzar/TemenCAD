@@ -7,6 +7,9 @@ struct ContentView: View {
     @State private var expanded = false
     @State private var showSettings = false
     @State private var showCode = false
+    @State private var showParts = false
+    @State private var showConsole = false
+    @State private var customPlate = false
     @FocusState private var typing: Bool
 
     var body: some View {
@@ -34,9 +37,15 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showSettings) { SettingsView().environmentObject(app) }
         .sheet(isPresented: $showCode) { CodeView().environmentObject(app) }
+        .sheet(isPresented: $showParts) { PartsView().environmentObject(app).presentationDetents([.medium, .large]) }
+        .sheet(isPresented: $showConsole) { ConsoleView().environmentObject(app).presentationDetents([.medium, .large]) }
+        .sheet(isPresented: $customPlate) { CustomPlateView().environmentObject(app).presentationDetents([.medium]) }
         .sheet(item: $app.sharing) { file in
             ShareSheet(url: file.url).presentationDetents([.medium, .large]).ignoresSafeArea()
         }
+        #if DEBUG
+        .onChange(of: app.debugSheet) { _, s in showParts = s == "parts"; showConsole = s == "console" }
+        #endif
         .onAppear {
             if !app.hasKey { showSettings = true }
             #if DEBUG
@@ -56,9 +65,23 @@ struct ContentView: View {
                     } label: { Image(systemName: "square.and.arrow.up") }
                     .disabled(!app.canExport)
                     .accessibilityLabel("Share the model for printing")
+                    Button { showParts = true } label: { Image(systemName: "square.3.layers.3d") }
+                        .disabled(app.console?.ok != true)
+                        .accessibilityLabel("Parts")
                     Menu {
-                        ForEach(Agent.views, id: \.self) { v in Button(v.capitalized) { app.preview.frame(view: v) } }
+                        Section("View") {
+                            ForEach(Agent.views, id: \.self) { v in Button(v.capitalized) { app.preview.frame(view: v) } }
+                        }
+                        Toggle("Wireframe", isOn: Binding(get: { app.preview.wireframe }, set: { app.preview.wireframe = $0; app.objectWillChange.send() }))
+                        Menu("Plate") {
+                            Picker("Plate", selection: Binding(get: { app.plate?.id ?? "none" }, set: { id in
+                                if id == "custom" { customPlate = true } else { app.choosePlate(id) }
+                            })) {
+                                ForEach(Plate.presets, id: \.id) { p in Text(p.label).tag(p.id) }
+                            }
+                        }
                     } label: { Image(systemName: "cube") }
+                    .accessibilityLabel("View, wireframe and plate")
                     Button { expanded.toggle() } label: {
                         Image(systemName: expanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                     }
@@ -68,13 +91,31 @@ struct ContentView: View {
                 .padding(10)
             }
             .overlay(alignment: .bottomLeading) {
-                if !app.buildStatus.isEmpty {
-                    Text(app.buildStatus)
-                        .font(.caption.monospaced())
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
-                        .padding(10)
+                VStack(alignment: .leading, spacing: 6) {
+                    if let plate = app.plate, !app.plateFit.fits {
+                        Text("Does not fit the \(Plate.presets.first { $0.id == plate.id }?.label.components(separatedBy: " · ").first ?? "plate"): \(app.plateFit.problems.joined(separator: ", "))")
+                            .font(.caption2).foregroundStyle(.white)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Color.red.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    if !app.buildStatus.isEmpty {
+                        Button { showConsole = true } label: {
+                            HStack(spacing: 6) {
+                                if let warnings = app.console?.messages.filter({ $0.kind == .warning }).count, warnings > 0 {
+                                    Label("\(warnings)", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                                }
+                                if app.console?.error != nil { Image(systemName: "xmark.octagon.fill").foregroundStyle(.red) }
+                                Text(app.buildStatus).foregroundStyle(.primary)
+                            }
+                            .font(.caption.monospaced())
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Shows the build's messages")
+                    }
                 }
+                .padding(10)
             }
             .overlay(alignment: .topLeading) { // last, so the measurement panel draws over the build status
                 PointerOverlay(preview: app.preview) {

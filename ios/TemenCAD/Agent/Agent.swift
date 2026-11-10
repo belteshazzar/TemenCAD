@@ -19,6 +19,8 @@ protocol AgentHost: AnyObject {
     func setView(_ view: String?, wireframe: Bool?) -> JSONValue
     func setPlate(_ id: String, size: [Double]?) throws -> JSONValue
     func setPartDisplay(names: [String]?, visible: Bool?, ghost: Bool?, solo: Bool, reset: Bool) throws -> JSONValue
+    /// The app's state for each message: the plate, wireframe, each part's display.
+    var appState: JSONValue { get }
 }
 
 /// The modelling assistant: the same job as the web app's (src/agent.js), with the tools a phone needs.
@@ -124,7 +126,7 @@ final class Agent {
             host.project.text(name).map { "<file name=\"\(name)\">\n\($0)\n</file>" } ?? "<file name=\"\(name)\" binary=\"true\" />"
         }.joined(separator: "\n")
         let report = host.lastReport.map { $0.text(pretty: true) } ?? "not built yet"
-        return "\n\n<project>\n\(files)\n</project>\n\n<last_build>\n\(report)\n</last_build>"
+        return "\n\n<project>\n\(files)\n</project>\n\n<app>\n\(host.appState.text(pretty: true))\n</app>\n\n<last_build>\n\(report)\n</last_build>"
     }
 
     private func run(_ name: String, _ input: JSONValue) async -> JSONValue {

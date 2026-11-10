@@ -49,6 +49,8 @@ final class AppModel: ObservableObject, AgentHost {
     #if DEBUG
     /// -TemenThen changes: the reply whose Changes sheet to open.
     @Published var debugChanges: ChatEntry?
+    /// -TemenThen parts / console: the sheet to open.
+    @Published var debugSheet: String?
     #endif
     /// A file waiting in the share sheet.
     @Published var sharing: SharedFile?
@@ -71,6 +73,10 @@ final class AppModel: ObservableObject, AgentHost {
     /// A printer's build plate shown under the model, with whether the visible parts fit.
     @Published private(set) var plate: Plate? { didSet { savePlate() } }
     @Published private(set) var plateFit: (fits: Bool, problems: [String]) = (true, [])
+    /// The last build's messages and error, for the console.
+    @Published private(set) var console: TemenBuildResult?
+    /// Bumped whenever the parts' display changes, so the Parts list redraws.
+    @Published private(set) var displayGeneration = 0
     private var task: Task<Void, Never>?
     /// The project at moments in the conversation, for undo (see Checkpoints).
     private(set) var checkpoints = Checkpoints()
@@ -107,6 +113,7 @@ final class AppModel: ObservableObject, AgentHost {
         let result = await builder.build(project)
         lastReport = BuildReport.make(result)
         buildStatus = BuildReport.summary(result)
+        console = result
         if let result, result.ok {
             lastResult = result
             let names = Set(result.parts.map(\.name))
@@ -125,6 +132,7 @@ final class AppModel: ObservableObject, AgentHost {
     }
 
     private func applyDisplay() {
+        displayGeneration += 1
         let shown = displayedParts
         preview.show(parts: shown)
         printableParts = shown.filter { !$0.ghost && !$0.hidden }
@@ -229,6 +237,55 @@ final class AppModel: ObservableObject, AgentHost {
         var out: JSONValue = ["parts": .array(parts.map { p in let f = flags(p); return ["name": .string(p.name), "visible": .bool(f.visible), "ghost": .bool(f.ghost)] })]
         if plate != nil { out["fits_plate"] = .bool(plateFit.fits) }
         return out
+    }
+
+    // MARK: - The Parts list and the plate menu (the user's side of the same state)
+
+    /// Each part as displayed: visible, ghost.
+    func partFlags(_ name: String) -> (visible: Bool, ghost: Bool) {
+        if let o = partOverrides[name] { return o }
+        let p = lastResult?.parts.first { $0.name == name }
+        return (!(p?.hidden ?? false), p?.ghost ?? false)
+    }
+
+    func setPart(_ name: String, visible: Bool? = nil, ghost: Bool? = nil) {
+        _ = try? setPartDisplay(names: [name], visible: visible, ghost: ghost, solo: false, reset: false)
+    }
+
+    /// Solo a part, or show every part again when it is already the only one shown (the web's double-click).
+    func solo(_ name: String) {
+        let parts = lastResult?.parts ?? []
+        let soloed = parts.allSatisfy { ($0.name == name) == partFlags($0.name).visible }
+        _ = try? setPartDisplay(names: soloed ? nil : [name], visible: soloed ? true : nil, ghost: nil, solo: !soloed, reset: false)
+    }
+
+    func showAllParts(_ visible: Bool) { _ = try? setPartDisplay(names: nil, visible: visible, ghost: nil, solo: false, reset: false) }
+    func resetPartDisplay() { _ = try? setPartDisplay(names: nil, visible: nil, ghost: nil, solo: false, reset: true) }
+
+    /// One part as STL in the share sheet (the Parts list's stl button).
+    func sharePart(_ name: String) {
+        guard let p = displayedParts.first(where: { $0.name == name }) else { return }
+        if p.hidden || p.ghost { entries.append(ChatEntry(kind: .status, text: "\(name) is hidden or a ghost; show it to export it.")); return }
+        do {
+            let data = try TemenExport.stl([p])
+            let safe = name.components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-")).inverted).joined(separator: "_")
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safe.isEmpty ? "part" : safe).stl")
+            try data.write(to: url, options: .atomic)
+            sharing = SharedFile(url: url)
+        } catch { entries.append(ChatEntry(kind: .error, text: "Could not export \(name): \(error)")) }
+    }
+
+    /// The plate menu: a preset id, "custom" with a size, or "none".
+    func choosePlate(_ id: String, size: [Double]? = nil) {
+        do { _ = try setPlate(id, size: size) } catch { entries.append(ChatEntry(kind: .error, text: "\(error)")) }
+    }
+
+    /// What the assistant is told about the app with each message (the web app's <app> block).
+    var appState: JSONValue {
+        var o: JSONValue = ["file": .string(project.fileName), "plate": plate?.json ?? .null, "wireframe": .bool(preview.wireframe),
+                            "parts": .array((lastResult?.parts ?? []).map { p in let f = partFlags(p.name); return ["name": .string(p.name), "visible": .bool(f.visible), "ghost": .bool(f.ghost)] })]
+        if plate != nil { o["plate_fits"] = .bool(plateFit.fits) }
+        return o
     }
 
     static var exportsFolder: URL { ProjectStore.folder.appendingPathComponent("exports", isDirectory: true) }
@@ -572,6 +629,10 @@ final class AppModel: ObservableObject, AgentHost {
                     case "undo": if let e = entries.last(where: { $0.reply?.changed == true }) { undo(e) }
                     case "putback", "undoagain": if let e = entries.last(where: { $0.kind == .event }) { reverse(e) }
                     case "changes": if let e = entries.last(where: { $0.reply?.changed == true }) { debugChanges = e }
+                    case "parts", "console": debugSheet = String(step)
+                    case let s where s.hasPrefix("plate:"): choosePlate(String(s.dropFirst(6)))
+                    case let s where s.hasPrefix("ghost:"): setPart(String(s.dropFirst(6)), ghost: true)
+                    case let s where s.hasPrefix("hide:"): setPart(String(s.dropFirst(5)), visible: false)
                     case "point": preview.mode = .point
                     case "measure": preview.mode = .measure
                     case "addmeasure": preview.addMeasurementToMessage(); preview.clearMeasure()
