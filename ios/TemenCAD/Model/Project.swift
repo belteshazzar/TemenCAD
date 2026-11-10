@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import TemenCAD
 import UniformTypeIdentifiers
@@ -55,12 +56,95 @@ struct Project: Equatable {
     var fileName: String { fileStem + ".temen" }
 }
 
-/// The current project and conversation on disk, in Application Support (the app keeps one project for now).
+/// An open project: its own folder (files, conversation, undo points, attachments) and the .temen file it
+/// is saved to, if any.
+struct WorkspaceInfo: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var name: String
+    /// A bookmark to the .temen on the user's device (Files: iCloud Drive, On My iPhone, a provider), so Save
+    /// writes it in place; nil for a project never saved.
+    var bookmark: Data?
+    /// ProjectStore.digest of the project when it was last opened or saved: differs once it has unsaved changes.
+    var savedDigest: String
+    /// The file's modification date when it was last read or written, to notice another app or device changing it.
+    var fileDate: Date?
+    /// Whether it had unsaved changes when last shown (for the project menu's marker).
+    var unsaved: Bool?
+}
+
+/// A .temen closed recently, for Open Recent.
+struct RecentFile: Codable, Equatable {
+    var name: String
+    var bookmark: Data
+}
+
+/// The open projects, which one is showing, and the recent files: Workspaces/index.json.
+struct WorkspaceIndex: Codable {
+    var open: [WorkspaceInfo] = []
+    var current: UUID?
+    var recent: [RecentFile] = []
+}
+
+/// The projects on disk, in Application Support: Workspaces/<id>/ for each open project (the one showing
+/// is `folder`), and Workspaces/index.json.
 enum ProjectStore {
-    static var folder: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("Current", isDirectory: true)
+    static var root: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Workspaces", isDirectory: true)
     }
+    static var indexFile: URL { root.appendingPathComponent("index.json") }
+    /// The project showing: everything below (files, chat, attachments, blobs, exports) is relative to it.
+    static var currentID = UUID()
+    static func folder(_ id: UUID) -> URL { root.appendingPathComponent(id.uuidString, isDirectory: true) }
+    static var folder: URL { folder(currentID) }
+
+    static func loadIndex() -> WorkspaceIndex {
+        if let d = try? Data(contentsOf: indexFile), let index = try? JSONDecoder().decode(WorkspaceIndex.self, from: d) { return index }
+        // the single project of earlier versions (Application Support/Current) becomes the first workspace
+        var index = WorkspaceIndex()
+        let old = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Current", isDirectory: true)
+        if FileManager.default.fileExists(atPath: old.appendingPathComponent("files/\(Project.entry)").path) {
+            let info = WorkspaceInfo(name: (try? String(contentsOf: old.appendingPathComponent("name.txt"), encoding: .utf8)) ?? "Model", savedDigest: "")
+            try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            if (try? FileManager.default.moveItem(at: old, to: folder(info.id))) != nil {
+                index.open = [info]
+                index.current = info.id
+            }
+        }
+        return index
+    }
+
+    static func saveIndex(_ index: WorkspaceIndex) {
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try? JSONEncoder().encode(index).write(to: indexFile, options: .atomic)
+    }
+
+    static func remove(_ id: UUID) { try? FileManager.default.removeItem(at: folder(id)) }
+
+    /// Copies the conversation's files (attachments, undo blobs, exports) to another workspace, when the
+    /// conversation carries on there (the assistant opened or started a project).
+    static func copyConversation(from a: UUID, to b: UUID) {
+        let fm = FileManager.default
+        for sub in ["attachments", "blobs", "exports"] {
+            let src = folder(a).appendingPathComponent(sub), dst = folder(b).appendingPathComponent(sub)
+            guard fm.fileExists(atPath: src.path) else { continue }
+            try? fm.removeItem(at: dst)
+            try? fm.createDirectory(at: folder(b), withIntermediateDirectories: true)
+            try? fm.copyItem(at: src, to: dst)
+        }
+    }
+
+    /// A fingerprint of the project's contents (files and kept extras), for the unsaved marker.
+    static func digest(_ p: Project) -> String {
+        var h = SHA256()
+        for (prefix, files) in [("f:", p.files), ("x:", p.extras)] {
+            for name in files.keys.sorted() {
+                h.update(data: Data((prefix + name + "\u{0}").utf8))
+                h.update(data: Data(SHA256.hash(data: files[name]!)))
+            }
+        }
+        return h.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
     static var filesFolder: URL { folder.appendingPathComponent("files", isDirectory: true) }
     static var chatFile: URL { folder.appendingPathComponent("chat.json") }
     static var extrasFolder: URL { folder.appendingPathComponent("extras", isDirectory: true) }

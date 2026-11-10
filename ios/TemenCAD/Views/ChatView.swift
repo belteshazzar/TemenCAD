@@ -8,10 +8,9 @@ struct ChatView: View {
     @Binding var showSettings: Bool
     @Binding var showCode: Bool
     @State private var draft = ""
-    @State private var confirmNew = false
+    @State private var closing: WorkspaceInfo?
     @State private var enlarged: ChatEntry?
     @State private var opening = false
-    @State private var saving: TemenDocument?
     @State private var choosingPhotos = false
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var takingPhoto = false
@@ -70,9 +69,6 @@ struct ChatView: View {
             .padding()
             .presentationDetents([.large])
         }
-        .confirmationDialog("Start a new model? The current model and this conversation are replaced.", isPresented: $confirmNew, titleVisibility: .visible) {
-            Button("New model", role: .destructive) { app.newProject() }
-        }
         .photosPicker(isPresented: $choosingPhotos, selection: $photoItems,
                       maxSelectionCount: max(1, AppModel.maxPhotosPerMessage - app.pendingPhotos.count), matching: .images)
         .onChange(of: photoItems) { _, items in
@@ -93,28 +89,44 @@ struct ChatView: View {
         .fullScreenCover(isPresented: $takingPhoto) {
             CameraPicker { app.attach(image: $0) }.ignoresSafeArea()
         }
-        .fileImporter(isPresented: $opening, allowedContentTypes: [.temenProject, .zip]) { result in
-            if case .success(let url) = result { app.open(url: url) }
+        .modifier(ProjectSheets(view: self))
+    }
+
+    /// The project prompts (close with unsaved changes, a file changed elsewhere) and the open and save sheets.
+    fileprivate func projectSheets<V: View>(_ content: V) -> some View {
+        content
+        .confirmationDialog("Save the changes to \(closing?.name ?? "") before closing it?", isPresented: Binding(get: { closing != nil }, set: { if !$0 { closing = nil } }),
+                            titleVisibility: .visible, presenting: closing) { w in
+            Button("Save") { app.saveAndClose(w.id) }
+            Button("Don't Save", role: .destructive) { app.close(w.id, discard: true) }
+        } message: { _ in Text("Closing deletes the app's copy and its conversation; the .temen file stays where it is.") }
+        .confirmationDialog("\(app.project.fileName) changed since it was opened, in another app or on another device.", isPresented: $app.saveConflict, titleVisibility: .visible) {
+            Button("Replace It", role: .destructive) { app.save(force: true) }
+            Button("Save a Copy…") { app.conflictCancelled(); app.saveAs() }
+            Button("Cancel", role: .cancel) { app.conflictCancelled() }
         }
-        .fileExporter(isPresented: Binding(get: { saving != nil }, set: { if !$0 { saving = nil } }),
-                      document: saving, contentType: .temenProject, defaultFilename: app.project.fileName) { result in
-            if case .success(let url) = result { app.saved(to: url) }
+        .fileImporter(isPresented: $opening, allowedContentTypes: [.temenProject, .zip]) { result in
+            guard case .success(let url) = result else { return }
+            if app.request?.kind == .open { app.answerRequest(.url(url)) } else { app.open(url: url) }
+        }
+        .fileExporter(isPresented: Binding(get: { app.saveAsDocument != nil }, set: { if !$0 { app.saveAsDocument = nil; app.saveSheetDismissed() } }),
+                      document: app.saveAsDocument, contentType: .temenProject, defaultFilename: app.project.fileName) { result in
+            switch result {
+            case .success(let url): app.saved(to: url)
+            case .failure(let error): app.saveAsCancelled(); app.report(error)
+            }
         }
     }
 
     private var header: some View {
         HStack {
-            Text(Agent.models.first { $0.id == app.model }?.label ?? app.model)
-                .font(.caption).foregroundStyle(.secondary)
+            projectMenu
             Spacer()
             Button { showCode = true } label: { Image(systemName: "chevron.left.forwardslash.chevron.right") }
                 .accessibilityLabel("Show the model's script")
             Menu {
                 Button("New chat") { app.newChat() }
-                Button("New model…") { confirmNew = true }
                 Divider()
-                Button("Open…") { opening = true }
-                Button("Save as .temen…") { saving = app.temenDocument() }
                 Button("Share STL…") { app.share(.stl) }.disabled(!app.canExport)
                 Button("Share 3MF…") { app.share(.threeMF) }.disabled(!app.canExport)
                 Divider()
@@ -122,6 +134,47 @@ struct ChatView: View {
             } label: { Image(systemName: "ellipsis.circle") }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
+    }
+
+    /// The project showing, with its unsaved marker; the menu switches projects and opens, saves and closes them.
+    private var projectMenu: some View {
+        Menu {
+            Section("Open projects") {
+                ForEach(app.workspaces) { w in
+                    Button { app.switchTo(w.id) } label: {
+                        let title = w.name + (app.isUnsaved(w) ? " •" : "")
+                        if w.id == app.currentID { Label(title, systemImage: "checkmark") } else { Text(title) }
+                    }
+                }
+            }
+            Section {
+                Button { app.newProject() } label: { Label("New Project", systemImage: "plus") }
+                Button { opening = true } label: { Label("Open…", systemImage: "folder") }
+                if !app.recent.isEmpty {
+                    Menu {
+                        ForEach(app.recent, id: \.bookmark) { r in Button(r.name) { app.openRecent(r) } }
+                    } label: { Label("Open Recent", systemImage: "clock") }
+                }
+            }
+            Section {
+                Button { app.save() } label: { Label("Save", systemImage: "square.and.arrow.down") }
+                    .disabled(!app.unsaved && app.savedFileName != nil)
+                Button { app.saveAs() } label: { Label("Save As…", systemImage: "square.and.arrow.down.on.square") }
+                Button(role: .destructive) {
+                    if let w = app.currentWorkspace { if app.isUnsaved(w) { closing = w } else { app.close(w.id) } }
+                } label: { Label("Close \(app.project.name)", systemImage: "xmark") }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(app.project.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                if app.unsaved { Circle().fill(.secondary).frame(width: 6, height: 6).accessibilityLabel("unsaved changes") }
+                if app.workspaces.count > 1 { Text("\(app.workspaces.count)").font(.caption2.bold()).padding(.horizontal, 5).padding(.vertical, 1).background(Color(.tertiarySystemFill), in: Capsule()) }
+                Image(systemName: "chevron.down").font(.caption2.bold())
+            }
+            .foregroundStyle(.primary)
+        }
+        .disabled(app.busy)
+        .accessibilityLabel("Project \(app.project.name)\(app.unsaved ? ", unsaved changes" : "")")
     }
 
     @ViewBuilder
@@ -314,13 +367,19 @@ struct ChatView: View {
         }
     }
 
-    /// add_files: the assistant's reason, with the button that opens Files.
-    private func fileRequestCard(_ reason: String) -> some View {
+    /// add_files, open_project, save_project: the assistant's reason, with the button that opens Files.
+    private func requestCard(_ r: ChatRequest) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(reason, systemImage: "folder.badge.plus").font(.callout)
+            Label(r.reason, systemImage: r.systemImage).font(.callout)
             HStack {
-                Button("Add files…") { importing = .request }.buttonStyle(.borderedProminent)
-                Button("Cancel") { app.answerFileRequest(nil) }.buttonStyle(.bordered)
+                Button(r.buttonLabel) {
+                    switch r.kind {
+                    case .addFiles: importing = .request
+                    case .open: opening = true
+                    case .saveAs: app.saveAs()
+                    }
+                }.buttonStyle(.borderedProminent)
+                Button("Cancel") { app.answerRequest(nil) }.buttonStyle(.bordered)
             }
             .controlSize(.small)
         }
@@ -357,14 +416,14 @@ struct ChatView: View {
             if !app.pendingRefs.isEmpty { pendingRefs }
             if !app.pendingPhotos.isEmpty { pendingPhotos }
             if !app.pendingFiles.isEmpty { pendingFiles }
-            if let reason = app.fileRequest { fileRequestCard(reason) }
+            if let r = app.request { requestCard(r) }
             composerRow
         }
         .fileImporter(isPresented: Binding(get: { importing != nil }, set: { if !$0 { importing = nil } }),
                       allowedContentTypes: [.data], allowsMultipleSelection: true) { [importing] result in
             guard case .success(let urls) = result else { return }
             let files = Self.read(urls)
-            if importing == .request { app.answerFileRequest(files) } else { app.attach(files: files) }
+            if importing == .request { app.answerRequest(.files(files)) } else { app.attach(files: files) }
         }
     }
 
@@ -418,4 +477,10 @@ struct ChatView: View {
         typing.wrappedValue = false // drop the keyboard so the result shows in the preview
         app.send(t)
     }
+}
+
+/// ChatView's project prompts and sheets, split out of its body so the compiler can check it.
+private struct ProjectSheets: ViewModifier {
+    let view: ChatView
+    func body(content: Content) -> some View { view.projectSheets(content) }
 }

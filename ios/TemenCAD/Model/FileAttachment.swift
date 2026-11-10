@@ -44,3 +44,23 @@ struct FileAttachment: Identifiable, Equatable {
     var extensionLabel: String { String((name as NSString).pathExtension.uppercased().prefix(4)) }
     var sizeLabel: String { ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file) }
 }
+
+/// A card in the chat that the assistant waits on: add_files, open_project, save_project.
+struct ChatRequest: Equatable {
+    enum Kind: Equatable { case addFiles, open, saveAs }
+    var kind: Kind
+    var reason: String
+
+    var buttonLabel: String {
+        switch kind { case .addFiles: "Add files…"; case .open: "Open…"; case .saveAs: "Save as…" }
+    }
+    var systemImage: String {
+        switch kind { case .addFiles: "folder.badge.plus"; case .open: "doc"; case .saveAs: "square.and.arrow.down" }
+    }
+}
+
+/// The user's answer to a card: the files they picked (add_files) or the file opened or saved.
+enum RequestAnswer {
+    case files([(name: String, data: Data)])
+    case url(URL)
+}

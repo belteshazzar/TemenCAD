@@ -42,7 +42,20 @@ struct EventInfo: Codable, Equatable {
 /// The app: the project, its builds, the preview and the conversation. Kept on the main actor.
 @MainActor
 final class AppModel: ObservableObject, AgentHost {
-    @Published var project: Project { didSet { ProjectStore.save(project) } }
+    @Published var project: Project { didSet { ProjectStore.save(project); updateUnsaved() } }
+    /// The open projects (each a workspace with its own conversation), in the order they were opened.
+    @Published private(set) var workspaces: [WorkspaceInfo] = []
+    /// .temen files closed recently, for Open Recent.
+    @Published private(set) var recent: [RecentFile] = []
+    /// The project showing has changes not yet saved to its file (or, never saved, differs from the starter).
+    @Published private(set) var unsaved = false
+    /// The save sheet's document: Save As, Save on a project never saved, or save_project.
+    @Published var saveAsDocument: TemenDocument?
+    /// The file changed elsewhere (another app or device) since it was opened: ask before replacing it.
+    @Published var saveConflict = false
+    /// Close → Save on a project never saved: close it once the save sheet has saved it.
+    private var closeAfterSave: UUID?
+    private var saveSheetToken = 0
     @Published private(set) var entries: [ChatEntry] = []
     @Published private(set) var busy = false
     @Published private(set) var buildStatus = ""
@@ -62,9 +75,9 @@ final class AppModel: ObservableObject, AgentHost {
     @Published var pendingRefs: [ViewReference] = []
     /// PDFs and project files waiting to go with the next message.
     @Published var pendingFiles: [FileAttachment] = []
-    /// add_files: the assistant's reason while it waits for the user to add files.
-    @Published private(set) var fileRequest: String?
-    private var fileRequestReply: CheckedContinuation<[(name: String, data: Data)]?, Never>?
+    /// add_files, open_project, save_project: the card the assistant is waiting on, with its reason.
+    @Published private(set) var request: ChatRequest?
+    private var requestReply: CheckedContinuation<RequestAnswer?, Never>?
     static let maxPhotosPerMessage = 5
     @Published var apiKey: String { didSet { Keychain.write(apiKey); agent.client.apiKey = apiKey } }
     @Published var model: String { didSet { UserDefaults.standard.set(model, forKey: "model"); agent.model = model } }
@@ -100,7 +113,17 @@ final class AppModel: ObservableObject, AgentHost {
         agent = Agent(client: client)
         apiKey = key
         model = UserDefaults.standard.string(forKey: "model") ?? Agent.defaultModel
-        project = ProjectStore.load()
+        let index = ProjectStore.loadIndex()
+        var open = index.open
+        if open.isEmpty { open = [WorkspaceInfo(name: "Untitled", savedDigest: ProjectStore.digest(.starter))] }
+        ProjectStore.currentID = index.current.flatMap { id in open.first { $0.id == id }?.id } ?? open[0].id
+        workspaces = open
+        recent = index.recent
+        var loaded = ProjectStore.load()
+        if let info = open.first(where: { $0.id == ProjectStore.currentID }) { loaded.name = info.name }
+        project = loaded
+        ProjectStore.save(loaded) // a new workspace starts with the starter on disk
+        ProjectStore.saveIndex(WorkspaceIndex(open: open, current: ProjectStore.currentID, recent: index.recent))
         if let d = UserDefaults.standard.data(forKey: "plate") { plate = try? JSONDecoder().decode(Plate.self, from: d) }
         agent.host = self
         agent.model = model
@@ -110,6 +133,7 @@ final class AppModel: ObservableObject, AgentHost {
         if let k = UserDefaults.standard.string(forKey: "TemenAPIKey") { apiKey = k }
         #endif
         loadChat()
+        updateUnsaved()
         Task { await rebuild() }
     }
 
@@ -295,7 +319,7 @@ final class AppModel: ObservableObject, AgentHost {
 
     /// What the assistant is told about the app with each message (the web app's <app> block).
     var appState: JSONValue {
-        var o: JSONValue = ["file": .string(project.fileName), "plate": plate?.json ?? .null, "wireframe": .bool(preview.wireframe),
+        var o: JSONValue = ["project": projectInfo, "plate": plate?.json ?? .null, "wireframe": .bool(preview.wireframe),
                             "parts": .array((lastResult?.parts ?? []).map { p in let f = partFlags(p.name); return ["name": .string(p.name), "visible": .bool(f.visible), "ghost": .bool(f.ghost)] })]
         if plate != nil { o["plate_fits"] = .bool(plateFit.fits) }
         return o
@@ -493,7 +517,7 @@ final class AppModel: ObservableObject, AgentHost {
     var latestReplyID: UUID? { entries.last { $0.kind == .reply }?.id }
 
     func stop() {
-        answerFileRequest(nil)
+        answerRequest(nil)
         task?.cancel()
     }
 
@@ -509,14 +533,6 @@ final class AppModel: ObservableObject, AgentHost {
         try? FileManager.default.removeItem(at: Self.exportsFolder)
         try? FileManager.default.removeItem(at: ProjectStore.attachmentsFolder) // attachment numbers start again
         saveChat()
-    }
-
-    /// Start over with the starter model (the conversation is cleared too).
-    func newProject() {
-        newChat()
-        generation += 1
-        project = .starter
-        Task { await rebuild(); preview.frame(view: "iso") }
     }
 
     // MARK: - Photos
@@ -584,25 +600,30 @@ final class AppModel: ObservableObject, AgentHost {
         return added
     }
 
-    // MARK: - add_files
+    // MARK: - Cards the assistant waits on (add_files, open_project, save_project)
+
+    /// Shows a card in the chat and waits for the user's answer (nil: cancelled, or the turn was stopped).
+    func ask(_ kind: ChatRequest.Kind, reason: String) async -> RequestAnswer? {
+        answerRequest(nil) // never two at once
+        request = ChatRequest(kind: kind, reason: reason)
+        #if DEBUG
+        debugAnswer(kind)
+        #endif
+        return await withCheckedContinuation { requestReply = $0 }
+    }
+
+    /// The user's answer to the card: the files or the file they picked, or nil for Cancel.
+    func answerRequest(_ answer: RequestAnswer?) {
+        request = nil
+        let reply = requestReply
+        requestReply = nil
+        reply?.resume(returning: answer)
+    }
 
     func requestFiles(reason: String) async -> JSONValue {
-        answerFileRequest(nil) // never two at once
-        fileRequest = reason.isEmpty ? "Add files to the project." : reason
-        #if DEBUG
-        // -TemenAddFiles "/a/bolt.stl|/b/logo.svg" answers add_files with these files ("none" cancels)
-        if let paths = UserDefaults.standard.string(forKey: "TemenAddFiles"), !paths.isEmpty {
-            Task {
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
-                answerFileRequest(paths == "none" ? nil : paths.split(separator: "|").compactMap { p in
-                    let url = URL(fileURLWithPath: String(p))
-                    return (try? Data(contentsOf: url)).map { (url.lastPathComponent, $0) }
-                })
-            }
+        guard case .files(let picked)? = await ask(.addFiles, reason: reason.isEmpty ? "Add files to the project." : reason), !picked.isEmpty else {
+            return ["done": false, "reason": "cancelled or no files chosen"]
         }
-        #endif
-        let picked = await withCheckedContinuation { fileRequestReply = $0 }
-        guard let picked, !picked.isEmpty else { return ["done": false, "reason": "cancelled or no files chosen"] }
         var ok: [(name: String, data: Data)] = [], skipped: [String] = []
         for f in picked {
             let ext = (f.name as NSString).pathExtension.lowercased()
@@ -616,14 +637,6 @@ final class AppModel: ObservableObject, AgentHost {
         var r: JSONValue = ["done": .bool(!added.isEmpty), "added": .array(added.map(JSONValue.string)), "files": .array(project.names.map(JSONValue.string))]
         if !skipped.isEmpty { r["skipped"] = .array(skipped.map(JSONValue.string)); r["note"] = "Those types cannot go in the project." }
         return r
-    }
-
-    /// The user's answer to add_files: the files they picked, or nil for Cancel.
-    func answerFileRequest(_ files: [(name: String, data: Data)]?) {
-        fileRequest = nil
-        let reply = fileRequestReply
-        fileRequestReply = nil
-        reply?.resume(returning: files)
     }
 
     func attach(image: UIImage) {
@@ -652,26 +665,224 @@ final class AppModel: ObservableObject, AgentHost {
         }
     }
 
-    // MARK: - .temen files
+    // MARK: - Projects: .temen files on the device, several open at once
 
-    /// Opens a .temen (from the Files picker, AirDrop or "Open in"): it replaces the current model and
-    /// starts a new conversation. A conversation the web app kept in the file is not shown here (the two
-    /// apps keep conversations differently) but is kept and written back when the project is saved.
-    func open(url: URL) {
+    private var currentIndex: Int? { workspaces.firstIndex { $0.id == ProjectStore.currentID } }
+    var currentWorkspace: WorkspaceInfo? { currentIndex.map { workspaces[$0] } }
+    var currentID: UUID { ProjectStore.currentID }
+
+    /// The file the project is saved to, as "Bracket.temen"; nil for a project never saved.
+    var savedFileName: String? { currentWorkspace?.bookmark == nil ? nil : project.fileName }
+
+    func isUnsaved(_ info: WorkspaceInfo) -> Bool { info.id == ProjectStore.currentID ? unsaved : info.unsaved == true }
+
+    private func updateUnsaved() {
+        guard let i = currentIndex else { return }
+        let now = ProjectStore.digest(project) != workspaces[i].savedDigest
+        if now != unsaved { unsaved = now }
+        if workspaces[i].unsaved != now { workspaces[i].unsaved = now; saveIndex() }
+    }
+
+    private func saveIndex() {
+        ProjectStore.saveIndex(WorkspaceIndex(open: workspaces, current: ProjectStore.currentID, recent: recent))
+    }
+
+    /// What the assistant is told about the project (in <app> and from the project tools).
+    var projectInfo: JSONValue {
+        ["name": .string(project.name), "file": savedFileName.map(JSONValue.string) ?? .null, "unsaved": .bool(unsaved),
+         "open_projects": .array(workspaces.map { .string($0.id == ProjectStore.currentID ? "\($0.name) (this one)" : $0.name) }),
+         "files": .array(project.names.map(JSONValue.string))]
+    }
+
+    /// A name for a new untitled project that no open project has.
+    private func untitledName() -> String {
+        let names = Set(workspaces.map(\.name))
+        if !names.contains("Untitled") { return "Untitled" }
+        return (2...).lazy.map { "Untitled \($0)" }.first { !names.contains($0) }!
+    }
+
+    /// Shows another project. `carry`: the conversation carries on there (the assistant opened or started it)
+    /// rather than switching to that project's own conversation. `build`: rebuild and frame it now.
+    private func activate(_ id: UUID, project given: Project? = nil, carry: Bool = false, build: Bool = true) {
+        saveChat() // the project being left keeps its conversation as it is now
+        let old = ProjectStore.currentID
+        if carry && old != id { ProjectStore.copyConversation(from: old, to: id) }
+        pendingPhotos = []; pendingRefs = []; pendingFiles = []
+        preview.clearPicks()
+        ProjectStore.currentID = id
+        generation += 1
+        partOverrides = [:]
+        lastResult = nil
+        project = given ?? ProjectStore.load()
+        if let i = currentIndex { project.name = workspaces[i].name }
+        if carry {
+            // replies from the other project cannot be undone here: their undo points are that project's files
+            for i in entries.indices {
+                if entries[i].reply?.changed == true { entries[i].reply = ReplyInfo(changed: false) }
+                if entries[i].event != nil { entries[i].event?.used = true }
+            }
+            checkpoints.clear()
+        } else {
+            entries = []
+            agent.reset()
+            checkpoints.clear()
+            loadChat()
+        }
+        updateUnsaved()
+        saveIndex()
+        saveChat()
+        if build { Task { await rebuild(); preview.frame(view: "iso") } }
+    }
+
+    /// Adds a workspace for `project` and shows it.
+    private func addWorkspace(_ project: Project, name: String, bookmark: Data? = nil, fileDate: Date? = nil, carry: Bool, build: Bool) {
+        // an untouched, untitled project is replaced rather than left behind, when it has no conversation or
+        // its conversation moves to the new project
+        let replace = currentWorkspace.map { $0.bookmark == nil && !unsaved && (entries.isEmpty || carry) } == true ? ProjectStore.currentID : nil
+        let info = WorkspaceInfo(name: name, bookmark: bookmark,
+                                 savedDigest: bookmark == nil ? ProjectStore.digest(.starter) : ProjectStore.digest(project), fileDate: fileDate)
+        workspaces.append(info)
+        var p = project
+        p.name = name
+        activate(info.id, project: p, carry: carry, build: build)
+        if let replace, replace != info.id { workspaces.removeAll { $0.id == replace }; ProjectStore.remove(replace); saveIndex() }
+    }
+
+    /// Switches to an open project (from the project menu).
+    func switchTo(_ id: UUID) {
+        guard id != ProjectStore.currentID, workspaces.contains(where: { $0.id == id }) else { return }
+        guard !busy else { entries.append(ChatEntry(kind: .status, text: "Wait for the assistant to finish.")); return }
+        activate(id)
+    }
+
+    /// File > New: a new untitled project beside the open ones.
+    func newProject(script: String? = nil, carry: Bool = false, build: Bool = true) {
+        var p = Project.starter
+        if let script { p.files = [Project.entry: Data(script.utf8)] }
+        addWorkspace(p, name: untitledName(), carry: carry, build: build)
+    }
+
+    static func resolve(_ bookmark: Data?) -> (url: URL, stale: Bool)? {
+        guard let bookmark else { return nil }
+        var stale = false
+        guard let url = try? URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) else { return nil }
+        return (url, stale)
+    }
+
+    /// The file's modification date, read fresh (URL caches resource values, so a date read before a write
+    /// would come back unchanged after it).
+    private static func modified(_ url: URL) -> Date? {
+        var fresh = url
+        fresh.removeAllCachedResourceValues()
+        return try? fresh.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    }
+
+    /// Whether the file's date moved since `known` (by more than file systems' rounding).
+    private static func changed(_ url: URL, since known: Date?) -> Bool {
+        guard let known, let now = modified(url) else { return false }
+        return abs(now.timeIntervalSince(known)) > 0.5
+    }
+
+    /// Reads a file with a file coordinator (a provider such as iCloud Drive may need to download it first).
+    private static func coordinatedRead(_ url: URL) throws -> Data {
+        var error: NSError?, result: Result<Data, Error> = .failure(CocoaError(.fileReadUnknown))
+        NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &error) { u in result = Result { try Data(contentsOf: u) } }
+        if let error { throw error }
+        return try result.get()
+    }
+
+    /// Opens a .temen (from Open…, Open Recent, Files, AirDrop or another app) as a project beside the open
+    /// ones, or shows it if it is open already. A conversation the web app kept in the file is not shown here
+    /// (the two apps keep conversations differently) but is kept and written back when the project is saved.
+    /// Returns whether it opened.
+    @discardableResult
+    func open(url: URL, carry: Bool = false, build: Bool = true) -> Bool {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let path = url.standardizedFileURL.path
+        if let existing = workspaces.first(where: { Self.resolve($0.bookmark)?.url.standardizedFileURL.path == path }) {
+            if existing.id != ProjectStore.currentID { activate(existing.id, carry: carry, build: build) }
+            // unchanged here but changed in the file (another device): take the file's version
+            if !unsaved, let i = currentIndex, Self.changed(url, since: workspaces[i].fileDate), let date = Self.modified(url),
+               let data = try? Self.coordinatedRead(url), let fresh = try? Project(temen: data, name: workspaces[i].name) {
+                workspaces[i].savedDigest = ProjectStore.digest(fresh)
+                workspaces[i].fileDate = date
+                project = fresh
+                entries.append(ChatEntry(kind: .status, text: "Reloaded \(url.lastPathComponent): it changed since it was opened."))
+                saveIndex()
+                if build { Task { await rebuild() } }
+            } else {
+                entries.append(ChatEntry(kind: .status, text: "\(url.lastPathComponent) is already open."))
+            }
+            return true
+        }
         do {
-            let opened = try Project(temen: try Data(contentsOf: url), name: url.deletingPathExtension().lastPathComponent)
-            newChat()
-            generation += 1
-            project = opened
+            let name = url.deletingPathExtension().lastPathComponent
+            let opened = try Project(temen: try Self.coordinatedRead(url), name: name)
+            let bookmark = try? url.bookmarkData()
+            addWorkspace(opened, name: name, bookmark: bookmark, fileDate: Self.modified(url), carry: carry, build: build)
+            if bookmark == nil { entries.append(ChatEntry(kind: .status, text: "\(url.lastPathComponent) can't be saved in place; Save will ask where to save it.")) }
             let kept = opened.extras.isEmpty ? "" : " The conversation saved with it in the web app is kept in the file but not shown here."
             entries.append(ChatEntry(kind: .status, text: "Opened \(url.lastPathComponent).\(kept)"))
+            recent.removeAll { $0.name == name && Self.resolve($0.bookmark)?.url.standardizedFileURL.path == path }
+            saveIndex()
             saveChat()
-            Task { await rebuild(); preview.frame(view: "iso") }
+            return true
         } catch {
-            entries.append(ChatEntry(kind: .error, text: "Could not open \(url.lastPathComponent): \(error)"))
+            entries.append(ChatEntry(kind: .error, text: "Could not open \(url.lastPathComponent): \(error.localizedDescription)"))
+            return false
         }
+    }
+
+    /// Open Recent.
+    func openRecent(_ r: RecentFile) {
+        guard let (url, _) = Self.resolve(r.bookmark) else {
+            recent.removeAll { $0 == r }; saveIndex()
+            entries.append(ChatEntry(kind: .error, text: "\(r.name).temen can no longer be found."))
+            return
+        }
+        open(url: url)
+    }
+
+    enum SaveOutcome { case saved, needsSaveAs, conflict, failed }
+
+    /// File > Save: writes the project to its file in place; a project never saved (or whose file is gone)
+    /// opens the save sheet. `force` replaces a file that changed elsewhere since it was opened.
+    @discardableResult
+    func save(force: Bool = false) -> SaveOutcome {
+        guard let i = currentIndex, let (url, stale) = Self.resolve(workspaces[i].bookmark) else { saveAs(); return .needsSaveAs }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        if !force, Self.changed(url, since: workspaces[i].fileDate) {
+            saveConflict = true
+            return .conflict
+        }
+        do {
+            let data = try project.temen()
+            var error: NSError?, writeError: Error?
+            // not atomic: an atomic write puts a temporary file beside it, in a folder the app may not have access to
+            NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &error) { u in
+                do { try data.write(to: u) } catch { writeError = error }
+            }
+            if let e = error ?? writeError { throw e }
+            workspaces[i].savedDigest = ProjectStore.digest(project)
+            workspaces[i].fileDate = Self.modified(url)
+            if stale, let fresh = try? url.bookmarkData() { workspaces[i].bookmark = fresh }
+            updateUnsaved()
+            saveIndex()
+            entries.append(ChatEntry(kind: .status, text: "Saved \(url.lastPathComponent)."))
+            saveChat()
+            if closeAfterSave == workspaces[i].id { closeAfterSave = nil; close(workspaces[i].id, discard: true) }
+            return .saved
+        } catch {
+            entries.append(ChatEntry(kind: .error, text: "Could not save \(url.lastPathComponent): \(error.localizedDescription)"))
+            return .failed
+        }
+    }
+
+    /// File > Save As…: the save sheet, to pick a name and a place.
+    func saveAs() {
+        saveAsDocument = temenDocument()
     }
 
     /// The project as a .temen document for the save sheet, or nil (with the reason in the chat).
@@ -680,11 +891,119 @@ final class AppModel: ObservableObject, AgentHost {
         catch { entries.append(ChatEntry(kind: .error, text: "Could not save the project: \(error)")); return nil }
     }
 
-    /// After a save: the project takes the saved file's name.
+    /// After the save sheet saved the project: it is now that file (its name, saved in place from now on).
     func saved(to url: URL) {
-        project.name = url.deletingPathExtension().lastPathComponent
+        saveSheetToken += 1
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let i = currentIndex else { return }
+        // another open project saved to the same file is no longer linked to it (this one replaced it)
+        let path = url.standardizedFileURL.path
+        for j in workspaces.indices where j != i && Self.resolve(workspaces[j].bookmark)?.url.standardizedFileURL.path == path {
+            workspaces[j].bookmark = nil
+            workspaces[j].unsaved = true
+        }
+        let name = url.deletingPathExtension().lastPathComponent
+        workspaces[i].name = name
+        workspaces[i].bookmark = try? url.bookmarkData()
+        workspaces[i].fileDate = Self.modified(url)
+        project.name = name
+        workspaces[i].savedDigest = ProjectStore.digest(project)
+        updateUnsaved()
+        saveIndex()
         entries.append(ChatEntry(kind: .status, text: "Saved \(url.lastPathComponent)."))
         saveChat()
+        if request?.kind == .saveAs { answerRequest(.url(url)) }
+        if closeAfterSave == workspaces[i].id { closeAfterSave = nil; close(workspaces[i].id, discard: true) }
+    }
+
+    func report(_ error: Error) { entries.append(ChatEntry(kind: .error, text: error.localizedDescription)) }
+
+    /// The save sheet went away: a cancel unless saved(to:) follows (the sheet has no cancel callback for documents).
+    func saveSheetDismissed() {
+        let token = saveSheetToken
+        Task {
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            if saveSheetToken == token { saveAsCancelled() }
+        }
+    }
+
+    /// The save sheet was cancelled.
+    func saveAsCancelled() {
+        closeAfterSave = nil
+        if request?.kind == .saveAs { answerRequest(nil) }
+    }
+
+    /// Close → Save: saves (in place, or through the save sheet) and closes once it has.
+    func saveAndClose(_ id: UUID) {
+        if id != ProjectStore.currentID { switchTo(id) }
+        closeAfterSave = id
+        if save() == .failed { closeAfterSave = nil } // .saved has closed it; a conflict waits for the user's answer
+    }
+
+    /// The user kept the file that changed elsewhere (neither replaced it nor saved a copy).
+    func conflictCancelled() { closeAfterSave = nil }
+
+    /// Closes a project (the menu asks first when it has unsaved changes); its workspace is deleted. The last
+    /// one closed leaves a new untitled project. A saved file goes on Open Recent.
+    func close(_ id: UUID, discard: Bool = false) {
+        guard let info = workspaces.first(where: { $0.id == id }) else { return }
+        guard !busy else { entries.append(ChatEntry(kind: .status, text: "Wait for the assistant to finish.")); return }
+        if let bookmark = info.bookmark {
+            let path = Self.resolve(bookmark)?.url.standardizedFileURL.path
+            recent.removeAll { $0.name == info.name || (path != nil && Self.resolve($0.bookmark)?.url.standardizedFileURL.path == path) }
+            recent.insert(RecentFile(name: info.name, bookmark: bookmark), at: 0)
+            if recent.count > 10 { recent.removeLast(recent.count - 10) }
+        }
+        if id == ProjectStore.currentID {
+            if let next = workspaces.last(where: { $0.id != id }) {
+                activate(next.id)
+            } else {
+                let fresh = WorkspaceInfo(name: "Untitled", savedDigest: ProjectStore.digest(.starter))
+                workspaces.append(fresh)
+                activate(fresh.id, project: .starter)
+            }
+        }
+        workspaces.removeAll { $0.id == id }
+        ProjectStore.remove(id)
+        saveIndex()
+    }
+
+    // MARK: - Project tools
+
+    func newProjectForAgent(script: String?) async -> JSONValue {
+        newProject(script: script, carry: true, build: false)
+        entries.append(ChatEntry(kind: .status, text: "Started \(project.name); the other projects are still open."))
+        var r = projectInfo
+        r["done"] = true
+        r["build"] = await buildForAgent()
+        return r
+    }
+
+    func openProjectForAgent() async -> JSONValue {
+        guard case .url(let url)? = await ask(.open, reason: "Choose a TemenCAD project (.temen) to open.") else { return ["done": false, "reason": "cancelled"] }
+        guard open(url: url, carry: true, build: false) else { return ["done": false, "error": .string("could not open \(url.lastPathComponent)")] }
+        var r = projectInfo
+        r["done"] = true
+        r["build"] = await buildForAgent()
+        return r
+    }
+
+    func saveProjectForAgent(asNew: Bool) async -> JSONValue {
+        if !asNew, currentWorkspace?.bookmark != nil {
+            switch save() {
+            case .saved: var r = projectInfo; r["done"] = true; r["saved_in_place"] = true; return r
+            case .conflict: return ["done": false, "reason": "the file changed on the device since it was opened (another app or device); the user is being asked whether to replace it or save a copy"]
+            case .failed: return ["done": false, "error": "the file could not be written; the reason is in the chat"]
+            case .needsSaveAs: break
+            }
+        }
+        guard case .url? = await ask(.saveAs, reason: savedFileName == nil || asNew ? "Choose where to save the project." : "Save \(project.fileName): choose where to save it.") else {
+            return ["done": false, "reason": "cancelled"]
+        }
+        var r = projectInfo
+        r["done"] = true
+        return r
     }
 
     static let toolLabels = [
@@ -692,6 +1011,7 @@ final class AppModel: ObservableObject, AgentHost {
         "remove_file": "Removing a file", "run_model": "Building the model", "take_screenshot": "Taking a screenshot",
         "save_attachment": "Adding the photo to the project",
         "add_files": "Asking for files",
+        "new_project": "Starting a new project", "open_project": "Opening a project", "save_project": "Saving the project",
         "rename_file": "Renaming a file", "render_views": "Rendering views", "export_model": "Exporting the model",
         "set_view": "Changing the view", "set_plate": "Setting the build plate", "set_part_display": "Changing which parts show",
     ]
@@ -724,6 +1044,28 @@ final class AppModel: ObservableObject, AgentHost {
     /// project there, so .temen handling can be checked without the system file sheets; `-TemenShare stl`
     /// (or 3mf) exports and opens the share sheet; `-TemenAttach /path/photo.jpg` attaches a photo to the next
     /// message (with -TemenAutoPrompt, sends it).
+    /// -TemenAddFiles "/a/bolt.stl|/b/logo.svg" answers add_files; -TemenRequestURL /path answers open_project
+    /// (opens that file) or save_project's Save as (writes there); "none" cancels either.
+    private func debugAnswer(_ kind: ChatRequest.Kind) {
+        let d = UserDefaults.standard
+        guard let value = d.string(forKey: kind == .addFiles ? "TemenAddFiles" : "TemenRequestURL"), !value.isEmpty else { return }
+        Task {
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            if value == "none" { answerRequest(nil); return }
+            switch kind {
+            case .addFiles:
+                answerRequest(.files(value.split(separator: "|").compactMap { p in
+                    let url = URL(fileURLWithPath: String(p))
+                    return (try? Data(contentsOf: url)).map { (url.lastPathComponent, $0) }
+                }))
+            case .open: answerRequest(.url(URL(fileURLWithPath: value)))
+            case .saveAs:
+                let url = URL(fileURLWithPath: value)
+                if let doc = temenDocument(), (try? doc.data.write(to: url)) != nil { saved(to: url) }
+            }
+        }
+    }
+
     func runAutoPrompt() {
         let defaults = UserDefaults.standard
         if let path = defaults.string(forKey: "TemenOpen"), !path.isEmpty { open(url: URL(fileURLWithPath: path)) }
@@ -765,6 +1107,17 @@ final class AppModel: ObservableObject, AgentHost {
                     case "measure": preview.mode = .measure
                     case "addmeasure": preview.addMeasurementToMessage(); preview.clearMeasure()
                     case "send": send("make this thicker")
+                    case "new": newProject()
+                    case "save": save()
+                    case "saveforce": save(force: true)
+                    case "close": close(currentID)
+                    case "closediscard": close(currentID, discard: true)
+                    case let s where s.hasPrefix("switch:"): if let n = Int(s.dropFirst(7)), workspaces.indices.contains(n) { switchTo(workspaces[n].id) }
+                    case let s where s.hasPrefix("open:"): open(url: URL(fileURLWithPath: String(s.dropFirst(5))))
+                    case let s where s.hasPrefix("edit:"): project.files[Project.entry] = Data(String(s.dropFirst(5)).utf8); await rebuild()
+                    case let s where s.hasPrefix("touch:"): // another app changes the file
+                        let url = URL(fileURLWithPath: String(s.dropFirst(6)))
+                        try? FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: url.path)
                     case let s where s.hasPrefix("tap:"): // tap:0.5:0.6 taps at those fractions of the view
                         let f = s.dropFirst(4).split(separator: ":").compactMap { Double($0) }
                         if f.count == 2 { let b = preview.view.bounds; preview.tap(at: CGPoint(x: b.width * f[0], y: b.height * f[1])) }

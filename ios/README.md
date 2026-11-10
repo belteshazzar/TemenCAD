@@ -24,12 +24,24 @@ straight from the device to api.anthropic.com, billed to the key's account).
 ## What is in the app
 
 - `App/MainApp.swift` the app entry; `Model/AppModel.swift` the state: the project, builds, the preview
-  and the conversation, kept on disk in Application Support (`Current/files/`, `Current/chat.json`).
-- `.temen` files: Open… and Save as .temen… in the ⋯ menu, and opening one from Files, AirDrop or another
-  app (Info.plist declares the `com.temencad.project` type). Reading and writing is the core's
-  (`TemenArchive` in the Swift package, miniz underneath), with the web app's rules. A conversation the web
-  app saved in the file is not shown (the two apps keep conversations differently) but is kept and
-  written back on save (`Current/extras/`).
+  and the conversation, kept on disk in Application Support: a workspace per open project
+  (`Workspaces/<id>/files/`, `chat.json`, …) and `Workspaces/index.json` (the open projects, the one
+  showing, Open Recent). The single `Current/` folder of earlier builds becomes the first workspace.
+- Projects are `.temen` files on the device (iCloud Drive, On My iPhone, any Files provider), several open
+  at once. The project name at the top of the chat (with a dot for unsaved changes and a count of open
+  projects) is the project menu: switch between the open projects (each has its own conversation and
+  undo), New Project, Open…, Open Recent, Save, Save As…, Close. A project keeps a bookmark to its file,
+  so Save writes it in place (coordinated, not atomic, since the app may only have access to the file);
+  if the file changed elsewhere since it was opened (another app or device), Save asks to replace it or
+  save a copy. Closing asks to save unsaved changes, deletes the workspace and puts the file on Open
+  Recent; an untouched untitled project is replaced by the next one opened. Opening a .temen from Files,
+  AirDrop or another app opens it in place (`LSSupportsOpeningDocumentsInPlace`; Info.plist declares the
+  `com.temencad.project` type). The assistant has `new_project`, `open_project` and `save_project`
+  (open and save-as put a card in the chat); its conversation carries on into the project it opens,
+  and replies from the earlier project lose their Undo there. Reading and writing is the core's
+  (`TemenArchive` in the Swift package, miniz underneath), with the web app's rules. A conversation the
+  web app saved in the file is not shown (the two apps keep conversations differently) but is kept and
+  written back on save (`extras/`); the iOS conversation stays in the workspace and is not saved in the file.
 - Photos: the photo button beside the message field attaches up to five photos from the library
   (PhotosPicker, no permission needed) or the camera. Each goes to the assistant as "Attachment n",
   downscaled to 1568 px on the long edge as in the web app, and is kept full size in
@@ -98,12 +110,13 @@ xcrun simctl launch booted com.temencad.app \
 `-TemenAutoPrompt` sends a message at launch; `-TemenOpen /path/a.temen` opens a project and
 `-TemenSaveTo /path/b.temen` saves it, without the system file sheets (the simulator can read and write
 the Mac's paths); `-TemenShare stl` (or `3mf`) exports and opens the share sheet; `-TemenAttach "/a/photo.jpg|/b/drawing.pdf|/c/bolt.stl"` attaches
-those files to the next message as if picked in the chat; `-TemenAddFiles "/a/font.ttf"` answers the assistant's add_files with those files (`none` cancels); `-TemenThen "undo,putback,undoagain,changes"` runs those steps once the turn is over (also `point`, `measure`, `tap:0.5:0.6` at fractions of the view,
-`addmeasure`, `send`). None of them exist in release builds.
+those files to the next message as if picked in the chat; `-TemenAddFiles "/a/font.ttf"` answers the assistant's add_files with those files (`none` cancels); `-TemenRequestURL /path/c.temen` answers open_project (opens it) or save_project's Save as (writes there); `-TemenThen "undo,putback,undoagain,changes"` runs those steps once the turn is over (also `point`, `measure`, `tap:0.5:0.6` at fractions of the view,
+`addmeasure`, `send`, and for projects `new`, `save`, `saveforce`, `close`, `switch:n`, `open:/path`, `edit:<main.js>`,
+`touch:/path` to date a file as changed elsewhere). None of them exist in release builds.
 
 ## Not yet
 
-More than one project, showing a
+A file manager for the project's files, showing a
 conversation saved by the web app, the printer profile, and a Mac or visionOS build. SceneKit is the preview for now: Apple has stopped adding features
 to it in favour of RealityKit, and everything SceneKit touches is in `Views/ModelPreview.swift`, so moving
 is contained.

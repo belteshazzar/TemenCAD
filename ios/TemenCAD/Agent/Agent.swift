@@ -23,6 +23,10 @@ protocol AgentHost: AnyObject {
     var appState: JSONValue { get }
     /// add_files: asks the user to add files to the project (a card in the chat with `reason`), waits for them.
     func requestFiles(reason: String) async -> JSONValue
+    /// new_project, open_project, save_project: projects as .temen files on the device, several open at once.
+    func newProjectForAgent(script: String?) async -> JSONValue
+    func openProjectForAgent() async -> JSONValue
+    func saveProjectForAgent(asNew: Bool) async -> JSONValue
 }
 
 /// The modelling assistant: the same job as the web app's (src/agent.js), with the tools a phone needs.
@@ -64,6 +68,7 @@ final class Agent {
         - Make the smallest edit that does the job with edit_script (exact-match replacement; pass `file` for anything other than main.js). Use write_script only for new models, new files or large rewrites; remove_file deletes a script file.
         - After every change call run_model and read the report. Fix any error or warning it reports (they include line numbers) before replying. run_model also shows the result in the user's preview.
         - The user can attach photos and PDFs to a message (labelled Attachment 1, 2, … in order across the conversation), photos often taken with the phone's camera. Use them as references: a broken part next to a ruler, a hand sketch with dimensions, a drawing or datasheet. Read dimensions from a drawing's labels first; when you scale from a photo, say which reference you used (a ruler, a coin, a known part) and how sure you are, and ask for the one or two measurements that matter most (hole spacing, mating diameters) rather than guessing them. To use a photo in the model itself (lithophane, heightmap), save_attachment puts it in the project as a .jpg to import from main.js (`import photo from './photo.jpg'`); PDFs cannot be saved.
+        - Projects are .temen files on the user's device (iCloud Drive, On My iPhone, other providers). Several can be open at once (the project menu at the top of the chat switches between them, each with its own conversation); <app> says which is showing, its file and whether it has unsaved changes. new_project and open_project keep the current project open, so nothing is lost, and this conversation carries on with the new one. Opening a project and saving to a new file need the user's tap: open_project and save_project (for a project never saved, or as_new_file) put a card in the chat and wait. Say in a few words what it is for; if they cancel, accept it and carry on. Save only when the user asks.
         - Fonts, meshes (.stl) and SVG drawings can only be added by the user: they can attach them to a message (the message's <app_events> lists what was added), or you can ask with add_files.
         - The user can point at surfaces in the 3D view ("make this thicker"): such a message carries Reference n blocks (part name, which way the face points and where its plane is, its extent and area; or a hole / boss / fillet with its diameter or radius and axis) and a snapshot of their view with each reference highlighted in its colour. Work out which line of the script made that surface (the part name, the face's plane and extent against the shapes' sizes and positions) before editing, and say which feature you took it to be; if two features could match, ask. They can also measure between two points (distances, and the gap between parallel faces); trust those numbers, they come from the built mesh.
         - Use render_views when the shape of the result matters and the build report can't confirm it (first version of a new model, visual arrangement, fit against a ghost reference, anything you are unsure of): it returns labelled views (part names, sizes, scale bar, axes) with ghosts translucent, and can cut the model open with a section. take_screenshot gives the live 3D view instead. Both images also appear in the chat as thumbnails the user can open, so you can refer to them.
@@ -120,6 +125,11 @@ final class Agent {
              ["attachment": ["type": "integer", "description": "The attachment number from the message"],
               "name": ["type": "string", "description": "File name in the project (default photo-n.jpg); .jpg is added if missing"],
               "replace": ["type": "boolean", "description": "Replace a project file of the same name"]], required: ["attachment"]),
+        tool("new_project", "Start a new untitled project beside the open ones (the current project stays open in the project list; nothing is discarded): one main.js holding `script` (default: the starter block). This conversation carries on with the new project. Builds it and returns the report.",
+             ["script": ["type": "string", "description": "main.js for the new project (default: the starter)"]]),
+        tool("open_project", "Open a .temen project from the user's device. Puts an \"Open…\" card in the chat for the user to tap and pick the file, then returns the opened files and the build report. The current project stays open in the project list; this conversation carries on with the opened one (or switches to it if it is open already).", [:]),
+        tool("save_project", "Save the project as a .temen file on the user's device. Writes the file it was opened from or last saved to, in place; for a project never saved, or with as_new_file, puts a \"Save as…\" card in the chat for the user to pick a name and place.",
+             ["as_new_file": ["type": "boolean", "description": "Save As: pick a new file name and place"]]),
         tool("add_files", "Ask the user to add files from their phone (images for heightmap/lithophane, fonts for text, STL meshes, SVG drawings, scripts). Puts an \"Add files\" card in the chat with your reason, waits for the user and returns the names added; import them from main.js.",
              ["reason": ["type": "string", "description": "Shown on the card: what to add and why, e.g. \"Add the photo for the lithophane (.png or .jpg)\""]], required: ["reason"]),
     ]
@@ -220,6 +230,12 @@ final class Agent {
             }
             host.project.files[name] = jpeg
             return .string("Saved attachment \(n) as \(name) (JPEG). Import it from main.js: import photo from './\(name)';")
+        case "new_project":
+            return .string(await host.newProjectForAgent(script: input["script"]?.string).text(pretty: true))
+        case "open_project":
+            return .string(await host.openProjectForAgent().text(pretty: true))
+        case "save_project":
+            return .string(await host.saveProjectForAgent(asNew: input["as_new_file"]?.bool == true).text(pretty: true))
         case "add_files":
             return .string(await host.requestFiles(reason: input["reason"]?.string ?? "").text(pretty: true))
         default:
