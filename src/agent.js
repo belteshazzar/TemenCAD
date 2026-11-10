@@ -29,7 +29,8 @@ How to work:
 - The project's files and the last build report are included with every user message. Read them before deciding what to change. main.js is the entry script; other .js files are ES modules it imports (\`import { lid } from './lid.js'\`, \`export const lid = ...\`). Fonts (.ttf/.otf), meshes (.stl) and images (.png/.jpg) in the project are imported the same way: \`import logo from './Logo.ttf'\` gives a font name for text(), \`import part from './part.stl'\` gives a Shape, \`import photo from './photo.png'\` gives an image for heightmap() and lithophane().
 - Make the smallest edit that does the job with edit_script (exact-match replacement; pass \`file\` for anything other than main.js). Use write_script only for new models, new files or large rewrites. To split a model into modules, write_script a new .js file name (it is created) and import it from main.js; remove_file and rename_file manage script files. Fonts, meshes and images can only be added by the user.
 - After every change call run_model and read the report. Fix any error or warning it reports (they include line numbers) before replying. If the report says the model does not fit the plate, tell the user rather than silently shrinking their design.
-- Use render_views when the shape of the result matters and the build report can't confirm it (first version of a new model, visual arrangement, fit against a ghost reference, anything you are unsure of): it returns labelled views (part names, sizes, scale bar, axes) with ghosts translucent, and can cut the model open with a section. take_screenshot gives the live 3D view instead.
+- Use render_views when the shape of the result matters and the build report can't confirm it (first version of a new model, visual arrangement, fit against a ghost reference, anything you are unsure of): it returns labelled views (part names, sizes, scale bar, axes) with ghosts translucent, and can cut the model open with a section. take_screenshot gives the live 3D view instead. Both images also appear in the chat as thumbnails the user can open, so you can refer to them.
+- Each of your replies that changed the project gets an Undo button, and Download STL / 3MF buttons when the build succeeded, so you don't need to offer those. When the user undoes or redoes a reply, an <app_events> note says so at the top of their next message; the <project> block is then the restored state.
 - Keep designs parametric: declare dimensions as named constants at the top of the script. Return parts as an object so they are named: \`return { body, lid }\`.
 - Units are millimetres, Y is up, the build plate is y = 0, +Z is the front. Put parts on the plate with .onPlate(). Screw cutters have their top at y = 0; translate them to the top face of the part before subtracting.
 - Design for printing. Horizontal holes should be hole() cutters (teardrop by default) rather than plain cylinders; use { flat } when the hole is close to a surface. Counterbored or countersunk holes printed head-down can take { bridge: 0.2 }. Where a boss or wall meets a plate, a concave fillet (s.fillet(r, { edges: 'concave' })) adds strength; top-edge fillets or chamfers (edges: 'top') soften parts; bottom chamfers avoid elephant's foot. Use sweep() along a path for handles, hooks, channels and springs rather than many unions; heightmap() and lithophane() for pictures the user adds as .png/.jpg files.
@@ -80,6 +81,7 @@ export class Agent {
   constructor(host) {
     this.host = host;
     this.messages = [];
+    this.notes = []; // things the user did in the app (undo, redo) to tell the model with the next message
     this.client = null;
     this.abort = null;
   }
@@ -90,7 +92,9 @@ export class Agent {
     this.client = apiKey ? new Anthropic({ apiKey, dangerouslyAllowBrowser: true }) : null;
   }
 
-  reset() { this.messages = []; }
+  reset() { this.messages = []; this.notes = []; }
+  /** Tell the model about something the user did, with their next message. */
+  note(text) { this.notes.push(text); }
 
   get busy() { return !!this.abort; }
 
@@ -168,6 +172,7 @@ export class Agent {
         inputSchema: { type: 'object', properties: { view: { type: 'string', enum: ['iso', 'top', 'front', 'right', 'left', 'back'] } }, additionalProperties: false },
         run: async ({ view }) => {
           const shot = await host.screenshot(view || 'iso');
+          host.showImage?.(shot.data, shot.mediaType, `Screenshot, ${view || 'iso'} view`);
           return [
             { type: 'image', source: { type: 'base64', media_type: shot.mediaType, data: shot.data } },
             { type: 'text', text: `Screenshot from the ${view || 'iso'} view. Y is up; the blue plate edge is the front.` },
@@ -185,6 +190,7 @@ export class Agent {
           const list = views?.length ? views : ['iso', 'top', 'front', 'right'];
           const png = await host.renderViews({ views: list, section: section ?? null, width: 640, height: 480, labels: true });
           if (save) await host.saveRender({ views: list, section: section ?? null });
+          host.showImage?.(png, 'image/png', `${list.join(', ')}${section ? `, cut at ${section.axis} = ${section.value}` : ''}`);
           let bin = ''; for (let i = 0; i < png.length; i += 0x8000) bin += String.fromCharCode.apply(null, png.subarray(i, i + 0x8000));
           return [
             { type: 'image', source: { type: 'base64', media_type: 'image/png', data: btoa(bin) } },
@@ -262,7 +268,8 @@ export class Agent {
     if (this.busy) throw new Error('The assistant is still working.');
     this.abort = new AbortController();
     const before = [...this.messages];
-    this.messages.push({ role: 'user', content: text + this.turnContext() });
+    const notes = this.notes.splice(0);
+    this.messages.push({ role: 'user', content: (notes.length ? `<app_events>\n${notes.join('\n')}\n</app_events>\n\n` : '') + text + this.turnContext() });
 
     const params = {
       model: this.model,
@@ -307,6 +314,7 @@ export class Agent {
     } catch (err) {
       // Drop the half-finished turn so the next message starts clean.
       this.messages = before;
+      this.notes.unshift(...notes);
       events.onError?.(err);
       throw err;
     } finally {

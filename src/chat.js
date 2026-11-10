@@ -45,7 +45,7 @@ export function initChat({ root, host }) {
   const settings = (() => { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch { return {}; } })();
   const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} };
 
-  const agent = new Agent(host);
+  const agent = new Agent({ ...host, showImage });
   function applySettings() {
     agent.configure({ apiKey: settings.apiKey, model: settings.model || DEFAULT_MODEL });
     modelEl.textContent = settings.apiKey ? (MODELS.find((m) => m[0] === agent.model)?.[1] ?? agent.model) : 'No API key set';
@@ -111,6 +111,88 @@ export function initChat({ root, host }) {
     return a;
   }
 
+  // ---- Images the assistant looked at: thumbnails that open full size ----
+  let lightbox = null;
+  function openLightbox(url, caption, filename) {
+    if (!lightbox) {
+      lightbox = Object.assign(document.createElement('dialog'), { className: 'lightbox' });
+      lightbox.innerHTML = '<img alt=""><div class="lightbox-bar"><span class="lightbox-caption"></span><a class="lightbox-save">⤓ Save</a><button type="button" class="secondary">Close</button></div>';
+      lightbox.querySelector('button').addEventListener('click', () => lightbox.close());
+      lightbox.addEventListener('click', (e) => { if (e.target === lightbox) lightbox.close(); }); // backdrop
+      document.body.appendChild(lightbox);
+    }
+    lightbox.querySelector('img').src = url;
+    lightbox.querySelector('img').alt = caption;
+    lightbox.querySelector('.lightbox-caption').textContent = caption;
+    Object.assign(lightbox.querySelector('.lightbox-save'), { href: url, download: filename });
+    lightbox.showModal();
+  }
+  /** data: PNG/JPEG bytes (Uint8Array) or base64 text. */
+  function showImage(data, mediaType, caption) {
+    const bytes = typeof data === 'string' ? Uint8Array.from(atob(data), (c) => c.charCodeAt(0)) : data;
+    const url = URL.createObjectURL(new Blob([bytes], { type: mediaType }));
+    downloads.push(url);
+    const filename = `${caption.replace(/[^\w=.-]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'view'}.${mediaType === 'image/jpeg' ? 'jpg' : 'png'}`;
+    const card = addMsg('card image');
+    const img = Object.assign(document.createElement('img'), { src: url, alt: caption, title: 'Open full size' });
+    img.addEventListener('click', () => openLightbox(url, caption, filename));
+    card.append(img, Object.assign(document.createElement('span'), { className: 'card-note', textContent: caption }));
+  }
+
+  // ---- Actions under a reply: download the result, undo / redo what the reply changed ----
+  let latestDownloads = null; // the newest reply's download buttons; older replies lose theirs (they would export the current model)
+  function note(row, text) {
+    row.querySelector('.card-note')?.remove();
+    row.appendChild(Object.assign(document.createElement('span'), { className: 'card-note', textContent: text }));
+  }
+  function button(row, label, title, onClick) {
+    const b = Object.assign(document.createElement('button'), { type: 'button', className: 'secondary', textContent: label, title });
+    b.addEventListener('click', async () => {
+      if (agent.busy) return note(row, 'Wait for the assistant to finish.');
+      try { await onClick(b); } catch (err) { note(row, err?.message ?? String(err)); }
+    });
+    row.appendChild(b);
+    return b;
+  }
+  function addReplyActions(turn) {
+    const after = host.snapshot();
+    const sameFile = turn.before.generation === after.generation; // a reply that opened or started another project has nothing to undo into
+    const changed = sameFile && !host.sameProject(turn.before, after);
+    const canExport = host.canExport();
+    latestDownloads?.forEach((b) => b.remove());
+    latestDownloads = null;
+    if (!changed && !canExport) return;
+    const row = addMsg('actions');
+    if (canExport) {
+      latestDownloads = ['stl', '3mf'].map((fmt) => button(row, `⤓ ${fmt.toUpperCase()}`, `Download the model as ${fmt.toUpperCase()}`, () => {
+        const f = host.download(fmt);
+        note(row, `${f.filename}, ${fmtBytes(f.blob.size)}`);
+      }));
+    }
+    if (!changed) return;
+    const quoted = `"${turn.text.length > 80 ? turn.text.slice(0, 77) + '…' : turn.text}"`;
+    let undone = false;
+    button(row, 'Undo', 'Put the project back as it was before this reply', async (b) => {
+      if (!undone) {
+        const later = !host.sameProject(host.snapshot(), after); // changed again since (by a later reply or by hand)
+        b.disabled = true;
+        await host.restore(turn.before);
+        undone = true;
+        b.textContent = 'Redo'; b.title = 'Put back what this reply changed'; b.disabled = false;
+        note(row, later ? 'Back to how it was before this reply' : 'Undone');
+        agent.note(`The user pressed Undo on your reply to ${quoted}: the project is now exactly as it was before that reply${later ? ' (this replaced every change made since)' : ''}.`);
+      } else {
+        if (!host.sameProject(host.snapshot(), turn.before)) { b.disabled = true; return note(row, 'The project has changed since the undo, so it can\'t be redone.'); }
+        b.disabled = true;
+        await host.restore(after);
+        undone = false;
+        b.textContent = 'Undo'; b.title = 'Put the project back as it was before this reply'; b.disabled = false;
+        note(row, 'Redone');
+        agent.note(`The user pressed Redo on your reply to ${quoted}: its changes are back.`);
+      }
+    });
+  }
+
   function showEmpty() {
     if (!log.children.length) addMsg('empty', settings.apiKey
       ? 'Describe what you want to build or change. The assistant edits the script, builds it, and checks the result.'
@@ -129,6 +211,7 @@ export function initChat({ root, host }) {
     let bubble = null;
     const ensureBubble = () => bubble ?? (bubble = addMsg('assistant'));
     let streamed = '';
+    const turn = { text, before: host.snapshot() };
     try {
       await agent.send(text, {
         onText: (delta) => { streamed += delta; renderMarkdown(ensureBubble(), streamed); log.scrollTop = log.scrollHeight; },
@@ -140,6 +223,7 @@ export function initChat({ root, host }) {
       addMsg('error', describeAgentError(err));
       if (err instanceof Error && /API key/.test(err.message)) openSettings();
     } finally {
+      try { addReplyActions(turn); } catch (err) { console.error(err); }
       send.disabled = false; stop.hidden = true;
       input.focus();
     }
@@ -152,6 +236,7 @@ export function initChat({ root, host }) {
     agent.reset();
     for (const u of downloads.splice(0)) URL.revokeObjectURL(u);
     log.textContent = '';
+    latestDownloads = null;
     showEmpty();
   });
 

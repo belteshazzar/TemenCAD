@@ -200,6 +200,17 @@ button.secondary:hover { background: var(--hover); }
 .card-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .card-note { color: var(--muted); font-size: 11px; }
 .card-actions button:disabled { opacity: 0.45; cursor: default; }
+.msg.card.image { border-color: var(--border); padding: 6px; gap: 4px; }
+.msg.card.image img { display: block; max-width: min(260px, 100%); border-radius: 4px; cursor: zoom-in; background: #fff; }
+.msg.actions { align-self: flex-start; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 0; margin-top: -2px; }
+.msg.actions button { padding: 2px 8px; font-size: 11px; }
+.msg.actions button:disabled { opacity: 0.45; cursor: default; }
+dialog.lightbox { padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: inherit; width: min(92vw, 1320px); max-width: none; max-height: 94vh; overflow: hidden; }
+dialog.lightbox::backdrop { background: rgb(0 0 0 / 0.6); }
+dialog.lightbox img { display: block; width: 100%; height: auto; max-height: calc(94vh - 44px); object-fit: contain; background: #fff; }
+.lightbox-bar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; }
+.lightbox-caption { flex: 1; color: var(--muted); font-size: 12px; }
+.lightbox-save { color: var(--accent); font-weight: 600; text-decoration: none; }
 .chat-form { display: flex; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--border); align-items: flex-end; }
 .chat-input { flex: 1; resize: none; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
 .chat-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }

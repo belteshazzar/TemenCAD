@@ -23,6 +23,7 @@ export class FileManager {
     this.handle = null;
     this.name = UNTITLED;
     this.dirty = false;
+    this.generation = 0; // bumps whenever a different project is loaded (new / open), so per-reply undo knows not to cross it
     this.savedSnapshot = this.snapshot();
   }
 
@@ -49,6 +50,7 @@ export class FileManager {
   newProject(template = '', { force = false } = {}) {
     if (!force && !this.confirmDiscard()) return false;
     this.handle = null;
+    this.generation++;
     this.setProject(Project.fromScript(template));
     this._update(UNTITLED);
     return true;
@@ -70,6 +72,7 @@ export class FileManager {
       const file = await handle.getFile();
       const project = await this._load(file);
       this.handle = file.name.toLowerCase().endsWith(PROJECT_EXT) ? handle : null; // a .js opens as a new, unsaved project
+      this.generation++;
       this.setProject(project);
       this._update(this.handle ? file.name : file.name.replace(/\.[^.]*$/, '') + PROJECT_EXT);
       return true;
@@ -83,6 +86,7 @@ export class FileManager {
         try {
           const project = await this._load(file);
           this.handle = null;
+          this.generation++;
           this.setProject(project);
           this._update(file.name.toLowerCase().endsWith(PROJECT_EXT) ? file.name : file.name.replace(/\.[^.]*$/, '') + PROJECT_EXT);
           resolve(true);

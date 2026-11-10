@@ -1,6 +1,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+/** Preset view directions in our Y-up frame; the blue plate edge marks the front (+Z). */
+const VIEW_DIRS = {
+  iso: [8, 7, 10], top: [0, 1, 0.0001], bottom: [0, -1, 0.0001],
+  front: [0, 0, 1], back: [0, 0, -1], left: [-1, 0, 0], right: [1, 0, 0],
+};
+
 export class Viewer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -67,8 +73,17 @@ export class Viewer {
       box = this.visibleBounds();
     }
     if (!box || box.isEmpty()) box = new THREE.Box3(new THREE.Vector3(-100, 0, -100), new THREE.Vector3(100, 100, 100));
-    // Look at the centre of the print area on the plate surface (the origin), as the original view did.
-    this.frame(box, 0.6, this.plate ? new THREE.Vector3(0, 0, 0) : undefined);
+    // With a plate: look at the centre of the print area on the plate surface (the origin), the plate filling the view.
+    // Without: fit the model's bounding sphere, centred on screen.
+    if (this.plate) this.frame(box, 0.6, new THREE.Vector3(0, 0, 0));
+    else this.frame(box, 1.1);
+  }
+
+  /** Look from a preset direction with the visible model filling the view (the assistant's screenshots). */
+  frameModel(name = 'iso') {
+    const box = this.visibleBounds();
+    if (!box || box.isEmpty()) { this.resetView(); this.setView(name); return; }
+    this.frame(box, 1.1, undefined, VIEW_DIRS[name] ?? VIEW_DIRS.iso);
   }
 
   /**
@@ -76,11 +91,7 @@ export class Viewer {
    * Directions are in our Y-up frame; the blue plate edge marks the front (+Z).
    */
   setView(name) {
-    const dirs = {
-      iso: [8, 7, 10], top: [0, 1, 0.0001], bottom: [0, -1, 0.0001],
-      front: [0, 0, 1], back: [0, 0, -1], left: [-1, 0, 0], right: [1, 0, 0],
-    };
-    const d = dirs[name];
+    const d = VIEW_DIRS[name];
     if (!d) return;
     const target = this.controls ? this.controls.target.clone() : new THREE.Vector3();
     const dist = this.camera.position.distanceTo(target);
@@ -90,21 +101,35 @@ export class Viewer {
     if (this.controls) this.controls.update();
   }
 
-  /** Move the camera along the default view direction so `box` fits in view, looking at `target`. */
-  frame(box, margin = 0.6, target) {
+  /**
+   * Move the camera along `dir` (default: the iso direction) so `box`'s bounding sphere fits in view
+   * with `margin` (1 = touching the nearer edges). Looks at `target` if given; otherwise the box is
+   * centred on screen, which means compensating for the view offset that puts the look-at point a
+   * third of the way up the view.
+   */
+  frame(box, margin = 0.6, target, dir = VIEW_DIRS.iso) {
     const center = target ?? box.getCenter(new THREE.Vector3());
     const radius = box.getSize(new THREE.Vector3()).length() / 2;
     const vFov = (this.camera.fov * Math.PI) / 180;
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * this.camera.aspect);
     const fov = Math.min(vFov, hFov);
     const dist = (radius * margin) / Math.sin(fov / 2);
-    const dir = new THREE.Vector3(8, 7, 10).normalize();
-    this.camera.position.copy(center).addScaledVector(dir, dist);
+    this.camera.position.copy(center).addScaledVector(new THREE.Vector3(...dir).normalize(), dist);
     this.camera.near = Math.max(0.01, dist / 1000);
     this.camera.far = dist * 20;
     this.camera.updateProjectionMatrix();
     this.camera.lookAt(center);
-    if (this.controls) { this.controls.target.copy(center); this.controls.update(); }
+    const look = center.clone();
+    if (!target) {
+      // the look-at point shows a sixth of the view height below the middle: aim that far below the centre,
+      // so the centre lands in the middle of the view
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+      const shift = up.multiplyScalar(-(dist * Math.tan(vFov / 2)) / 3);
+      look.add(shift);
+      this.camera.position.add(shift);
+      this.camera.lookAt(look);
+    }
+    if (this.controls) { this.controls.target.copy(look); this.controls.update(); }
   }
 
   setWireframe(on) {

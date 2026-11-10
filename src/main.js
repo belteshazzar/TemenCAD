@@ -342,7 +342,7 @@ const chat = initChat({
     lastReport: () => lastReport,
     renderViews: (opts) => renderSheet(opts),
     screenshot: async (view) => {
-      if (view && view !== 'iso') viewer.setView(view); else viewer.resetView();
+      viewer.frameModel(view || 'iso');
       await new Promise((r) => requestAnimationFrame(r));
       return viewer.snapshot(1024);
     },
@@ -368,7 +368,33 @@ function appActions() {
     ]);
     return r.value === 'discard';
   }
+  /** Export the shown model (or the parts at indices only) and download it. */
+  function exportNow(format, name, only) {
+    const stem = name.replace(/\.(stl|3mf)$/i, '').replace(/[^\w.-]+/g, '_');
+    const f = exportFile(viewer.modelGroup, format, `${stem}.${format}`, { only });
+    downloadBlob(f.blob, f.filename);
+    logLine(`Exported ${format === 'stl' ? `${f.count} triangles` : `${f.count} part${f.count === 1 ? '' : 's'}`} to ${f.filename}`);
+    return f;
+  }
   return {
+    // ---- for the chat's reply actions (not tools) ----
+    /** The project as it stands, cheap to take: file contents are immutable strings and buffers. */
+    snapshot: () => ({ generation: files.generation, files: project.toFiles() }),
+    sameProject: (a, b) => {
+      const ka = Object.keys(a.files), kb = Object.keys(b.files);
+      return a.generation === b.generation && ka.length === kb.length && ka.every((k) => a.files[k] === b.files[k]);
+    },
+    /** Put the project back to a snapshot (same file, so it shows as unsaved) and rebuild. */
+    restore: (snap) => {
+      project = Project.fromFiles(snap.files);
+      tabs.setProject(project);
+      stayInChat();
+      clearTimeout(timer);
+      projectChanged({ run: false });
+      return builder.runAndWait();
+    },
+    canExport: () => !!(lastReport?.ok && lastMeshes?.length),
+    download: (format) => exportNow(format, baseName()),
     appState: () => ({
       ...projectInfo(), files: undefined,
       plate: plate ? { id: plate.id, size: [plate.w, plate.d, plate.h] } : null,
@@ -414,12 +440,8 @@ function appActions() {
         if (missing.length) throw new Error(`no part named ${missing.map((n) => `"${n}"`).join(', ')}; parts are ${all.map((n) => `"${n}"`).join(', ')}`);
         only = names.map((n) => all.indexOf(n));
       }
-      const stem = (filename || (names?.length === 1 ? names[0] : baseName())).replace(/\.(stl|3mf)$/i, '').replace(/[^\w.-]+/g, '_');
-      const f = exportFile(viewer.modelGroup, format, `${stem}.${format}`, { only });
-      downloadBlob(f.blob, f.filename);
-      const what = format === 'stl' ? `${f.count} triangles` : `${f.count} part${f.count === 1 ? '' : 's'}`;
+      const f = exportNow(format, filename || (names?.length === 1 ? names[0] : baseName()), only);
       chat.offerDownload(f.blob, f.filename);
-      logLine(`Exported ${what} to ${f.filename}`);
       return { done: true, file: f.filename, bytes: f.blob.size, [format === 'stl' ? 'triangles' : 'parts']: f.count, downloaded: true, link_in_chat: true };
     },
     saveRender: async ({ views, section }) => {
