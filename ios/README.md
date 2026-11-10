@@ -43,6 +43,11 @@ straight from the device to api.anthropic.com, billed to the key's account).
   conversation is saved in the file too (format 2, `core/CONVERSATION.md`, packed by the core through
   `TemenConversation`): opening a file brings back its conversation (from this app or the web app),
   with its undo points and attachments, and Save writes this one. Settings can turn that off.
+- Files: the code button opens the project's files, as the web app's file tabs offer them: a script opens
+  in the editor (Build saves and rebuilds), a font, mesh or image shows its kind, size and the import line
+  to paste (with a preview for images); + makes a new script or adds files (asking before replacing one);
+  swipe or long-press to rename (the web app's rules: main.js stays, a rename keeps its kind of extension
+  and cannot take an existing name), share or remove. Rules in `Model/ProjectFiles.swift`.
 - Photos: the photo button beside the message field attaches up to five photos from the library
   (PhotosPicker, no permission needed) or the camera. Each goes to the assistant as "Attachment n",
   downscaled to 1568 px on the long edge as in the web app, and is kept full size in
@@ -113,11 +118,12 @@ xcrun simctl launch booted com.temencad.app \
 the Mac's paths); `-TemenShare stl` (or `3mf`) exports and opens the share sheet; `-TemenAttach "/a/photo.jpg|/b/drawing.pdf|/c/bolt.stl"` attaches
 those files to the next message as if picked in the chat; `-TemenAddFiles "/a/font.ttf"` answers the assistant's add_files with those files (`none` cancels); `-TemenRequestURL /path/c.temen` answers open_project (opens it) or save_project's Save as (writes there); `-TemenThen "undo,putback,undoagain,changes"` runs those steps once the turn is over (also `point`, `measure`, `tap:0.5:0.6` at fractions of the view,
 `addmeasure`, `send`, and for projects `new`, `save`, `saveforce`, `close`, `switch:n`, `open:/path`, `edit:<main.js>`,
-`touch:/path` to date a file as changed elsewhere). None of them exist in release builds.
+`touch:/path` to date a file as changed elsewhere; for files `files`, `fileopen:name`, `newscript:name`,
+`renamefile:a.js>b.js`, `removefile:name`, `addfile:/path`). None of them exist in release builds.
 
 ## Not yet
 
-A file manager for the project's files, showing a
-conversation saved by the web app, the printer profile, and a Mac or visionOS build. SceneKit is the preview for now: Apple has stopped adding features
+Autocomplete in the script editor, the catalogue,
+the printer profile, and a Mac or visionOS build. SceneKit is the preview for now: Apple has stopped adding features
 to it in favour of RealityKit, and everything SceneKit touches is in `Views/ModelPreview.swift`, so moving
 is contained.

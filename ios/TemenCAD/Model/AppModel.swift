@@ -68,8 +68,10 @@ final class AppModel: ObservableObject, AgentHost {
     #if DEBUG
     /// -TemenThen changes: the reply whose Changes sheet to open.
     @Published var debugChanges: ChatEntry?
-    /// -TemenThen parts / console: the sheet to open.
+    /// -TemenThen parts / console / files: the sheet to open.
     @Published var debugSheet: String?
+    /// -TemenThen fileopen:name: the file the Files sheet opens.
+    var debugOpenFile: String?
     #endif
     /// A file waiting in the share sheet.
     @Published var sharing: SharedFile?
@@ -1162,6 +1164,55 @@ final class AppModel: ObservableObject, AgentHost {
         }
     }
 
+    // MARK: - Files (the Files sheet: the web app's file tabs)
+
+    /// File > New script: a module main.js can import, as the web app starts one.
+    func newScript(_ name: String) throws {
+        let n: String
+        switch project.checkScriptName(name) {
+        case .error(let e): throw AppError(e)
+        case .ok(let ok): n = ok
+        }
+        let ident = ((n as NSString).deletingPathExtension as NSString).lastPathComponent
+            .replacingOccurrences(of: "[^A-Za-z0-9_$]+", with: "_", options: .regularExpression)
+        project.files[n] = Data("// \(n)\nexport const \(ident) = box(10);\n".utf8)
+        Task { await rebuild() }
+    }
+
+    func renameFile(_ from: String, to: String) throws {
+        guard from != Project.entry else { throw AppError("\(Project.entry) is the entry script.") }
+        switch project.checkRename(from, to: to) {
+        case .error(let e): throw AppError(e)
+        case .ok(let n):
+            guard n != from, let data = project.files[from] else { return }
+            project.files.removeValue(forKey: from)
+            project.files[n] = data
+            Task { await rebuild() }
+        }
+    }
+
+    func removeFile(_ name: String) {
+        guard name != Project.entry, project.files.removeValue(forKey: name) != nil else { return }
+        Task { await rebuild() }
+    }
+
+    /// Add Files…: the files the project takes, under their own names; `replace` names those the user agreed
+    /// to overwrite. Returns the names added and those skipped for their type.
+    @discardableResult
+    func addFiles(_ files: [(name: String, data: Data)], replace: Set<String>) -> (added: [String], skipped: [String]) {
+        var added: [String] = [], skipped: [String] = []
+        for f in files {
+            guard let n = Project.normalizePath((f.name as NSString).lastPathComponent), Project.acceptedExtensions.contains(Project.ext(n)) else {
+                skipped.append(f.name); continue
+            }
+            if project.files[n] != nil && !replace.contains(n) { continue }
+            project.files[n] = f.data
+            added.append(n)
+        }
+        if !added.isEmpty { Task { await rebuild() } }
+        return (added, skipped)
+    }
+
     // MARK: - Project tools
 
     func newProjectForAgent(script: String?) async -> JSONValue {
@@ -1293,7 +1344,16 @@ final class AppModel: ObservableObject, AgentHost {
                     case "undo": if let e = entries.last(where: { $0.reply?.changed == true }) { undo(e) }
                     case "putback", "undoagain": if let e = entries.last(where: { $0.kind == .event }) { reverse(e) }
                     case "changes": if let e = entries.last(where: { $0.reply?.changed == true }) { debugChanges = e }
-                    case "parts", "console", "render": debugSheet = String(step)
+                    case "parts", "console", "render", "files": debugSheet = String(step)
+                    case let s where s.hasPrefix("fileopen:"): debugOpenFile = String(s.dropFirst(9)); debugSheet = "files"
+                    case let s where s.hasPrefix("newscript:"): do { try newScript(String(s.dropFirst(10))) } catch { entries.append(ChatEntry(kind: .error, text: "\(error)")) }
+                    case let s where s.hasPrefix("renamefile:"): // renamefile:a.js>b.js
+                        let p = s.dropFirst(11).split(separator: ">").map(String.init)
+                        if p.count == 2 { do { try renameFile(p[0], to: p[1]) } catch { entries.append(ChatEntry(kind: .error, text: "\(error)")) } }
+                    case let s where s.hasPrefix("removefile:"): removeFile(String(s.dropFirst(11)))
+                    case let s where s.hasPrefix("addfile:"):
+                        let url = URL(fileURLWithPath: String(s.dropFirst(8)))
+                        if let d = try? Data(contentsOf: url) { addFiles([(url.lastPathComponent, d)], replace: []) }
                     case "reset": preview.resetView(plate: plate)
                     case let s where s.hasPrefix("plate:"): choosePlate(String(s.dropFirst(6)))
                     case let s where s.hasPrefix("ghost:"): setPart(String(s.dropFirst(6)), ghost: true)

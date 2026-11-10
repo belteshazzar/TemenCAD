@@ -123,7 +123,7 @@ struct ChatView: View {
             projectMenu
             Spacer()
             Button { showCode = true } label: { Image(systemName: "chevron.left.forwardslash.chevron.right") }
-                .accessibilityLabel("Show the model's script")
+                .accessibilityLabel("Files: the model's scripts and assets")
             Menu {
                 Button("New chat") { app.newChat() }
                 Divider()

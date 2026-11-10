@@ -37,7 +37,7 @@ struct ContentView: View {
             .animation(.easeInOut(duration: 0.2), value: expanded)
         }
         .sheet(isPresented: $showSettings) { SettingsView().environmentObject(app) }
-        .sheet(isPresented: $showCode) { CodeView().environmentObject(app) }
+        .sheet(isPresented: $showCode) { FilesView().environmentObject(app) }
         .sheet(isPresented: $showParts) { PartsView().environmentObject(app).presentationDetents([.medium, .large]) }
         .sheet(isPresented: $showConsole) { ConsoleView().environmentObject(app).presentationDetents([.medium, .large]) }
         .sheet(isPresented: $customPlate) { CustomPlateView().environmentObject(app).presentationDetents([.medium]) }
@@ -46,7 +46,7 @@ struct ContentView: View {
             ShareSheet(url: file.url).presentationDetents([.medium, .large]).ignoresSafeArea()
         }
         #if DEBUG
-        .onChange(of: app.debugSheet) { _, s in showParts = s == "parts"; showConsole = s == "console"; renderViews = s == "render" }
+        .onChange(of: app.debugSheet) { _, s in showParts = s == "parts"; showConsole = s == "console"; renderViews = s == "render"; showCode = s == "files" }
         #endif
         .onAppear {
             if !app.hasKey { showSettings = true }
