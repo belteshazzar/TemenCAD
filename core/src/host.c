@@ -550,6 +550,16 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
         core->slot_a = res;
         JsValue list = js_object_get(core->vm, res, temen_atom(core, "parts"));
         uint32_t n = js_array_length(list);
+        {   /* evaluate every part after one collection (they are rooted through res) */
+            JsValue *hs = malloc((n ? n : 1) * sizeof *hs);
+            if (!hs) { set_error(core, "out of memory", NULL, 0); status = 2; goto done; }
+            for (uint32_t i = 0; i < n; i++) {
+                JsValue d = js_array_get(list, i);
+                hs[i] = js_is_object(d) ? js_object_get(core->vm, d, temen_atom(core, "h")) : js_undefined();
+            }
+            temen_settle(core, hs, n);
+            free(hs);
+        }
         for (uint32_t i = 0; i < n; i++) {
             if (!collect_part(core, js_array_get(list, i))) { status = 2; goto done; }
         }

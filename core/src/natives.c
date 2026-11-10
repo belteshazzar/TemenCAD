@@ -28,21 +28,71 @@
 #define SHAPE_EXTERNAL_BYTES ((size_t)64 * 1024)
 #define SKETCH_EXTERNAL_BYTES ((size_t)8 * 1024)
 
-static void finalize_shape(void *ptr, void *ud) { (void)ud; manifold_delete_manifold(ptr); }
+/*
+ * Determinism and Manifold's lazy booleans. Manifold builds booleans as a CSG tree and evaluates it on
+ * first use; while flattening (a - b) - c into a - (b + c) it only collapses a node nobody else holds
+ * (shared_ptr use counts), so a shared node is evaluated once and reused. A JS shape holds its node
+ * until the collector frees the shape, so unreachable shapes not yet collected count as holders, and
+ * the triangulation (never the volume) came to depend on when the collector last ran: on what the
+ * script allocated before and on 32- against 64-bit heaps, so the browser and the native core gave
+ * different meshes for the same script.
+ *
+ * So a shape knows whether it may be an unevaluated tree (`lazy`: booleans, and transforms of lazy
+ * shapes). Before anything evaluates lazy shapes, settle() collects garbage and then evaluates them in
+ * the same native call, with no script running in between: the use counts Manifold sees are then the
+ * shapes the script can still reach, which is the same on every platform, and genuinely shared nodes
+ * are still evaluated once.
+ */
+typedef struct TemenShape { ManifoldManifold *m; int lazy; } TemenShape;
+
+static void finalize_shape(void *ptr, void *ud) {
+    (void)ud;
+    TemenShape *s = ptr;
+    manifold_delete_manifold(s->m);
+    free(s);
+}
 static void finalize_sketch(void *ptr, void *ud) { (void)ud; manifold_delete_cross_section(ptr); }
 static const JsHostClass SHAPE_CLASS = { "Shape", finalize_shape, NULL };
 static const JsHostClass SKETCH_CLASS = { "Sketch", finalize_sketch, NULL };
 
-JsValue temen_handle_new(TemenCore *core, ManifoldManifold *m) {
+static JsValue handle_new(TemenCore *core, ManifoldManifold *m, int lazy) {
     if (!m) return js_undefined();
-    JsValue v = js_host_object_new(core->ctx, &SHAPE_CLASS, m, SHAPE_EXTERNAL_BYTES);
-    if (js_is_undefined(v)) manifold_delete_manifold(m); /* not adopted: still ours */
+    TemenShape *s = malloc(sizeof *s);
+    if (!s) { manifold_delete_manifold(m); return js_undefined(); }
+    s->m = m;
+    s->lazy = lazy;
+    JsValue v = js_host_object_new(core->ctx, &SHAPE_CLASS, s, SHAPE_EXTERNAL_BYTES);
+    if (js_is_undefined(v)) { manifold_delete_manifold(m); free(s); } /* not adopted: still ours */
     return v;
 }
 
+JsValue temen_handle_new(TemenCore *core, ManifoldManifold *m) { return handle_new(core, m, 0); }
+
 ManifoldManifold *temen_handle_get(TemenCore *core, JsValue h) {
     (void)core;
-    return js_host_object_ptr(h, &SHAPE_CLASS);
+    TemenShape *s = js_host_object_ptr(h, &SHAPE_CLASS);
+    return s ? s->m : NULL;
+}
+
+static int handle_lazy(JsValue h) {
+    TemenShape *s = js_host_object_ptr(h, &SHAPE_CLASS);
+    return s && s->lazy;
+}
+
+static void measure(TemenCore *core, JsValue h, ManifoldManifold *m);
+
+void temen_settle(TemenCore *core, const JsValue *handles, size_t n) {
+    size_t i = 0;
+    while (i < n && !handle_lazy(handles[i])) i++;
+    if (i == n) return;
+    js_gc_collect(core->vm); /* the handles are the caller's, rooted: only unreachable shapes go */
+    for (; i < n; i++) {
+        TemenShape *s = js_host_object_ptr(handles[i], &SHAPE_CLASS);
+        if (!s || !s->lazy) continue;
+        manifold_status(s->m); /* evaluates the tree */
+        s->lazy = 0;
+        measure(core, handles[i], s->m);
+    }
 }
 
 JsValue temen_cs_new(TemenCore *core, ManifoldCrossSection *cs) {
@@ -72,12 +122,34 @@ static bool ret_handle(TemenCore *core, ManifoldManifold *m, JsValue *result) {
     return true;
 }
 
-static ManifoldManifold *arg_shape(JsContext *ctx, const JsValue *args, int argc, int i, JsValue *result) {
+/* SHAPE(i): argument i as a shape this native is about to evaluate, settled (every shape argument of
+ * the call is settled with one collection). LAZY_SHAPE(i): for the natives that only build the tree. */
+static ManifoldManifold *arg_shape(JsContext *ctx, const JsValue *args, int argc, int i, int settle, JsValue *result) {
     ManifoldManifold *m = (i) < argc ? temen_handle_get(CORE(), args[i]) : NULL;
-    if (!m) *result = temen_type_error(CORE(), "__cad: not a shape handle");
+    if (!m) { *result = temen_type_error(CORE(), "__cad: not a shape handle"); return NULL; }
+    if (settle) temen_settle(CORE(), args, (size_t)argc);
     return m;
 }
-#define SHAPE(i) ({ ManifoldManifold *m_ = arg_shape(ctx, args, argc, (i), result); if (!m_) return false; m_; })
+#define SHAPE(i) ({ ManifoldManifold *m_ = arg_shape(ctx, args, argc, (i), 1, result); if (!m_) return false; m_; })
+#define LAZY_SHAPE(i) ({ ManifoldManifold *m_ = arg_shape(ctx, args, argc, (i), 0, result); if (!m_) return false; m_; })
+
+/* settle every shape in a JS array (the array keeps them rooted) */
+static void settle_array(TemenCore *core, JsValue arr) {
+    uint32_t n = js_array_length(arr);
+    JsValue *hs = malloc((n ? n : 1) * sizeof *hs);
+    if (!hs) { for (uint32_t i = 0; i < n; i++) { JsValue h = js_array_get(arr, i); temen_settle(core, &h, 1); } return; }
+    for (uint32_t i = 0; i < n; i++) hs[i] = js_array_get(arr, i);
+    temen_settle(core, hs, n);
+    free(hs);
+}
+
+/* the result of a boolean, or a transform of a lazy shape: possibly an unevaluated tree */
+static bool ret_lazy(TemenCore *core, ManifoldManifold *m, JsValue *result) {
+    JsValue h = handle_new(core, m, 1);
+    if (js_is_undefined(h)) THROW(temen_range_error(core, "geometry kernel: out of memory"));
+    *result = h;
+    return true;
+}
 
 /* What a shape whose mesh exists really holds: about 240 bytes a triangle in Manifold's half-edge
  * form (measured). Recorded only where the mesh is already built (constructors that build it, and
@@ -353,10 +425,10 @@ static bool n_sphere(JsContext *ctx, JsValue this_val, const JsValue *args, int 
 /* boolean(a, b, op) with op 0 = add, 1 = subtract, 2 = intersect */
 static bool n_boolean(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
     (void)this_val;
-    ManifoldManifold *a = SHAPE(0), *b = SHAPE(1);
+    ManifoldManifold *a = LAZY_SHAPE(0), *b = LAZY_SHAPE(1);
     int op = (int)NUM(2);
     ManifoldOpType t = op == 1 ? MANIFOLD_SUBTRACT : op == 2 ? MANIFOLD_INTERSECT : MANIFOLD_ADD;
-    return ret_handle(CORE(), manifold_boolean(mem(), a, b, t), result);
+    return ret_lazy(CORE(), manifold_boolean(mem(), a, b, t), result);
 }
 
 /* batch(handles[], op): one n-ary boolean, cheaper than a fold for unions of many parts */
@@ -376,13 +448,14 @@ static bool n_batch(JsContext *ctx, JsValue this_val, const JsValue *args, int a
     ManifoldOpType t = op == 1 ? MANIFOLD_SUBTRACT : op == 2 ? MANIFOLD_INTERSECT : MANIFOLD_ADD;
     ManifoldManifold *out = manifold_batch_boolean(mem(), vec, t);
     manifold_delete_manifold_vec(vec);
-    return ret_handle(core, out, result);
+    return ret_lazy(core, out, result);
 }
 
 static bool n_hull(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
     (void)this_val;
     TemenCore *core = CORE();
     if (argc < 1 || !js_is_array(args[0])) THROW(temen_type_error(core, "__cad.hull: expected an array"));
+    settle_array(core, args[0]);
     uint32_t n = js_array_length(args[0]);
     ManifoldManifoldVec *vec = manifold_manifold_vec(malloc(manifold_manifold_vec_size()), n);
     for (uint32_t i = 0; i < n; i++) {
@@ -401,6 +474,7 @@ static bool n_hull_points(JsContext *ctx, JsValue this_val, const JsValue *args,
     (void)this_val;
     TemenCore *core = CORE();
     if (argc < 2 || !js_is_array(args[0]) || !js_is_array(args[1])) THROW(temen_type_error(core, "__cad.hullPoints: expected two arrays"));
+    settle_array(core, args[0]);
     uint32_t nh = js_array_length(args[0]), np = js_array_length(args[1]) / 3;
     size_t cap = np, n = 0;
     for (uint32_t i = 0; i < nh; i++) {
@@ -926,23 +1000,27 @@ static bool n_image_blur(JsContext *ctx, JsValue this_val, const JsValue *args, 
 
 static bool n_translate(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
     (void)this_val;
-    ManifoldManifold *m = SHAPE(0);
-    return ret_handle(CORE(), manifold_translate(mem(), m, NUM(1), NUM(2), NUM(3)), result);
+    ManifoldManifold *m = LAZY_SHAPE(0);
+    ManifoldManifold *out = manifold_translate(mem(), m, NUM(1), NUM(2), NUM(3));
+    return handle_lazy(args[0]) ? ret_lazy(CORE(), out, result) : ret_handle(CORE(), out, result);
 }
 static bool n_rotate(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
     (void)this_val;
-    ManifoldManifold *m = SHAPE(0);
-    return ret_handle(CORE(), manifold_rotate(mem(), m, NUM(1), NUM(2), NUM(3)), result);
+    ManifoldManifold *m = LAZY_SHAPE(0);
+    ManifoldManifold *out = manifold_rotate(mem(), m, NUM(1), NUM(2), NUM(3));
+    return handle_lazy(args[0]) ? ret_lazy(CORE(), out, result) : ret_handle(CORE(), out, result);
 }
 static bool n_scale(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
     (void)this_val;
-    ManifoldManifold *m = SHAPE(0);
-    return ret_handle(CORE(), manifold_scale(mem(), m, NUM(1), NUM(2), NUM(3)), result);
+    ManifoldManifold *m = LAZY_SHAPE(0);
+    ManifoldManifold *out = manifold_scale(mem(), m, NUM(1), NUM(2), NUM(3));
+    return handle_lazy(args[0]) ? ret_lazy(CORE(), out, result) : ret_handle(CORE(), out, result);
 }
 static bool n_mirror(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
     (void)this_val;
-    ManifoldManifold *m = SHAPE(0);
-    return ret_handle(CORE(), manifold_mirror(mem(), m, NUM(1), NUM(2), NUM(3)), result);
+    ManifoldManifold *m = LAZY_SHAPE(0);
+    ManifoldManifold *out = manifold_mirror(mem(), m, NUM(1), NUM(2), NUM(3));
+    return handle_lazy(args[0]) ? ret_lazy(CORE(), out, result) : ret_handle(CORE(), out, result);
 }
 
 /* minGap(a, b, searchLength): smallest distance between two shapes' surfaces (>= searchLength when none found) */

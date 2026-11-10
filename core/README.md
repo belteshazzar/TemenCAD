@@ -35,11 +35,19 @@ same Z-up coordinates, normals rounded as V8's `Math.hypot` gives them, and numb
 it on every test script, the demo and a `.temen` against the JavaScript command line; keep the two
 files in step. The native `temencore -o out.3mf` uses them.
 
-Known difference: the WebAssembly build can triangulate a part differently from the native build when
-other shapes were made earlier in the same script (same volume and triangle count, different
-triangles). The demo's `holes` part shows it; the native result matches the part built on its own,
-the WebAssembly one depends on what came before. `core:export` reports it as a WARN line; the volume
-checks in `core:diff` do not see it. Not yet investigated to the cause.
+Same mesh everywhere: Manifold evaluates booleans lazily, and when it flattens a chain such as
+`(a - b) - c` into `a - (b + c)` it only collapses a node nothing else holds (`shared_ptr` use
+counts), so shared work is done once. A JS shape holds its node until the collector frees it, so
+shapes that were unreachable but not yet collected counted as holders, and the triangulation (never
+the volume) followed the collector's timing: what the script allocated before, and 32- against 64-bit
+heaps, so the browser and the native core meshed the same script differently. Shapes now carry a
+`lazy` flag (booleans, and transforms of lazy shapes), and `temen_settle` in `src/natives.c`
+collects garbage once before anything evaluates lazy shapes, then evaluates them in the same native
+call, so Manifold sees exactly the shapes the script can still reach. A query on a lazy shape costs
+one collection: unmeasurable on the test scripts and the demo, about +5% for a bounds query after
+every boolean with 40,000 live JS objects. Ignoring the use counts in Manifold instead was
+deterministic too, but recomputes genuinely shared work (20× slower when every intermediate of a
+loop is kept and evaluated newest first). `core:test` (4s) and `core:export` check it.
 
 ## Why a prelude in JavaScript rather than a full C port
 

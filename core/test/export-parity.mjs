@@ -3,9 +3,8 @@
  * every test script, the image and SVG projects, the demo and a .temen are built by the native tool and
  * by the JavaScript command line, and the files compared (for 3MF, each file inside the zip).
  *
- * When the two builds made different meshes (a core parity problem, not a writer one: see the WARN
- * line), the native STL's triangles are re-encoded with the JavaScript writer and must come out
- * identical, and the 3MF comparison for that input is skipped.
+ * The two builds must also make the same meshes. When they do not (a core parity failure, not a writer
+ * one), the native STL is re-encoded with the JavaScript writer to say which it is.
  *
  *   node core/test/export-parity.mjs [path/to/temencore]
  */
@@ -42,7 +41,7 @@ function differingTriangles(a, b) {
   return d;
 }
 const same = (a, b) => a.length === b.length && Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
-let failed = 0, warned = 0;
+let failed = 0;
 const meshDiffers = new Set();
 for (const input of inputs) {
   // the JS command line takes a folder project as its main.js
@@ -58,7 +57,7 @@ for (const input of inputs) {
     if (ext === 'stl') {
       if (!same(a, b)) {
         const recoded = Buffer.from(buildSTL([{ positions: stlPositions(a) }]).data);
-        if (same(recoded, a)) { meshDiffers.add(input); console.log(`WARN ${basename(input)} .stl: the native and WebAssembly builds made different meshes (${differingTriangles(a, b)} triangles); the writer re-encodes the native mesh identically`); warned++; continue; }
+        if (same(recoded, a)) { meshDiffers.add(input); console.log(`FAIL ${basename(input)} .stl: the native and WebAssembly builds made different meshes (${differingTriangles(a, b)} triangles); the writer itself re-encodes the native mesh identically`); failed++; continue; }
         diff = `${a.length} vs ${b.length} bytes, and not a mesh difference`;
       }
     } else if (meshDiffers.has(input)) { console.log(`skip ${basename(input)} .3mf: different meshes`); continue; }
@@ -73,5 +72,5 @@ for (const input of inputs) {
   }
 }
 rmSync(dir, { recursive: true, force: true });
-console.log(failed ? `${failed} differ` : `the writers are identical${warned ? ` (${warned} input${warned === 1 ? '' : 's'} with different meshes from the two builds)` : ''}`);
+console.log(failed ? `${failed} differ` : 'the meshes and the writers are identical');
 process.exit(failed ? 1 : 0);

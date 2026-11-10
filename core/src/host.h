@@ -111,6 +111,10 @@ bool temen_install_cad(TemenCore *core);                        /* creates __cad
  * _new adopts the object (deleting it and returning undefined on OOM), _get is NULL for anything else. */
 JsValue temen_handle_new(TemenCore *core, ManifoldManifold *m);
 ManifoldManifold *temen_handle_get(TemenCore *core, JsValue h);
+/* Before evaluating shapes outside a native (collecting parts): collect garbage once if any of them is
+ * an unevaluated boolean tree, then evaluate those, so the result does not depend on when the
+ * collector last ran (see natives.c). The handles must be rooted. */
+void temen_settle(TemenCore *core, const JsValue *handles, size_t n);
 JsValue temen_cs_new(TemenCore *core, ManifoldCrossSection *cs);
 ManifoldCrossSection *temen_cs_get(TemenCore *core, JsValue h);
 

@@ -429,6 +429,18 @@ for (const [src, re] of [['box([1, 2])', /box: size must be \[x, y, z\]/], ['box
   check(`${src} is an error`, !r.ok && re.test(r.error?.message ?? ''), r.error?.message);
 }
 
+// 4s. the same script gives the same mesh whatever ran before it. Manifold collapses a lazy boolean
+// chain only where no other shape holds its nodes, and shapes the collector has not freed yet used to
+// count, so the triangulation followed the collector's timing (here: how many boxes came first).
+{
+  const holes = "const bar = box(30, 12, 10).onPlate();\nreturn bar.subtract(hole(3, 12, { axis: 'z' }).translate(-9, 6, 0)).subtract(hole(3, 12, { axis: 'z', shape: 'bridge' }).translate(0, 6, 0)).subtract(hole(3, 12, { axis: 'z', shape: 'round' }).translate(9, 6, 0));";
+  const meshes = [0, 60, 64, 80, 92, 100, 112].map((n) => {
+    const x = rt.run({ 'main.js': `printer({ nozzle: 0.4, layer: 0.2, holeCompensation: 0.2 });\nfor (let i = 0; i < ${n}; i++) box(1 + i * 0.01);\n${holes}` });
+    return x.ok ? Array.from(x.parts[0].positions).join() + '|' + Array.from(x.parts[0].indices).join() : x.error?.message;
+  });
+  check('a boolean chain meshes the same whatever was made before it', meshes.every((m) => m === meshes[0]), `${new Set(meshes).size} different meshes`);
+}
+
 // 5. the runtime survives errors and runs again
 r = rt.run({ 'main.js': 'return box(3)' });
 check('runs again after errors', r.ok && near(r.parts[0].volume, 27), r.error?.message);
