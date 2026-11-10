@@ -5,13 +5,32 @@ import TemenCAD
 
 /// One line of the conversation as the user sees it.
 struct ChatEntry: Identifiable, Codable, Equatable {
-    enum Kind: String, Codable { case user, assistant, tool, image, error, status }
+    enum Kind: String, Codable { case user, assistant, tool, image, error, status, reply, event }
     var id = UUID()
     var kind: Kind
     var text: String
     var image: Data? = nil
     /// Thumbnails of the photos attached to a user message.
     var photos: [Data]? = nil
+    /// .reply: the actions under a turn. `text` is the user's message it answered.
+    var reply: ReplyInfo? = nil
+    /// .event: an undo or a put back. `text` is the message of the reply it was about.
+    var event: EventInfo? = nil
+}
+
+/// A turn's result: whether it changed the project, and the checkpoints either side when it did.
+struct ReplyInfo: Codable, Equatable {
+    var changed: Bool
+    var before: Int?
+    var after: Int?
+    var summary: String?
+}
+
+/// An undo of a reply, or putting one back; `putBack` is the checkpoint that reverses it.
+struct EventInfo: Codable, Equatable {
+    var undo: Bool
+    var putBack: Int
+    var used = false
 }
 
 /// The app: the project, its builds, the preview and the conversation. Kept on the main actor.
@@ -23,6 +42,10 @@ final class AppModel: ObservableObject, AgentHost {
     @Published private(set) var buildStatus = ""
     /// The visible, non-ghost parts of the last successful build: what STL and 3MF export write.
     @Published private(set) var printableParts: [TemenPart] = []
+    #if DEBUG
+    /// -TemenThen changes: the reply whose Changes sheet to open.
+    @Published var debugChanges: ChatEntry?
+    #endif
     /// A file waiting in the share sheet.
     @Published var sharing: SharedFile?
     /// Photos waiting to go with the next message.
@@ -36,6 +59,10 @@ final class AppModel: ObservableObject, AgentHost {
     private let agent: Agent
     private(set) var lastReport: JSONValue?
     private var task: Task<Void, Never>?
+    /// The project at moments in the conversation, for undo (see Checkpoints).
+    private(set) var checkpoints = Checkpoints()
+    /// Bumped when the project is replaced (opened, new): a reply never undoes into another project.
+    private var generation = 0
 
     init() {
         let key = Keychain.read() ?? ""
@@ -108,6 +135,7 @@ final class AppModel: ObservableObject, AgentHost {
         let message = text.isEmpty ? (photos.count == 1 ? "(a photo)" : "(\(photos.count) photos)") : text
         entries.append(ChatEntry(kind: .user, text: text, photos: photos.isEmpty ? nil : photos.map(\.thumbnail)))
         busy = true
+        let before = project.files, turnGeneration = generation
         task = Task {
             var replyIndex: Int?
             do {
@@ -133,9 +161,76 @@ final class AppModel: ObservableObject, AgentHost {
                 entries.append(ChatEntry(kind: .error, text: error.localizedDescription))
             }
             busy = false
+            endTurn(message: message, before: before, generation: turnGeneration)
             saveChat()
         }
     }
+
+    /// After a turn: checkpoint what it changed and put the actions (Undo, Changes, STL / 3MF) under it.
+    private func endTurn(message: String, before: [String: Data], generation turnGeneration: Int) {
+        let changed = turnGeneration == generation && before != project.files
+        guard changed || canExport else { return }
+        var info = ReplyInfo(changed: changed)
+        if changed {
+            info.before = checkpoints.add(before)
+            info.after = checkpoints.add(project.files)
+            info.summary = checkpoints.changes(from: info.before!, to: info.after!).map(\.summary).joined(separator: ", ")
+        }
+        entries.append(ChatEntry(kind: .reply, text: message, reply: info))
+    }
+
+    // MARK: - Undo
+
+    /// Puts the project back as it was before the reply in `entry`.
+    func undo(_ entry: ChatEntry) {
+        guard let before = entry.reply?.before else { return }
+        let later = !(entry.reply?.after.map { checkpoints.matches($0, project.files) } ?? true)
+        restore(to: before, about: entry.text, undo: true) {
+            "The user pressed Undo on your reply to \(Self.quote(entry.text)): the project is now exactly as it was before that reply\(later ? " (this also took out every change made since)" : "")."
+        }
+    }
+
+    /// Reverses an undo (Put back) or an earlier put back (Undo again).
+    func reverse(_ entry: ChatEntry) {
+        guard let event = entry.event, !event.used, let i = entries.firstIndex(where: { $0.id == entry.id }) else { return }
+        let done = restore(to: event.putBack, about: entry.text, undo: !event.undo) {
+            event.undo ? "The user put back your reply to \(Self.quote(entry.text)) after undoing it: the project is as it was just before the undo."
+                       : "The user undid your reply to \(Self.quote(entry.text)) again."
+        }
+        if done { entries[i].event?.used = true; saveChat() }
+    }
+
+    /// Restores checkpoint `index`, first keeping the current project as a checkpoint so the restore can
+    /// be put back. Adds an event line and tells the model with the next message.
+    @discardableResult
+    private func restore(to index: Int, about message: String, undo: Bool, note: () -> String) -> Bool {
+        guard !busy else { entries.append(ChatEntry(kind: .status, text: "Wait for the assistant to finish.")); return false }
+        guard let files = checkpoints.files(index) else {
+            entries.append(ChatEntry(kind: .error, text: "That undo point is no longer available.")); return false
+        }
+        if files == project.files { entries.append(ChatEntry(kind: .status, text: "The project is already like that.")); return false }
+        let putBack = checkpoints.add(project.files)
+        project.files = files
+        entries.append(ChatEntry(kind: .event, text: message, event: EventInfo(undo: undo, putBack: putBack)))
+        agent.note(note())
+        saveChat()
+        Task { await rebuild() }
+        return true
+    }
+
+    /// The user's message, short, in quotes, for the event lines and the notes to the model.
+    static func quote(_ s: String) -> String {
+        let one = s.split(whereSeparator: \.isNewline).joined(separator: " ")
+        return "\u{201C}" + (one.count > 60 ? one.prefix(57) + "…" : one) + "\u{201D}"
+    }
+
+    func changes(for entry: ChatEntry) -> [FileChange] {
+        guard let a = entry.reply?.before, let b = entry.reply?.after else { return [] }
+        return checkpoints.changes(from: a, to: b)
+    }
+
+    /// The latest reply row: the one that carries the STL / 3MF buttons.
+    var latestReplyID: UUID? { entries.last { $0.kind == .reply }?.id }
 
     func stop() { task?.cancel() }
 
@@ -144,6 +239,7 @@ final class AppModel: ObservableObject, AgentHost {
         agent.reset()
         entries = []
         pendingPhotos = []
+        checkpoints.clear()
         try? FileManager.default.removeItem(at: ProjectStore.attachmentsFolder) // attachment numbers start again
         saveChat()
     }
@@ -151,6 +247,7 @@ final class AppModel: ObservableObject, AgentHost {
     /// Start over with the starter model (the conversation is cleared too).
     func newProject() {
         newChat()
+        generation += 1
         project = .starter
         Task { await rebuild(); preview.frame(view: "iso") }
     }
@@ -209,6 +306,7 @@ final class AppModel: ObservableObject, AgentHost {
         do {
             let opened = try Project(temen: try Data(contentsOf: url), name: url.deletingPathExtension().lastPathComponent)
             newChat()
+            generation += 1
             project = opened
             let kept = opened.extras.isEmpty ? "" : " The conversation saved with it in the web app is kept in the file but not shown here."
             entries.append(ChatEntry(kind: .status, text: "Opened \(url.lastPathComponent).\(kept)"))
@@ -240,10 +338,15 @@ final class AppModel: ObservableObject, AgentHost {
 
     // MARK: - Keeping the conversation
 
-    private struct SavedChat: Codable { var entries: [ChatEntry]; var messages: [JSONValue] }
+    private struct SavedChat: Codable {
+        var entries: [ChatEntry]
+        var messages: [JSONValue]
+        var checkpoints: [[String: String]]? = nil
+        var notes: [String]? = nil
+    }
 
     private func saveChat() {
-        let saved = SavedChat(entries: entries, messages: agent.messages)
+        let saved = SavedChat(entries: entries, messages: agent.messages, checkpoints: checkpoints.list, notes: agent.notes)
         try? FileManager.default.createDirectory(at: ProjectStore.folder, withIntermediateDirectories: true)
         try? JSONEncoder().encode(saved).write(to: ProjectStore.chatFile, options: .atomic)
     }
@@ -251,7 +354,8 @@ final class AppModel: ObservableObject, AgentHost {
     private func loadChat() {
         guard let d = try? Data(contentsOf: ProjectStore.chatFile), let saved = try? JSONDecoder().decode(SavedChat.self, from: d) else { return }
         entries = saved.entries
-        agent.restore(saved.messages)
+        agent.restore(saved.messages, notes: saved.notes ?? [])
+        checkpoints.restore(saved.checkpoints ?? [])
     }
 
     #if DEBUG
@@ -277,6 +381,21 @@ final class AppModel: ObservableObject, AgentHost {
             attach(imageData: [d])
         }
         if let p = defaults.string(forKey: "TemenAutoPrompt"), !p.isEmpty { send(p) }
+        // -TemenThen "undo,putback,undoagain,changes": steps once the turn is over, for checking undo
+        if let steps = defaults.string(forKey: "TemenThen"), !steps.isEmpty {
+            Task {
+                while busy { try? await Task.sleep(nanoseconds: 200_000_000) }
+                for step in steps.split(separator: ",") {
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                    switch step {
+                    case "undo": if let e = entries.last(where: { $0.reply?.changed == true }) { undo(e) }
+                    case "putback", "undoagain": if let e = entries.last(where: { $0.kind == .event }) { reverse(e) }
+                    case "changes": if let e = entries.last(where: { $0.reply?.changed == true }) { debugChanges = e }
+                    default: break
+                    }
+                }
+            }
+        }
     }
     #endif
 }

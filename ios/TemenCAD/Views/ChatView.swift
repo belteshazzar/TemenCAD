@@ -14,6 +14,7 @@ struct ChatView: View {
     @State private var choosingPhotos = false
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var takingPhoto = false
+    @State private var changesFor: ChatEntry?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -63,6 +64,12 @@ struct ChatView: View {
                 for item in items { if let d = try? await item.loadTransferable(type: Data.self) { datas.append(d) } }
                 app.attach(imageData: datas)
             }
+        }
+        #if DEBUG
+        .onChange(of: app.debugChanges) { _, e in if let e { changesFor = e } }
+        #endif
+        .sheet(item: $changesFor) { e in
+            ChangesView(title: "Changes for \(AppModel.quote(e.text))", changes: app.changes(for: e))
         }
         .fullScreenCover(isPresented: $takingPhoto) {
             CameraPicker { app.attach(image: $0) }.ignoresSafeArea()
@@ -118,10 +125,11 @@ struct ChatView: View {
                 if !e.text.isEmpty { HStack { Spacer(minLength: 40); bubble(e.text, fill: Color.accentColor.opacity(0.14)) } }
             }
         case .assistant:
-            VStack(alignment: .leading, spacing: 6) {
-                HStack { bubble(e.text, fill: Color(.secondarySystemBackground)); Spacer(minLength: 40) }
-                if e.id == lastReplyID && !app.busy && app.canExport { exportActions }
-            }
+            HStack { bubble(e.text, fill: Color(.secondarySystemBackground)); Spacer(minLength: 40) }
+        case .reply:
+            replyActions(e)
+        case .event:
+            eventLine(e)
         case .tool:
             Text("\(e.text)…").font(.caption).foregroundStyle(.secondary).padding(.leading, 4)
         case .status:
@@ -140,17 +148,50 @@ struct ChatView: View {
         }
     }
 
-    /// The latest reply carries the model's files, as in the web app.
-    private var lastReplyID: UUID? { app.entries.last { $0.kind == .assistant }?.id }
-
-    private var exportActions: some View {
-        HStack(spacing: 8) {
-            Button { app.share(.stl) } label: { Label("STL", systemImage: "square.and.arrow.up") }
-            Button { app.share(.threeMF) } label: { Label("3MF", systemImage: "square.and.arrow.up") }
+    /// Under a turn: STL / 3MF on the latest one (the model as it is now), Undo and Changes on any that
+    /// changed the project, and what it changed.
+    @ViewBuilder
+    private func replyActions(_ e: ChatEntry) -> some View {
+        let latest = e.id == app.latestReplyID && app.canExport
+        let changed = e.reply?.changed == true
+        if latest || changed {
+            VStack(alignment: .leading, spacing: 4) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        if latest {
+                            Button { app.share(.stl) } label: { Label("STL", systemImage: "square.and.arrow.up") }
+                            Button { app.share(.threeMF) } label: { Label("3MF", systemImage: "square.and.arrow.up") }
+                        }
+                        if changed {
+                            Button { app.undo(e) } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
+                                .accessibilityHint("Puts the project back as it was before this reply; you can put it back afterwards")
+                            Button { changesFor = e } label: { Label("Changes", systemImage: "doc.text.magnifyingglass") }
+                        }
+                    }
+                }
+                if changed, let summary = e.reply?.summary, !summary.isEmpty {
+                    Text(summary).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+            .font(.caption)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(app.busy)
+            .padding(.leading, 4)
         }
-        .font(.caption)
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+    }
+
+    private func eventLine(_ e: ChatEntry) -> some View {
+        let undo = e.event?.undo == true
+        return HStack(spacing: 8) {
+            Image(systemName: undo ? "arrow.uturn.backward.circle" : "arrow.uturn.forward.circle").foregroundStyle(.secondary)
+            Text("\(undo ? "Undid" : "Put back") the reply to \(AppModel.quote(e.text))")
+                .font(.caption).foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            Button(undo ? "Put back" : "Undo again") { app.reverse(e) }
+                .font(.caption).buttonStyle(.bordered).controlSize(.small)
+                .disabled(e.event?.used == true || app.busy)
+        }
         .padding(.leading, 4)
     }
 

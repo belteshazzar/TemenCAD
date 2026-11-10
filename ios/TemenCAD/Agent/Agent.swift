@@ -30,11 +30,14 @@ final class Agent {
     var client: AnthropicClient
     var model = Agent.defaultModel
     private(set) var messages: [JSONValue] = []
+    /// Things the user did in the app (undo, put back), told to the model with the next message.
+    private(set) var notes: [String] = []
 
     init(client: AnthropicClient) { self.client = client }
 
-    func reset() { messages = [] }
-    func restore(_ saved: [JSONValue]) { messages = saved }
+    func reset() { messages = []; notes = [] }
+    func restore(_ saved: [JSONValue], notes: [String] = []) { messages = saved; self.notes = notes }
+    func note(_ text: String) { notes.append(text) }
 
     // MARK: - Prompt
 
@@ -53,6 +56,7 @@ final class Agent {
         - The user can attach photos to a message (labelled Attachment 1, 2, … in order across the conversation), often taken with the phone's camera. Use them as references: a broken part next to a ruler, a hand sketch with dimensions, a drawing. Read dimensions from a drawing's labels first; when you scale from a photo, say which reference you used (a ruler, a coin, a known part) and how sure you are, and ask for the one or two measurements that matter most (hole spacing, mating diameters) rather than guessing them. To use a photo in the model itself (lithophane, heightmap), save_attachment puts it in the project as a .jpg to import from main.js (`import photo from './photo.jpg'`).
         - Use take_screenshot when the shape of the result matters and the build report can't confirm it (the first version of a new model, a visual arrangement, anything you are unsure of). It frames the model from the view you name; the user sees the picture in the chat too.
         \(rules)
+        - Each of your replies that changed the project gets an Undo button (and STL / 3MF share buttons when the build succeeded), so you don't need to offer those. When the user undoes a reply (or puts an undo back), an <app_events> note says so at the top of their next message; the <project> block is then the restored state.
         - Reply briefly in plain prose, short enough to read on a phone: what you changed and anything the user should decide. No code in the reply unless asked. Never claim a build succeeded unless run_model said so.
 
         The complete API reference follows. Only these functions exist; do not invent others.
@@ -151,8 +155,10 @@ final class Agent {
     /// Send a user message (text plus optional extra content blocks) and run the tool loop until the model is done.
     /// On failure the half-finished turn is dropped, so the next message starts clean.
     func send(_ text: String, extra: [JSONValue] = [], onEvent: @escaping @MainActor (Event) -> Void) async throws {
-        let before = messages
-        messages.append(["role": "user", "content": .array(extra + [["type": "text", "text": .string(text + turnContext())]])])
+        let before = messages, pendingNotes = notes
+        notes = []
+        let events = pendingNotes.isEmpty ? "" : "<app_events>\n\(pendingNotes.joined(separator: "\n"))\n</app_events>\n\n"
+        messages.append(["role": "user", "content": .array(extra + [["type": "text", "text": .string(events + text + turnContext())]])])
         do {
             for _ in 0..<24 {
                 let body: JSONValue = [
@@ -198,6 +204,7 @@ final class Agent {
             onEvent(.done)
         } catch {
             messages = before
+            notes = pendingNotes + notes // the message was dropped: tell the model with the next one
             throw error
         }
     }

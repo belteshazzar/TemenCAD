@@ -35,6 +35,12 @@ straight from the device to api.anthropic.com, billed to the key's account).
   downscaled to 1568 px on the long edge as in the web app, and is kept full size in
   `Current/attachments/n.jpg` so the assistant can put it in the project with `save_attachment` (for a
   lithophane or heightmap). A new chat starts the numbering again.
+- Undo per reply: a reply that changed the project gets Undo and Changes buttons and a summary
+  (`main.js +4 −3`). Undo first keeps the current state, so the event line it adds can Put back (and then
+  Undo again); the assistant is told with the next message (`<app_events>`, as in the web app). Changes
+  opens the reply's diff (`Model/Diff.swift`, a port of `src/diff.js` with the same output). Checkpoints
+  are file-name → SHA-256 maps kept with the conversation; each file's bytes are stored once in
+  `Current/blobs`. A new chat clears them.
 - STL and 3MF: the share button on the 3D view, Share STL… / Share 3MF… in the ⋯ menu, and STL / 3MF
   buttons under the latest reply. The core writes the files (`TemenExport`, the same bytes as the web
   app) from the visible, non-ghost parts, and the system share sheet sends them on: a slicer app,
@@ -67,11 +73,11 @@ xcrun simctl launch booted com.temencad.app \
 `-TemenAutoPrompt` sends a message at launch; `-TemenOpen /path/a.temen` opens a project and
 `-TemenSaveTo /path/b.temen` saves it, without the system file sheets (the simulator can read and write
 the Mac's paths); `-TemenShare stl` (or `3mf`) exports and opens the share sheet; `-TemenAttach /path/photo.jpg` attaches a
-photo to the next message. None of them exist in release builds.
+photo to the next message; `-TemenThen "undo,putback,undoagain,changes"` runs those steps once the turn is over. None of them exist in release builds.
 
 ## Not yet
 
-Pointing at faces and measuring, PDFs and other files in the chat, undo per reply, more than one project, showing a
+Pointing at faces and measuring, PDFs and other files in the chat, more than one project, showing a
 conversation saved by the web app, the plate and printer
 profile, and a Mac or visionOS build. SceneKit is the preview for now: Apple has stopped adding features
 to it in favour of RealityKit, and everything SceneKit touches is in `Views/ModelPreview.swift`, so moving
