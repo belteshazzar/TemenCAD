@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 struct ChatView: View {
@@ -10,6 +11,9 @@ struct ChatView: View {
     @State private var enlarged: ChatEntry?
     @State private var opening = false
     @State private var saving: TemenDocument?
+    @State private var choosingPhotos = false
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var takingPhoto = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +34,7 @@ struct ChatView: View {
                     .padding(12)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .onAppear { proxy.scrollTo(app.entries.last?.id, anchor: .bottom) } // a relaunch opens at the latest message
                 .onChange(of: app.entries) { _, entries in
                     withAnimation { proxy.scrollTo(app.busy ? AnyHashable("busy") : AnyHashable(entries.last?.id), anchor: .bottom) }
                 }
@@ -47,6 +52,20 @@ struct ChatView: View {
         }
         .confirmationDialog("Start a new model? The current model and this conversation are replaced.", isPresented: $confirmNew, titleVisibility: .visible) {
             Button("New model", role: .destructive) { app.newProject() }
+        }
+        .photosPicker(isPresented: $choosingPhotos, selection: $photoItems,
+                      maxSelectionCount: max(1, AppModel.maxPhotosPerMessage - app.pendingPhotos.count), matching: .images)
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            photoItems = []
+            Task {
+                var datas: [Data] = []
+                for item in items { if let d = try? await item.loadTransferable(type: Data.self) { datas.append(d) } }
+                app.attach(imageData: datas)
+            }
+        }
+        .fullScreenCover(isPresented: $takingPhoto) {
+            CameraPicker { app.attach(image: $0) }.ignoresSafeArea()
         }
         .fileImporter(isPresented: $opening, allowedContentTypes: [.temenProject, .zip]) { result in
             if case .success(let url) = result { app.open(url: url) }
@@ -83,7 +102,21 @@ struct ChatView: View {
     private func row(_ e: ChatEntry) -> some View {
         switch e.kind {
         case .user:
-            HStack { Spacer(minLength: 40); bubble(e.text, fill: Color.accentColor.opacity(0.14)) }
+            VStack(alignment: .trailing, spacing: 6) {
+                if let photos = e.photos, !photos.isEmpty {
+                    HStack(spacing: 6) {
+                        Spacer(minLength: 40)
+                        ForEach(Array(photos.enumerated()), id: \.offset) { _, d in
+                            if let img = UIImage(data: d) {
+                                Image(uiImage: img).resizable().scaledToFill().frame(width: 72, height: 72)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .onTapGesture { enlarged = ChatEntry(kind: .image, text: "Attached photo", image: d) }
+                            }
+                        }
+                    }
+                }
+                if !e.text.isEmpty { HStack { Spacer(minLength: 40); bubble(e.text, fill: Color.accentColor.opacity(0.14)) } }
+            }
         case .assistant:
             VStack(alignment: .leading, spacing: 6) {
                 HStack { bubble(e.text, fill: Color(.secondarySystemBackground)); Spacer(minLength: 40) }
@@ -128,8 +161,51 @@ struct ChatView: View {
             .background(fill, in: RoundedRectangle(cornerRadius: 14))
     }
 
+    private var pendingPhotos: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(app.pendingPhotos) { p in
+                    if let img = UIImage(data: p.thumbnail) {
+                        Image(uiImage: img).resizable().scaledToFill().frame(width: 56, height: 56)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(alignment: .topTrailing) {
+                                Button { app.pendingPhotos.removeAll { $0.id == p.id } } label: {
+                                    Image(systemName: "xmark.circle.fill").symbolRenderingMode(.palette)
+                                        .foregroundStyle(.white, .black.opacity(0.6))
+                                }
+                                .accessibilityLabel("Remove this photo")
+                                .offset(x: 6, y: -6)
+                            }
+                    }
+                }
+            }
+            .padding(.horizontal, 12).padding(.top, 10)
+        }
+    }
+
+    private var photoButton: some View {
+        Menu {
+            Button { choosingPhotos = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
+            if CameraPicker.isAvailable {
+                Button { takingPhoto = true } label: { Label("Take Photo", systemImage: "camera") }
+            }
+        } label: {
+            Image(systemName: "photo.badge.plus").font(.title3)
+        }
+        .disabled(!app.hasKey || app.pendingPhotos.count >= AppModel.maxPhotosPerMessage)
+        .accessibilityLabel("Attach a photo")
+    }
+
     private var composer: some View {
+        VStack(spacing: 0) {
+            if !app.pendingPhotos.isEmpty { pendingPhotos }
+            composerRow
+        }
+    }
+
+    private var composerRow: some View {
         HStack(alignment: .bottom, spacing: 8) {
+            photoButton.padding(.bottom, 4)
             TextField(app.hasKey ? "Describe a change" : "Add your API key in Settings", text: $draft, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.roundedBorder)
@@ -140,7 +216,7 @@ struct ChatView: View {
                 Button("Stop") { app.stop() }.buttonStyle(.bordered)
             } else {
                 Button(action: sendDraft) { Image(systemName: "arrow.up.circle.fill").font(.title2) }
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !app.hasKey)
+                    .disabled((draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && app.pendingPhotos.isEmpty) || !app.hasKey)
                     .accessibilityLabel("Send")
             }
         }

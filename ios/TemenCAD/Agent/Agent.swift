@@ -10,6 +10,9 @@ protocol AgentHost: AnyObject {
     func screenshotForAgent(view: String?) -> Data?
     /// The last build report, for the context sent with each message.
     var lastReport: JSONValue? { get }
+    /// A photo the user attached (attachment n, from 1), full size as JPEG; nil when there is none.
+    func attachment(_ n: Int) -> Data?
+    var attachmentCount: Int { get }
 }
 
 /// The modelling assistant: the same job as the web app's (src/agent.js), with the tools a phone needs.
@@ -47,6 +50,7 @@ final class Agent {
         - The project's files and the last build report are included with every user message. Read them before deciding what to change. main.js is the entry script; other .js files are ES modules it imports (`import { lid } from './lid.js'`).
         - Make the smallest edit that does the job with edit_script (exact-match replacement; pass `file` for anything other than main.js). Use write_script only for new models, new files or large rewrites; remove_file deletes a script file.
         - After every change call run_model and read the report. Fix any error or warning it reports (they include line numbers) before replying. run_model also shows the result in the user's preview.
+        - The user can attach photos to a message (labelled Attachment 1, 2, … in order across the conversation), often taken with the phone's camera. Use them as references: a broken part next to a ruler, a hand sketch with dimensions, a drawing. Read dimensions from a drawing's labels first; when you scale from a photo, say which reference you used (a ruler, a coin, a known part) and how sure you are, and ask for the one or two measurements that matter most (hole spacing, mating diameters) rather than guessing them. To use a photo in the model itself (lithophane, heightmap), save_attachment puts it in the project as a .jpg to import from main.js (`import photo from './photo.jpg'`).
         - Use take_screenshot when the shape of the result matters and the build report can't confirm it (the first version of a new model, a visual arrangement, anything you are unsure of). It frames the model from the view you name; the user sees the picture in the chat too.
         \(rules)
         - Reply briefly in plain prose, short enough to read on a phone: what you changed and anything the user should decide. No code in the reply unless asked. Never claim a build succeeded unless run_model said so.
@@ -74,6 +78,10 @@ final class Agent {
         tool("run_model", "Build the project and return the report: parts with names, sizes, volumes and triangle counts, warnings with lines, logs, or the error with its file and line. Also shows the result in the user's preview.", [:]),
         tool("take_screenshot", "Frame the model from a view and return a picture of the preview. Y is up; +Z is the front. Build with run_model first.",
              ["view": ["type": "string", "enum": .array(views.map(JSONValue.string))]]),
+        tool("save_attachment", "Add a photo the user attached to a message (Attachment n) to the project as a .jpg file, e.g. for lithophane() or heightmap(); then import it from main.js.",
+             ["attachment": ["type": "integer", "description": "The attachment number from the message"],
+              "name": ["type": "string", "description": "File name in the project (default photo-n.jpg); .jpg is added if missing"],
+              "replace": ["type": "boolean", "description": "Replace a project file of the same name"]], required: ["attachment"]),
     ]
 
     /// Context appended to every user message so the model always sees the live project.
@@ -116,6 +124,21 @@ final class Agent {
             guard let png = host.screenshotForAgent(view: view) else { return "Error: the preview could not be captured." }
             return [["type": "image", "source": ["type": "base64", "media_type": "image/png", "data": .string(png.base64EncodedString())]],
                     ["type": "text", "text": .string("Screenshot from the \(view ?? "current") view. Y is up; +Z is the front.")]]
+        case "save_attachment":
+            guard let n = input["attachment"]?.number.map({ Int($0) }) else { return "Error: attachment (a number) is required." }
+            guard let jpeg = host.attachment(n) else {
+                let count = host.attachmentCount
+                return .string("Error: no attachment \(n); there \(count == 1 ? "is 1" : "are \(count)").")
+            }
+            var name = (input["name"]?.string ?? "photo-\(n)").trimmingCharacters(in: .whitespaces)
+            let ext = (name as NSString).pathExtension.lowercased()
+            if ext != "jpg" && ext != "jpeg" { name = (ext.isEmpty ? name : (name as NSString).deletingPathExtension) + ".jpg" }
+            guard !name.contains(".."), !name.hasPrefix("/"), name != ".jpg" else { return .string("Error: \(name) is not a file name.") }
+            if host.project.files[name] != nil && input["replace"]?.bool != true {
+                return .string("Error: the project already has \(name); pass replace: true or choose another name.")
+            }
+            host.project.files[name] = jpeg
+            return .string("Saved attachment \(n) as \(name) (JPEG). Import it from main.js: import photo from './\(name)';")
         default:
             return .string("Error: unknown tool \(name).")
         }

@@ -9,6 +9,9 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- The camera, for photos attached to a message (the photo library needs no permission: PhotosPicker). -->
+	<key>NSCameraUsageDescription</key>
+	<string>Take a photo to show the assistant, such as a broken part next to a ruler or a sketch with dimensions.</string>
 	<!-- .temen projects (a zip of the project's files, as the web app saves them): the app declares the
 	     type and opens such files from Files, AirDrop and other apps (a copy, not in place). -->
 	<key>UTExportedTypeDeclarations</key>

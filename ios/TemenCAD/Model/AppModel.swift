@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 import TemenCAD
 
 /// One line of the conversation as the user sees it.
@@ -9,6 +10,8 @@ struct ChatEntry: Identifiable, Codable, Equatable {
     var kind: Kind
     var text: String
     var image: Data? = nil
+    /// Thumbnails of the photos attached to a user message.
+    var photos: [Data]? = nil
 }
 
 /// The app: the project, its builds, the preview and the conversation. Kept on the main actor.
@@ -22,6 +25,9 @@ final class AppModel: ObservableObject, AgentHost {
     @Published private(set) var printableParts: [TemenPart] = []
     /// A file waiting in the share sheet.
     @Published var sharing: SharedFile?
+    /// Photos waiting to go with the next message.
+    @Published var pendingPhotos: [PhotoAttachment] = []
+    static let maxPhotosPerMessage = 5
     @Published var apiKey: String { didSet { Keychain.write(apiKey); agent.client.apiKey = apiKey } }
     @Published var model: String { didSet { UserDefaults.standard.set(model, forKey: "model"); agent.model = model } }
 
@@ -78,15 +84,34 @@ final class AppModel: ObservableObject, AgentHost {
 
     var hasKey: Bool { !apiKey.isEmpty }
 
+    var canSend: Bool { !busy && hasKey }
+
     func send(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !busy, hasKey else { return }
-        entries.append(ChatEntry(kind: .user, text: text))
+        let photos = pendingPhotos
+        guard !text.isEmpty || !photos.isEmpty, !busy, hasKey else { return }
+        // each photo: kept full size as attachment n, shown to the model downscaled with its label
+        var blocks: [JSONValue] = []
+        for photo in photos {
+            let n = ProjectStore.attachmentCount() + 1
+            do {
+                try FileManager.default.createDirectory(at: ProjectStore.attachmentsFolder, withIntermediateDirectories: true)
+                try photo.original.write(to: ProjectStore.attachmentURL(n), options: .atomic)
+            } catch {
+                entries.append(ChatEntry(kind: .error, text: "Could not keep the photo: \(error.localizedDescription)"))
+                return
+            }
+            blocks.append(["type": "text", "text": .string("Attachment \(n): photo (image, \(photo.sizeLabel))")])
+            blocks.append(["type": "image", "source": ["type": "base64", "media_type": "image/jpeg", "data": .string(photo.shown.base64EncodedString())]])
+        }
+        pendingPhotos = []
+        let message = text.isEmpty ? (photos.count == 1 ? "(a photo)" : "(\(photos.count) photos)") : text
+        entries.append(ChatEntry(kind: .user, text: text, photos: photos.isEmpty ? nil : photos.map(\.thumbnail)))
         busy = true
         task = Task {
             var replyIndex: Int?
             do {
-                try await agent.send(text) { [weak self] event in
+                try await agent.send(message, extra: blocks) { [weak self] event in
                     guard let self else { return }
                     switch event {
                     case .text(let t):
@@ -118,6 +143,8 @@ final class AppModel: ObservableObject, AgentHost {
         stop()
         agent.reset()
         entries = []
+        pendingPhotos = []
+        try? FileManager.default.removeItem(at: ProjectStore.attachmentsFolder) // attachment numbers start again
         saveChat()
     }
 
@@ -126,6 +153,28 @@ final class AppModel: ObservableObject, AgentHost {
         newChat()
         project = .starter
         Task { await rebuild(); preview.frame(view: "iso") }
+    }
+
+    // MARK: - Photos
+
+    func attachment(_ n: Int) -> Data? { n >= 1 ? try? Data(contentsOf: ProjectStore.attachmentURL(n)) : nil }
+    var attachmentCount: Int { ProjectStore.attachmentCount() }
+
+    /// Adds photos to the next message (at most five per message); false for data that is not an image.
+    @discardableResult
+    func attach(imageData: [Data]) -> Bool {
+        var ok = true
+        for d in imageData {
+            guard pendingPhotos.count < Self.maxPhotosPerMessage else { break }
+            if let p = PhotoAttachment(imageData: d) { pendingPhotos.append(p) } else { ok = false }
+        }
+        if !ok { entries.append(ChatEntry(kind: .error, text: "That file is not a photo the app can read.")) }
+        return ok
+    }
+
+    func attach(image: UIImage) {
+        guard pendingPhotos.count < Self.maxPhotosPerMessage, let p = PhotoAttachment(image: image) else { return }
+        pendingPhotos.append(p)
     }
 
     // MARK: - STL and 3MF
@@ -186,6 +235,7 @@ final class AppModel: ObservableObject, AgentHost {
     static let toolLabels = [
         "read_script": "Reading the script", "edit_script": "Editing the script", "write_script": "Writing the script",
         "remove_file": "Removing a file", "run_model": "Building the model", "take_screenshot": "Taking a screenshot",
+        "save_attachment": "Adding the photo to the project",
     ]
 
     // MARK: - Keeping the conversation
@@ -208,7 +258,8 @@ final class AppModel: ObservableObject, AgentHost {
     /// Development: send a prompt at launch (`-TemenAutoPrompt "make a box"`), for driving the app in the simulator.
     /// Also `-TemenOpen /path/a.temen` opens a project and `-TemenSaveTo /path/b.temen` writes the
     /// project there, so .temen handling can be checked without the system file sheets; `-TemenShare stl`
-    /// (or 3mf) exports and opens the share sheet.
+    /// (or 3mf) exports and opens the share sheet; `-TemenAttach /path/photo.jpg` attaches a photo to the next
+    /// message (with -TemenAutoPrompt, sends it).
     func runAutoPrompt() {
         let defaults = UserDefaults.standard
         if let path = defaults.string(forKey: "TemenOpen"), !path.isEmpty { open(url: URL(fileURLWithPath: path)) }
@@ -221,6 +272,9 @@ final class AppModel: ObservableObject, AgentHost {
         }
         if let f = defaults.string(forKey: "TemenShare"), let format = ExportFormat(rawValue: f) {
             Task { await rebuild(); share(format) }
+        }
+        if let path = defaults.string(forKey: "TemenAttach"), !path.isEmpty, let d = try? Data(contentsOf: URL(fileURLWithPath: path)) {
+            attach(imageData: [d])
         }
         if let p = defaults.string(forKey: "TemenAutoPrompt"), !p.isEmpty { send(p) }
     }
