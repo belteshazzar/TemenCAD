@@ -83,4 +83,33 @@ final class TemenCADTests: XCTestCase {
         XCTAssertTrue(model.contains("name=\"b &amp; &lt;c&gt;\""))
         XCTAssertThrowsError(try TemenExport.stl([]))
     }
+
+    func testPointsAndMeasures() throws {
+        let r = try TemenCore().build(script: "return box(30, 10, 20).onPlate().subtract(cylinder(3, 30).translate(0, 5, 0)).name('plate')")
+        XCTAssertTrue(r.ok, r.error?.message ?? "")
+        let part = r.parts[0]
+        let picker = try XCTUnwrap(TemenPicker(part))
+        var top: Int?, hole: Int?
+        for t in 0..<(part.indices.count / 3) {
+            guard let s = picker.surface(triangle: t, point: [0, 0, 0]) else { continue }
+            if s.label == "plate · top face at y = 10" { top = t }
+            if s.label == "plate · Ø6 hole along Y" { hole = t }
+        }
+        let topTri = try XCTUnwrap(top), holeTri = try XCTUnwrap(hole)
+        let face = try XCTUnwrap(picker.surface(triangle: topTri, point: [10, 10, 5]))
+        XCTAssertEqual(face.kind, "flat")
+        XCTAssertTrue(face.description.hasPrefix("the flat top face (normal +Y) at y = 10, on part \"plate\", clicked at [10, 10, 5]"), face.description)
+        let h = try XCTUnwrap(picker.surface(triangle: holeTri, point: [3, 5, 0]))
+        XCTAssertEqual(h.shape, "cylinder")
+        XCTAssertEqual(h.radius ?? 0, 3, accuracy: 0.05)
+        XCTAssertGreaterThan(h.triangles.count, 20)
+        var bottom: Int?
+        for t in 0..<(part.indices.count / 3) where picker.surface(triangle: t, point: [0, 0, 0])?.label == "plate · bottom face at y = 0" { bottom = t; break }
+        let m = try XCTUnwrap(TemenPicker.measure(.init(picker: picker, triangle: topTri, point: [10, 10, 5], snapped: false),
+                                                  .init(picker: picker, triangle: try XCTUnwrap(bottom), point: [10, 0, 5], snapped: true)))
+        XCTAssertEqual(m.distance, 10, accuracy: 1e-9)
+        XCTAssertEqual(m.gap ?? 0, 10, accuracy: 1e-9)
+        XCTAssertEqual(m.label, "Measured 10 mm")
+        XCTAssertTrue(m.text.contains("(a corner)") && m.text.hasSuffix("the two faces are parallel and 10 mm apart"), m.text)
+    }
 }

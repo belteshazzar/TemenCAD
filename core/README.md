@@ -15,6 +15,7 @@ Swift package. Nothing in `src/` depends on the host platform.
  src/host.c      engine + modules + run  C: one VM, a module loader over the project files, the run loop
  src/archive.c   .temen archives         C: zip read / write in memory, the web app's project rules
  src/export.c    STL and 3MF             C: the web app's src/export.js, byte for byte
+ src/pick.c      pointing and measuring  C: the web app's src/pick-geometry.js, word for word
  ───────────────────────────────
  lamassu-js (third_party)   manifold + Clipper2 (third_party)   miniz (core/third_party)
 ```
@@ -34,6 +35,15 @@ same Z-up coordinates, normals rounded as V8's `Math.hypot` gives them, and numb
 `toFixed(5)` rounds ties, away from zero. `npm run core:export` (`core/test/export-parity.mjs`) checks
 it on every test script, the demo and a `.temen` against the JavaScript command line; keep the two
 files in step. The native `temencore -o out.3mf` uses them.
+
+`temen_pick_*` (`src/pick.c`) is what the user tapped on a part's mesh: the whole flat face, or the
+hole, boss, fillet or sphere it belongs to (welded topology, coplanar facets, then a smooth region fitted
+with a cylinder or sphere), with a short label for a chip and a sentence for the assistant; and the
+measurement between two tapped points. It ports `src/pick-geometry.js` operation for operation, down to
+summation order, V8's `Math.hypot` and `Math.atan2` (lamassu's fdlibm kernel), so the words match:
+`npm run core:pick` (`core/test/pick-parity.mjs`) compares about 60 picks and measurements per part on
+every test script and the demo against the JavaScript module (13,429 at the time of writing). The web
+app still uses the JavaScript module; keep the two in step.
 
 Same mesh everywhere: Manifold evaluates booleans lazily, and when it flattens a chain such as
 `(a - b) - c` into `a - (b + c)` it only collapses a node nothing else holds (`shared_ptr` use

@@ -225,6 +225,21 @@ export function describeSurface(part, s, point) {
   return `a curved surface ${where}; ${box}`;
 }
 
+/**
+ * A measurement between two picked points, each { point: [x, y, z], snapped, part, surface }:
+ * { d, delta: [|dx|, |dy|, |dz|], gap (parallel flat faces, else null), label, text }.
+ * The core's temen_pick_measure gives the same words.
+ */
+export function measureBetween(a, b) {
+  const dx = a.point[0] - b.point[0], dy = a.point[1] - b.point[1], dz = a.point[2] - b.point[2];
+  const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  const delta = [Math.abs(b.point[0] - a.point[0]), Math.abs(b.point[1] - a.point[1]), Math.abs(b.point[2] - a.point[2])];
+  const gap = parallelGap(a.surface, b.surface);
+  const end = (e) => `${fmtPoint(e.point)} on part "${e.part}"${e.snapped ? ' (a corner)' : ''}, ${shortLabel(e.part, e.surface).split(' · ')[1]}`;
+  const text = `from ${end(a)} to ${end(b)}: ${r2(d)} mm (|Δx| ${r2(delta[0])}, |Δy| ${r2(delta[1])}, |Δz| ${r2(delta[2])})${gap !== null ? `; the two faces are parallel and ${r2(gap)} mm apart` : ''}`;
+  return { d, delta, gap, label: `Measured ${r2(d)} mm`, text };
+}
+
 /** Plane-to-plane distance when two flat picks are parallel, else null. */
 export function parallelGap(a, b) {
   if (a.kind !== 'flat' || b.kind !== 'flat' || Math.abs(dot(a.normal, b.normal)) < 0.9999) return null;

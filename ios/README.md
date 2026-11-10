@@ -41,6 +41,12 @@ straight from the device to api.anthropic.com, billed to the key's account).
   opens the reply's diff (`Model/Diff.swift`, a port of `src/diff.js` with the same output). Checkpoints
   are file-name → SHA-256 maps kept with the conversation; each file's bytes are stored once in
   `Current/blobs`. A new chat clears them.
+- Point and Measure: the two buttons at the top left of the 3D view. Point: tap a face, hole, boss or
+  fillet to refer to it ("make this thicker"); it is highlighted in a colour with its number and goes in
+  the composer as a chip; tap it again (or remove the chip) to drop it. Measure: tap two points (corners
+  within 12 pt snap); the panel shows the distance, |Δx| |Δy| |Δz|, the gap between parallel faces, and
+  Add to message. The surface finding and every word sent are the core's (`TemenPicker`), the same as the
+  web app's; the message carries a snapshot of the view with the picks highlighted, as on the web.
 - STL and 3MF: the share button on the 3D view, Share STL… / Share 3MF… in the ⋯ menu, and STL / 3MF
   buttons under the latest reply. The core writes the files (`TemenExport`, the same bytes as the web
   app) from the visible, non-ghost parts, and the system share sheet sends them on: a slicer app,
@@ -73,11 +79,12 @@ xcrun simctl launch booted com.temencad.app \
 `-TemenAutoPrompt` sends a message at launch; `-TemenOpen /path/a.temen` opens a project and
 `-TemenSaveTo /path/b.temen` saves it, without the system file sheets (the simulator can read and write
 the Mac's paths); `-TemenShare stl` (or `3mf`) exports and opens the share sheet; `-TemenAttach /path/photo.jpg` attaches a
-photo to the next message; `-TemenThen "undo,putback,undoagain,changes"` runs those steps once the turn is over. None of them exist in release builds.
+photo to the next message; `-TemenThen "undo,putback,undoagain,changes"` runs those steps once the turn is over (also `point`, `measure`, `tap:0.5:0.6` at fractions of the view,
+`addmeasure`, `send`). None of them exist in release builds.
 
 ## Not yet
 
-Pointing at faces and measuring, PDFs and other files in the chat, more than one project, showing a
+PDFs and other files in the chat, more than one project, showing a
 conversation saved by the web app, the plate and printer
 profile, and a Mac or visionOS build. SceneKit is the preview for now: Apple has stopped adding features
 to it in favour of RealityKit, and everything SceneKit touches is in `Views/ModelPreview.swift`, so moving

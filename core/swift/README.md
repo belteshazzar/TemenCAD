@@ -34,6 +34,16 @@ let opened = try TemenArchive.readProject(data)   // .files for build(files:), .
 let saved = try TemenArchive.write(opened.files.merging(opened.extras) { file, _ in file })
 ```
 
+Pointing and measuring (the iOS app's Point and Measure) use the core's surface finder, the same words
+as the web app:
+
+```swift
+let picker = TemenPicker(part)!                                  // once per part mesh
+let s = picker.surface(triangle: hit.faceIndex, point: tapped)   // s.label, s.description, s.triangles
+let m = TemenPicker.measure(.init(picker: picker, triangle: t1, point: p1, snapped: false),
+                            .init(picker: picker, triangle: t2, point: p2, snapped: true))  // m.distance, m.gap, m.text
+```
+
 STL and 3MF come from the core too, the same bytes the web app writes:
 
 ```swift

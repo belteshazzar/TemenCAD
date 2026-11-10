@@ -12,6 +12,8 @@ struct ChatEntry: Identifiable, Codable, Equatable {
     var image: Data? = nil
     /// Thumbnails of the photos attached to a user message.
     var photos: [Data]? = nil
+    /// Labels of the faces pointed at and the measurements sent with a user message.
+    var references: [String]? = nil
     /// .reply: the actions under a turn. `text` is the user's message it answered.
     var reply: ReplyInfo? = nil
     /// .event: an undo or a put back. `text` is the message of the reply it was about.
@@ -50,6 +52,8 @@ final class AppModel: ObservableObject, AgentHost {
     @Published var sharing: SharedFile?
     /// Photos waiting to go with the next message.
     @Published var pendingPhotos: [PhotoAttachment] = []
+    /// Faces pointed at and measurements taken in the 3D view, waiting to go with the next message.
+    @Published var pendingRefs: [ViewReference] = []
     static let maxPhotosPerMessage = 5
     @Published var apiKey: String { didSet { Keychain.write(apiKey); agent.client.apiKey = apiKey } }
     @Published var model: String { didSet { UserDefaults.standard.set(model, forKey: "model"); agent.model = model } }
@@ -77,6 +81,8 @@ final class AppModel: ObservableObject, AgentHost {
         project = ProjectStore.load()
         agent.host = self
         agent.model = model
+        preview.onReference = { [weak self] ref in self?.pendingRefs.append(ref) }
+        preview.onReferenceRemoved = { [weak self] id in self?.pendingRefs.removeAll { $0.id == id } }
         #if DEBUG
         if let k = UserDefaults.standard.string(forKey: "TemenAPIKey") { apiKey = k }
         #endif
@@ -115,10 +121,25 @@ final class AppModel: ObservableObject, AgentHost {
 
     func send(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let photos = pendingPhotos
-        guard !text.isEmpty || !photos.isEmpty, !busy, hasKey else { return }
-        // each photo: kept full size as attachment n, shown to the model downscaled with its label
+        let photos = pendingPhotos, refs = pendingRefs
+        guard !text.isEmpty || !photos.isEmpty || !refs.isEmpty, !busy, hasKey else { return }
         var blocks: [JSONValue] = []
+        // faces pointed at: the view as the user sees it, each highlighted in its colour, then each described
+        // (worded as the web app words them, src/chat.js)
+        let surfaces = refs.filter { $0.kind == .surface }
+        var shot: Data?
+        if !surfaces.isEmpty {
+            let colors = surfaces.enumerated().map { "reference \($0.offset + 1) \($0.element.colorName ?? "")" }.joined(separator: ", ")
+            if let png = preview.referenceSnapshot() {
+                shot = png
+                let one = surfaces.count == 1
+                blocks.append(["type": "text", "text": .string("The user pointed at \(one ? "a surface" : "\(surfaces.count) surfaces") in the 3D view. This is their view, with \(one ? "it" : "each") highlighted (\(colors)); \"this\" or \"here\" in their message means \(one ? "reference 1" : "these").")])
+                blocks.append(["type": "image", "source": ["type": "base64", "media_type": "image/png", "data": .string(png.base64EncodedString())]])
+            }
+            for (i, r) in surfaces.enumerated() { blocks.append(["type": "text", "text": .string("Reference \(i + 1) (\(r.colorName ?? "")): \(r.text)")]) }
+        }
+        for m in refs where m.kind == .measurement { blocks.append(["type": "text", "text": .string("The user measured in the 3D view, \(m.text)")]) }
+        // each photo: kept full size as attachment n, shown to the model downscaled with its label
         for photo in photos {
             let n = ProjectStore.attachmentCount() + 1
             do {
@@ -132,8 +153,13 @@ final class AppModel: ObservableObject, AgentHost {
             blocks.append(["type": "image", "source": ["type": "base64", "media_type": "image/jpeg", "data": .string(photo.shown.base64EncodedString())]])
         }
         pendingPhotos = []
-        let message = text.isEmpty ? (photos.count == 1 ? "(a photo)" : "(\(photos.count) photos)") : text
-        entries.append(ChatEntry(kind: .user, text: text, photos: photos.isEmpty ? nil : photos.map(\.thumbnail)))
+        pendingRefs = []
+        preview.clearPicks()
+        let message = !text.isEmpty ? text : !photos.isEmpty ? (photos.count == 1 ? "(a photo)" : "(\(photos.count) photos)") : "(see the references)"
+        var thumbs = photos.map(\.thumbnail)
+        if let shot, let img = UIImage(data: shot), let small = PhotoAttachment(image: img)?.thumbnail { thumbs.insert(small, at: 0) }
+        entries.append(ChatEntry(kind: .user, text: text, photos: thumbs.isEmpty ? nil : thumbs,
+                                 references: refs.isEmpty ? nil : refs.map(\.label)))
         busy = true
         let before = project.files, turnGeneration = generation
         task = Task {
@@ -239,6 +265,8 @@ final class AppModel: ObservableObject, AgentHost {
         agent.reset()
         entries = []
         pendingPhotos = []
+        pendingRefs = []
+        preview.clearPicks()
         checkpoints.clear()
         try? FileManager.default.removeItem(at: ProjectStore.attachmentsFolder) // attachment numbers start again
         saveChat()
@@ -267,6 +295,12 @@ final class AppModel: ObservableObject, AgentHost {
         }
         if !ok { entries.append(ChatEntry(kind: .error, text: "That file is not a photo the app can read.")) }
         return ok
+    }
+
+    /// A reference chip was removed from the composer: drop its highlight too.
+    func removeReference(_ id: Int) {
+        pendingRefs.removeAll { $0.id == id }
+        preview.removePick(id)
     }
 
     func attach(image: UIImage) {
@@ -381,7 +415,8 @@ final class AppModel: ObservableObject, AgentHost {
             attach(imageData: [d])
         }
         if let p = defaults.string(forKey: "TemenAutoPrompt"), !p.isEmpty { send(p) }
-        // -TemenThen "undo,putback,undoagain,changes": steps once the turn is over, for checking undo
+        // -TemenThen "undo,putback,undoagain,changes" (undo), "point,tap:0.5:0.5,measure,tap:..,tap:..,addmeasure,send"
+        // (pointing and measuring): steps once the turn is over
         if let steps = defaults.string(forKey: "TemenThen"), !steps.isEmpty {
             Task {
                 while busy { try? await Task.sleep(nanoseconds: 200_000_000) }
@@ -391,6 +426,13 @@ final class AppModel: ObservableObject, AgentHost {
                     case "undo": if let e = entries.last(where: { $0.reply?.changed == true }) { undo(e) }
                     case "putback", "undoagain": if let e = entries.last(where: { $0.kind == .event }) { reverse(e) }
                     case "changes": if let e = entries.last(where: { $0.reply?.changed == true }) { debugChanges = e }
+                    case "point": preview.mode = .point
+                    case "measure": preview.mode = .measure
+                    case "addmeasure": preview.addMeasurementToMessage(); preview.clearMeasure()
+                    case "send": send("make this thicker")
+                    case let s where s.hasPrefix("tap:"): // tap:0.5:0.6 taps at those fractions of the view
+                        let f = s.dropFirst(4).split(separator: ":").compactMap { Double($0) }
+                        if f.count == 2 { let b = preview.view.bounds; preview.tap(at: CGPoint(x: b.width * f[0], y: b.height * f[1])) }
                     default: break
                     }
                 }

@@ -76,6 +76,12 @@ struct ContentView: View {
                         .padding(10)
                 }
             }
+            .overlay(alignment: .topLeading) { // last, so the measurement panel draws over the build status
+                PointerOverlay(preview: app.preview) {
+                    app.preview.addMeasurementToMessage()
+                    app.preview.clearMeasure()
+                }
+            }
     }
 
     private var chat: some View {

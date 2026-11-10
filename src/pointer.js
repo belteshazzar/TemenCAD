@@ -8,7 +8,7 @@
  * Clicks are told apart from orbit drags by how far the pointer moved. Escape leaves either mode.
  */
 import * as THREE from 'three';
-import { topology, surfaceAt, shortLabel, describeSurface, parallelGap, fmtPoint } from './pick-geometry.js';
+import { topology, surfaceAt, shortLabel, describeSurface, measureBetween } from './pick-geometry.js';
 
 const COLORS = [['orange', 0xff8a00], ['magenta', 0xe0308a], ['teal', 0x00a3a3], ['purple', 0x7a4cff], ['green', 0x2e9e3e], ['red', 0xd92b2b]];
 const CLICK_SLOP = 5;   // px the pointer may move and still count as a click
@@ -202,9 +202,8 @@ export class Pointer {
   }
   measurement() {
     const { a, b } = this.measure;
-    const d = a.point.distanceTo(b.point), delta = b.point.clone().sub(a.point).toArray().map((x) => Math.abs(x));
-    const gap = parallelGap(a.surface, b.surface);
-    return { d, delta, gap };
+    const end = (e) => ({ point: e.point.toArray(), snapped: e.snapped, part: e.part, surface: e.surface });
+    return measureBetween(end(a), end(b));
   }
   showPanel() {
     const { a, b } = this.measure, { d, delta, gap } = this.measurement();
@@ -218,17 +217,12 @@ export class Pointer {
     this.panel.appendChild(ends);
     const row = Object.assign(document.createElement('div'), { className: 'measure-actions' });
     const add = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Add to message', title: 'Tell the assistant about this measurement in your next message' });
-    add.addEventListener('click', () => this.onReference({ id: this.nextId++, kind: 'measure', label: `Measured ${r2(d)} mm`, text: this.describeMeasurement() }));
+    add.addEventListener('click', () => { const m = this.measurement(); this.onReference({ id: this.nextId++, kind: 'measure', label: m.label, text: m.text }); });
     const clear = Object.assign(document.createElement('button'), { type: 'button', className: 'secondary', textContent: 'Clear' });
     clear.addEventListener('click', () => this.clearMeasure());
     row.append(add, clear);
     this.panel.appendChild(row);
     this.panel.hidden = false;
-  }
-  describeMeasurement() {
-    const { a, b } = this.measure, { d, delta, gap } = this.measurement();
-    const end = (e) => `${fmtPoint(e.point.toArray())} on part "${e.part}"${e.snapped ? ' (a corner)' : ''}, ${shortLabel(e.part, e.surface).split(' · ')[1]}`;
-    return `from ${end(a)} to ${end(b)}: ${r2(d)} mm (|Δx| ${r2(delta[0])}, |Δy| ${r2(delta[1])}, |Δz| ${r2(delta[2])})${gap !== null ? `; the two faces are parallel and ${r2(gap)} mm apart` : ''}`;
   }
   clearMeasure() {
     if (!this.measure) return;

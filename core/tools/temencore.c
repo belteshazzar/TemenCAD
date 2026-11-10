@@ -125,10 +125,38 @@ static int write_model(TemenCore *core, const char *path) {
     return 1;
 }
 
+/* --pick N: about N triangles of every part (every max(1, n_tris / N)th) as the surface each belongs to,
+ * and a measurement from each to the next sampled in the same part, one JSON line each (for
+ * core/test/pick-parity.mjs). The tapped point is the triangle's centroid. */
+static void pick_dump(TemenCore *core, size_t samples) {
+    for (size_t i = 0; i < temen_part_count(core); i++) {
+        const TemenPart *p = temen_part(core, i);
+        size_t every = p->n_tris / samples > 1 ? p->n_tris / samples : 1;
+        TemenPick *pick = temen_pick_new(p->positions, p->n_verts, p->indices, p->n_tris);
+        if (!pick) continue;
+        size_t prev = (size_t)-1;
+        double prev_pt[3] = { 0 };
+        for (size_t t = 0; t < p->n_tris; t += every) {
+            double pt[3] = { 0, 0, 0 };
+            for (int k = 0; k < 3; k++) for (int j = 0; j < 3; j++) pt[j] += (double)p->positions[p->indices[t * 3 + k] * 3 + j];
+            for (int j = 0; j < 3; j++) pt[j] /= 3;
+            printf("{\"part\":%zu,\"tri\":%zu,\"surface\":%s}\n", i, t, temen_pick_surface(pick, t, p->name, pt));
+            if (prev != (size_t)-1)
+                printf("{\"part\":%zu,\"tri\":%zu,\"from\":%zu,\"snapped\":%d,\"measure\":%s}\n", i, t, prev, (int)(t / every) % 2,
+                       temen_pick_measure(pick, prev, p->name, prev_pt, (int)(t / every) % 2, pick, t, p->name, pt, 0));
+            prev = t;
+            memcpy(prev_pt, pt, sizeof pt);
+        }
+        temen_pick_free(pick);
+    }
+}
+
 int main(int argc, char **argv) {
     const char *input = NULL, *out = NULL;
+    size_t pick_every = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) out = argv[++i];
+        else if (strcmp(argv[i], "--pick") == 0 && i + 1 < argc) pick_every = (size_t)atol(argv[++i]);
         else if (strcmp(argv[i], "--version") == 0) { puts(temen_version()); return 0; }
         else input = argv[i];
     }
@@ -163,6 +191,7 @@ int main(int argc, char **argv) {
         }
         printf("%zu part%s, %zu triangles, %.0f ms\n", temen_part_count(core), temen_part_count(core) == 1 ? "" : "s", tris, temen_last_run_ms(core));
         if (out && !write_model(core, out)) status = 2;
+        if (pick_every) pick_dump(core, pick_every);
     }
     temen_free(core);
     for (size_t i = 0; i < fs.n; i++) { free((void *)fs.files[i].name); free((void *)fs.files[i].data); }

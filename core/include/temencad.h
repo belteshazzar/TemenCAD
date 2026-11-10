@@ -139,6 +139,24 @@ void  temen_buffer_free(void *buffer);
 void *temen_write_stl(const TemenPart *parts, size_t n_parts, size_t *out_len, const char **error); /* binary, one solid */
 void *temen_write_3mf(const TemenPart *parts, size_t n_parts, size_t *out_len, const char **error); /* named, coloured objects */
 
+/* ---- pointing and measuring (the web app's src/pick-geometry.js, word for word) -------------------
+ * A pick holds one part's mesh topology (vertices welded, faces found as needed); build it once per mesh.
+ * The positions and indices are copied out; Y up, millimetres, as temen_part gives them. */
+typedef struct TemenPick TemenPick;
+TemenPick *temen_pick_new(const float *positions, size_t n_verts, const uint32_t *indices, size_t n_tris);
+void       temen_pick_free(TemenPick *pick);
+/* The surface triangle `tri` belongs to, as JSON: kind "flat" (normal, offset) or "curved" (shape
+ * "cylinder" | "sphere" | "surface", radius, convex, center, axis, length, span in degrees), area, bounds
+ * {min, max}, centroid, tris (every triangle of the surface, for highlighting), label (short, for a chip:
+ * "lid · Ø6 hole along Y") and description (for the assistant). `part` names the part; `point` is where
+ * the user tapped. NULL when tri is out of range. The string belongs to the pick until its next call. */
+const char *temen_pick_surface(TemenPick *pick, size_t tri, const char *part, const double point[3]);
+/* Between two tapped points (each on a triangle of a pick; snapped: it landed on a corner), as JSON:
+ * distance, delta (|dx|, |dy|, |dz|), gap (the distance between two parallel flat faces, else null), label
+ * ("Measured 12.5 mm") and text (for the assistant). The string belongs to pick_a until its next call. */
+const char *temen_pick_measure(TemenPick *pick_a, size_t tri_a, const char *part_a, const double point_a[3], int snapped_a,
+                               TemenPick *pick_b, size_t tri_b, const char *part_b, const double point_b[3], int snapped_b);
+
 /* Version strings of the pieces, for a report or an about box. */
 const char *temen_version(void);
 

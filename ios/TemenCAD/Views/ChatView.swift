@@ -122,6 +122,15 @@ struct ChatView: View {
                         }
                     }
                 }
+                if let refs = e.references, !refs.isEmpty {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        ForEach(Array(refs.enumerated()), id: \.offset) { _, label in
+                            Label(label, systemImage: label.hasPrefix("Measured") ? "ruler" : "hand.point.up.left")
+                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                }
                 if !e.text.isEmpty { HStack { Spacer(minLength: 40); bubble(e.text, fill: Color.accentColor.opacity(0.14)) } }
             }
         case .assistant:
@@ -237,8 +246,31 @@ struct ChatView: View {
         .accessibilityLabel("Attach a photo")
     }
 
+    private var pendingRefs: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(app.pendingRefs) { r in
+                    HStack(spacing: 4) {
+                        if r.kind == .surface {
+                            Circle().fill(Color(r.color ?? .systemBlue)).frame(width: 10, height: 10)
+                        } else {
+                            Image(systemName: "ruler").font(.caption2)
+                        }
+                        Text(r.label).font(.caption).lineLimit(1)
+                        Button { app.removeReference(r.id) } label: { Image(systemName: "xmark").font(.caption2.bold()) }
+                            .accessibilityLabel("Remove \(r.label)")
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(Color(.secondarySystemBackground), in: Capsule())
+                }
+            }
+            .padding(.horizontal, 12).padding(.top, 8)
+        }
+    }
+
     private var composer: some View {
         VStack(spacing: 0) {
+            if !app.pendingRefs.isEmpty { pendingRefs }
             if !app.pendingPhotos.isEmpty { pendingPhotos }
             composerRow
         }
@@ -257,7 +289,7 @@ struct ChatView: View {
                 Button("Stop") { app.stop() }.buttonStyle(.bordered)
             } else {
                 Button(action: sendDraft) { Image(systemName: "arrow.up.circle.fill").font(.title2) }
-                    .disabled((draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && app.pendingPhotos.isEmpty) || !app.hasKey)
+                    .disabled((draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && app.pendingPhotos.isEmpty && app.pendingRefs.isEmpty) || !app.hasKey)
                     .accessibilityLabel("Send")
             }
         }

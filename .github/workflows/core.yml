@@ -91,6 +91,8 @@ jobs:
           cmake -S core -B build/native -DCMAKE_BUILD_TYPE=Release
           cmake --build build/native -j4 --target temencore-cli
           npm run core:export -- build/native/temencore
+      - name: Pointing and measuring in the native core match the web app's, word for word
+        run: npm run core:pick -- build/native/temencore
       - name: The site
         run: npm run build
 
