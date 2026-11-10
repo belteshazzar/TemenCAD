@@ -66,7 +66,8 @@ function projectFromHash() {
   if (!m) return null;
   try { history.replaceState(null, '', location.pathname + location.search); return Project.fromScript(decodeURIComponent(m[1])); } catch { return null; }
 }
-let project = projectFromHash() ?? loadProject();
+const hashProject = projectFromHash(); // a link opened a new project: the kept conversation belongs to another one
+let project = hashProject ?? loadProject();
 const persist = () => store.set(STORAGE_KEY, JSON.stringify(project.toJSON()));
 
 /** Every text file gets its own editor state so undo history and diagnostics stay per file. */
@@ -113,11 +114,15 @@ function projectChanged({ run = true } = {}) {
   if (run) scheduleRun();
 }
 
+let chat = null; // the assistant panel, made below (the file manager asks it for the conversation to save)
 const files = new FileManager({
   getProject: () => project,
-  setProject: (p) => { project = p; tabs.setProject(p); persist(); clearTimeout(timer); run(); },
+  // an opened or new project brings its own conversation (or none); if the assistant opened it, its chat carries on
+  setProject: (p) => { project = p; tabs.setProject(p); persist(); clearTimeout(timer); if (chat?.loadArchive(p.extras)) tabs.select('assistant'); run(); },
   fileInput: document.getElementById('file-input'),
   onChange: (f) => { document.title = `${f.dirty ? '• ' : ''}${f.name} — TemenCAD`; },
+  extras: () => chat?.archive() ?? null,
+  extrasToken: () => chat?.token() ?? '',
 });
 window.addEventListener('beforeunload', (e) => { if (files.dirty) e.preventDefault(); });
 
@@ -329,8 +334,9 @@ function toggleAutorun() {
 }
 
 // ---- Assistant (first tab of the editor pane) ----
-const chat = initChat({
+chat = initChat({
   root: chatEl,
+  onChange: () => files.markChanged(),
   host: {
     listFiles: () => project.names(),
     getScript: (file = ENTRY) => tabs.text(file),
@@ -349,6 +355,9 @@ const chat = initChat({
     ...appActions(),
   },
 });
+// The conversation kept in this browser comes back after a reload; a project opened from a link starts a new one.
+if (hashProject) chat.forgetLocal();
+else chat.restoreLocal().then(() => files.rebase());
 
 /**
  * The menus' actions for the assistant (agent.js appTools). Each returns a plain object for the

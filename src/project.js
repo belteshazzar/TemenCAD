@@ -7,6 +7,8 @@ import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 
 export const ENTRY = 'main.js';
 export const PROJECT_EXT = '.temen';
+/** Archive folder for app data that is not part of the model (the assistant conversation): see chat-store.js. */
+export const APP_DATA_DIR = '.assistant/';
 const TEXT_EXT = ['.js', '.mjs', '.json', '.txt', '.md', '.svg'];
 export const FONT_EXT = ['.ttf', '.otf'];
 export const MESH_EXT = ['.stl'];
@@ -96,9 +98,9 @@ export class Project {
   toFiles() { return Object.fromEntries(this.files); }
   static fromFiles(files) { const p = new Project(); for (const [k, v] of Object.entries(files)) p.set(k, v); return p; }
 
-  /** .temen archive bytes (a plain zip). */
-  toZip() {
-    const entries = {};
+  /** .temen archive bytes (a plain zip). extras: more entries, e.g. the conversation under .assistant/. */
+  toZip(extras = null) {
+    const entries = { ...(extras ?? {}) };
     for (const [name, content] of this.files) entries[name] = typeof content === 'string' ? strToU8(content) : new Uint8Array(content);
     return zipSync(entries, { level: 6 });
   }
@@ -106,6 +108,8 @@ export class Project {
     const p = new Project();
     const entries = unzipSync(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
     for (const [name, data] of Object.entries(entries)) {
+      // the app's own data (the assistant conversation) is kept beside the project, never as a project file
+      if (name.startsWith(APP_DATA_DIR)) { (p.extras ??= {})[name] = data; continue; }
       if (name.endsWith('/') || name.startsWith('__MACOSX/') || /(^|\/)\.[^/]*$/.test(name)) continue; // folders, Finder junk, dotfiles
       const n = normalizePath(name);
       if (!n) continue;

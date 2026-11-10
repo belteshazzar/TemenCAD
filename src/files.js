@@ -14,9 +14,15 @@ const hasFSAccess = 'showOpenFilePicker' in window && 'showSaveFilePicker' in wi
 const UNTITLED = `untitled${PROJECT_EXT}`;
 
 export class FileManager {
-  /** getProject() -> Project, setProject(project), fileInput, onChange(this) */
-  constructor({ getProject, setProject, fileInput, onChange }) {
+  /**
+   * getProject() -> Project, setProject(project), fileInput, onChange(this),
+   * extras() -> more archive entries to save ({ path: Uint8Array }, e.g. the conversation) or null,
+   * extrasToken() -> a string that changes whenever extras() would (so they count as unsaved changes)
+   */
+  constructor({ getProject, setProject, fileInput, onChange, extras, extrasToken }) {
     this.getProject = getProject;
+    this.extras = extras ?? (() => null);
+    this.extrasToken = extrasToken ?? (() => '');
     this.setProject = setProject;
     this.fileInput = fileInput;
     this.onChange = onChange ?? (() => {});
@@ -27,7 +33,12 @@ export class FileManager {
     this.savedSnapshot = this.snapshot();
   }
 
-  snapshot() { return JSON.stringify(this.getProject().toJSON()); }
+  snapshot() { return JSON.stringify(this.getProject().toJSON()) + '\n' + this.extrasToken(); }
+
+  /** Take the current state as the saved one (after a reload, where the file link is gone anyway). */
+  rebase() { this.savedSnapshot = this.snapshot(); if (this.dirty) { this.dirty = false; this.onChange(this); } }
+
+  _zip() { return this.getProject().toZip(this.extras()); }
 
   _update(name) {
     this.name = name;
@@ -102,7 +113,7 @@ export class FileManager {
   async save() {
     if (this.handle) {
       const w = await this.handle.createWritable();
-      await w.write(this.getProject().toZip());
+      await w.write(this._zip());
       await w.close();
       this._update(this.name);
       return true;
@@ -111,7 +122,7 @@ export class FileManager {
   }
 
   async saveAs() {
-    const bytes = this.getProject().toZip();
+    const bytes = this._zip();
     const suggested = this.name.endsWith(PROJECT_EXT) ? this.name : this.name.replace(/\.[^.]*$/, '') + PROJECT_EXT;
     if (hasFSAccess) {
       let handle;

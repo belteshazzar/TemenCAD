@@ -202,9 +202,22 @@ button.secondary:hover { background: var(--hover); }
 .card-actions button:disabled { opacity: 0.45; cursor: default; }
 .msg.card.image { border-color: var(--border); padding: 6px; gap: 4px; }
 .msg.card.image img { display: block; max-width: min(260px, 100%); border-radius: 4px; cursor: zoom-in; background: #fff; }
-.msg.actions { align-self: flex-start; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 0; margin-top: -2px; }
-.msg.actions button { padding: 2px 8px; font-size: 11px; }
-.msg.actions button:disabled { opacity: 0.45; cursor: default; }
+.msg.reply { align-self: stretch; max-width: none; padding: 0; margin-top: -2px; display: flex; flex-direction: column; gap: 6px; white-space: normal; }
+.msg.reply .actions, .msg.event { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.msg.reply button, .msg.event button { padding: 2px 8px; font-size: 11px; }
+.msg.reply button:disabled, .msg.event button:disabled { opacity: 0.45; cursor: default; }
+.change-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.msg.event { align-self: center; color: var(--muted); font-size: 11px; padding: 2px 8px; border: 1px dashed var(--border); border-radius: 12px; white-space: normal; }
+.diff { border: 1px solid var(--border); border-radius: 6px; background: var(--surface); overflow: hidden; }
+.diff-file { padding: 4px 8px; font-size: 11px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.diff pre { margin: 0; padding: 4px 0; font-size: 11px; line-height: 1.4; overflow-x: auto; max-height: 320px; overflow-y: auto; }
+.diff pre span { display: block; padding: 0 8px; white-space: pre; }
+.diff .diff-add { color: #1a7f37; } .diff pre .diff-add { background: #e6ffec; }
+.diff .diff-del { color: #cf222e; } .diff pre .diff-del { background: #ffebe9; }
+.diff .diff-hunk { color: var(--muted); background: var(--panel); }
+.download-gone { color: var(--muted); font-weight: 600; }
+.check-field { display: flex; gap: 8px; align-items: center; margin: 10px 0 2px; }
+.muted.small { font-size: 11px; margin-top: 2px; }
 dialog.lightbox { padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: inherit; width: min(92vw, 1320px); max-width: none; max-height: 94vh; overflow: hidden; }
 dialog.lightbox::backdrop { background: rgb(0 0 0 / 0.6); }
 dialog.lightbox img { display: block; width: 100%; height: auto; max-height: calc(94vh - 44px); object-fit: contain; background: #fff; }
