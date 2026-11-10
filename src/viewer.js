@@ -47,6 +47,12 @@ export class Viewer {
     this.scene.add(this.plateGroup);
     this.plate = null;
 
+    // Pointing and measuring (pointer.js) draw here, and hear about frames and new geometry
+    this.overlay = new THREE.Group();
+    this.scene.add(this.overlay);
+    this.onFrame = new Set();
+    this.onModelChanged = new Set();
+
     new ResizeObserver(() => this.resize()).observe(canvas.parentElement);
     this.resize();
     this.renderer.setAnimationLoop(() => this.render());
@@ -260,6 +266,7 @@ export class Viewer {
   }
 
   clear() {
+    for (const f of this.onModelChanged) f();
     for (const m of [...this.modelGroup.children]) {
       m.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
@@ -272,6 +279,7 @@ export class Viewer {
   render() {
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
+    for (const f of this.onFrame) f();
   }
 
   /**

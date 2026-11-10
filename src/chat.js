@@ -8,7 +8,7 @@
  */
 import { Agent, MODELS, DEFAULT_MODEL, describeAgentError } from './agent.js';
 import { classify, prepareImage, projectImage } from './attachments.js';
-import { BlobStore, toArchive, fromArchive, pruneBlobs, saveLocal, loadLocal, clearLocal, bytesToBase64 } from './chat-store.js';
+import { BlobStore, toArchive, fromArchive, pruneBlobs, saveLocal, loadLocal, clearLocal, bytesToBase64, base64ToBytes as base64Bytes } from './chat-store.js';
 import { unifiedDiff } from './diff.js';
 
 const SETTINGS_KEY = 'temencad.assistant';
@@ -362,8 +362,12 @@ export function initChat({ root, host, onChange = () => {} }) {
   let pasteCount = 0;
   /** a: { name, kind, size, url? }; mode: 'pending' (removable) or 'sent' */
   function attachmentChip(a, mode) {
-    const chip = el('div', { className: 'attachment', title: a.name });
-    if (a.kind === 'image' && a.url) {
+    const chip = el('div', { className: 'attachment', title: a.text ?? a.name });
+    if (a.kind === 'ref' || a.kind === 'measure') {
+      const icon = el('span', { className: 'att-icon', textContent: a.kind === 'ref' ? '☝' : '📏' });
+      if (a.colorHex !== undefined) { icon.style.background = `#${a.colorHex.toString(16).padStart(6, '0')}`; icon.style.color = '#fff'; }
+      chip.appendChild(icon);
+    } else if (a.kind === 'image' && a.url) {
       const img = el('img', { src: a.url, alt: a.name });
       if (mode === 'sent') img.addEventListener('click', () => openLightbox(a.url, a.name, a.name));
       chip.appendChild(img);
@@ -372,13 +376,23 @@ export function initChat({ root, host, onChange = () => {} }) {
     }
     chip.appendChild(el('span', { className: 'att-text' },
       el('span', { className: 'att-name', textContent: a.name }),
-      el('span', { className: 'att-role', textContent: a.kind === 'file' ? (mode === 'pending' ? 'adds to the project' : 'added to the project') : `for the assistant · ${fmtBytes(a.size)}` })));
+      el('span', { className: 'att-role', textContent: a.kind === 'file' ? (mode === 'pending' ? 'adds to the project' : 'added to the project')
+        : a.kind === 'ref' ? `pointed at in the 3D view${a.color ? ` · ${a.color}` : ''}` : a.kind === 'measure' ? 'measured in the 3D view' : `for the assistant · ${fmtBytes(a.size)}` })));
     if (mode === 'pending') {
       const x = el('button', { type: 'button', className: 'att-remove', textContent: '×', title: 'Remove' });
-      x.addEventListener('click', () => { attached = attached.filter((b) => b !== a); if (a.url) URL.revokeObjectURL(a.url); renderAttached(); input.focus(); });
+      x.addEventListener('click', () => { dropAttached(a); if (a.kind === 'ref') host.removeReference?.(a.id); input.focus(); });
       chip.appendChild(x);
     }
     return chip;
+  }
+  function dropAttached(a) { attached = attached.filter((b) => b !== a); if (a.url) URL.revokeObjectURL(a.url); renderAttached(); }
+  /** A face pointed at, or a measurement, from the 3D view (pointer.js): waits in the composer like an attachment. */
+  function addReference(ref) {
+    const a = { kind: ref.kind, name: ref.label, text: ref.text, color: ref.color, colorHex: ref.colorHex, id: ref.id, size: 0 };
+    attached.push(a);
+    ref.setRemoved?.(() => dropAttached(a)); // clicking the face again drops the chip too
+    renderAttached();
+    log.querySelector('.msg.empty')?.remove();
   }
   function renderAttached() {
     attachRow.textContent = '';
@@ -437,8 +451,22 @@ export function initChat({ root, host, onChange = () => {} }) {
       if (added.length) notes.push(`The user added these files to the project with this message: ${added.join(', ')}. Import them from main.js to use them.`);
       if (skipped.length) notes.push(`The user chose not to add (or replace) ${skipped.join(', ')}.`);
     }
+    const refs = list.filter((a) => a.kind === 'ref'), measures = list.filter((a) => a.kind === 'measure');
+    if (refs.length) {
+      // the view as the user sees it, with the references highlighted in their colours
+      const shot = host.referenceSnapshot?.();
+      if (shot) {
+        const bytes = base64Bytes(shot.data);
+        userEntry.atts.push({ name: 'view with references', kind: 'image', size: bytes.length, key: store.put(bytes), type: shot.mediaType });
+        blocks.push({ type: 'text', text: `The user pointed at ${refs.length === 1 ? 'a surface' : `${refs.length} surfaces`} in the 3D view. This is their view, with ${refs.length === 1 ? 'it' : 'each'} highlighted (${refs.map((r, i) => `reference ${i + 1} ${r.color}`).join(', ')}); "this" or "here" in their message means ${refs.length === 1 ? 'reference 1' : 'these'}.` },
+          { type: 'image', source: { type: 'base64', media_type: shot.mediaType, data: shot.data } });
+      }
+      refs.forEach((r, i) => blocks.push({ type: 'text', text: `Reference ${i + 1} (${r.color}): ${r.text}` }));
+      host.clearReferences?.();
+    }
+    for (const m of measures) blocks.push({ type: 'text', text: `The user measured in the 3D view, ${m.text}` });
     for (const [i, a] of list.entries()) {
-      if (a.kind === 'file') continue;
+      if (a.kind !== 'image' && a.kind !== 'pdf') continue;
       const bytes = new Uint8Array(await a.file.arrayBuffer());
       const att = { name: a.name, type: a.file.type || (a.kind === 'pdf' ? 'application/pdf' : 'image/png'), key: store.put(bytes) };
       userEntry.atts[i].key = att.key; userEntry.atts[i].type = att.type;
@@ -467,17 +495,21 @@ export function initChat({ root, host, onChange = () => {} }) {
     if (!settings.apiKey) { openSettings(); return; }
     log.querySelector('.msg.empty')?.remove();
     const sending = attached;
+    if (!text && sending.every((a) => a.kind === 'ref' || a.kind === 'measure')) { input.focus(); return; } // say what to do with what you pointed at
     attached = []; renderAttached();
     for (const a of sending) if (a.url) liveUrls.push(a.url);
-    const userEntry = { t: 'user', text, atts: sending.map((a) => ({ name: a.name, kind: a.kind, size: a.size })) };
+    const chipOf = (a) => ({ name: a.name, kind: a.kind, size: a.size, ...(a.color ? { color: a.color, colorHex: a.colorHex } : {}) });
+    const userEntry = { t: 'user', text, atts: sending.map(chipOf) };
     entries.push(userEntry);
-    renderEntry({ ...userEntry, atts: sending.map((a) => ({ name: a.name, kind: a.kind, size: a.size, url: a.url })) });
+    const userEl = renderEntry({ ...userEntry, atts: sending.map((a) => ({ ...chipOf(a), url: a.url })) });
     input.value = '';
     send.disabled = true; stop.hidden = false;
     let reply = null; // the assistant entry being streamed, and its element
     const turn = { text: text || sending.map((a) => a.name).join(', '), before: host.snapshot() };
     try {
       const extra = await prepareAttachments(sending, userEntry);
+      const view = userEntry.atts.find((a) => a.name === 'view with references');
+      if (view) userEl.querySelector('.msg-attachments')?.appendChild(attachmentChip({ ...view, url: store.url(view.key, view.type) }, 'sent'));
       await agent.send(text || '(see the attachments)', {
         onText: (delta) => {
           if (!reply) { const entry = { t: 'assistant', text: '' }; reply = { entry, el: push(entry) }; }
@@ -523,6 +555,7 @@ export function initChat({ root, host, onChange = () => {} }) {
   root.querySelector('.chat-new').addEventListener('click', () => {
     if (entries.length && !confirm('Start a new chat? This conversation and its undo points are cleared (a saved project file keeps its copy until you save it again).')) return;
     reset();
+    host.clearReferences?.();
     for (const a of attached) if (a.url) URL.revokeObjectURL(a.url);
     attached = []; renderAttached();
     persist();
@@ -555,7 +588,7 @@ export function initChat({ root, host, onChange = () => {} }) {
   showEmpty();
 
   return {
-    openSettings, ask, offerDownload,
+    openSettings, ask, offerDownload, addReference,
     /** Called by the tab bar when the Assistant tab is shown. */
     focus: () => { showEmpty(); input.focus(); },
     get busy() { return agent.busy; },

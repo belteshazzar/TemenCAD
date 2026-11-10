@@ -14,6 +14,7 @@ import { Builder } from './build.js';
 import { PartsPanel } from './parts-panel.js';
 import { initMenus } from './menu.js';
 import { initChat } from './chat.js';
+import { Pointer } from './pointer.js';
 import { DEFAULT_SCRIPT } from './default-script.js';
 import { Project, ENTRY, ACCEPTED_EXT, normalizePath, extOf } from './project.js';
 import { Tabs } from './tabs.js';
@@ -114,6 +115,7 @@ function projectChanged({ run = true } = {}) {
   if (run) scheduleRun();
 }
 
+let pointer = null; // pointing and measuring in the 3D view (pointer.js), made once the chat exists
 let chat = null; // the assistant panel, made below (the file manager asks it for the conversation to save)
 const files = new FileManager({
   getProject: () => project,
@@ -355,6 +357,11 @@ chat = initChat({
     ...appActions(),
   },
 });
+pointer = new Pointer(viewer, {
+  root: document.getElementById('viewer-pane'),
+  onReference: (ref) => { chat.addReference(ref); tabs.select('assistant'); },
+});
+
 // The conversation kept in this browser comes back after a reload; a project opened from a link starts a new one.
 if (hashProject) chat.forgetLocal();
 else chat.restoreLocal().then(() => files.rebase());
@@ -422,6 +429,9 @@ function appActions() {
       return { done: true, file: n, bytes: content.byteLength, import_line: `import ${n.replace(/\.[^.]*$/, '').replace(/\W+(\w)?/g, (_, c) => (c ? c.toUpperCase() : '')).replace(/^\d/, '_$&') || 'image'} from './${n}';`, files: project.names() };
     },
     canExport: () => !!(lastReport?.ok && lastMeshes?.length),
+    referenceSnapshot: () => pointer?.snapshot(),
+    clearReferences: () => pointer?.clearRefs(),
+    removeReference: (id) => pointer?.removeRef(id),
     download: (format) => exportNow(format, baseName()),
     appState: () => ({
       ...projectInfo(), files: undefined,
