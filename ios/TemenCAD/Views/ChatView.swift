@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ChatView: View {
     @EnvironmentObject var app: AppModel
@@ -15,6 +16,11 @@ struct ChatView: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var takingPhoto = false
     @State private var changesFor: ChatEntry?
+    /// The Files sheet: for attaching to the next message, or answering the assistant's add_files.
+    @State private var importing: ImportPurpose?
+    @State private var dropTargeted = false
+
+    enum ImportPurpose { case attach, request }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,6 +48,19 @@ struct ChatView: View {
             }
             Divider()
             composer
+        }
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                    .overlay(Text("Drop photos, PDFs or project files").font(.callout).padding(8)
+                        .background(.regularMaterial, in: Capsule()))
+                    .padding(6).allowsHitTesting(false)
+            }
+        }
+        .onDrop(of: [.item], isTargeted: $dropTargeted) { providers in
+            guard app.hasKey else { return false }
+            Task { app.attach(files: await Self.load(providers)) }
+            return true
         }
         .sheet(item: $enlarged) { e in
             VStack {
@@ -121,6 +140,16 @@ struct ChatView: View {
                             }
                         }
                     }
+                }
+                if let files = e.files, !files.isEmpty {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        ForEach(Array(files.enumerated()), id: \.offset) { _, name in
+                            let pdf = (name as NSString).pathExtension.lowercased() == "pdf"
+                            Label(pdf ? name : "\(name), added to the project", systemImage: pdf ? "doc.richtext" : "doc.badge.plus")
+                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 if let refs = e.references, !refs.isEmpty {
                     VStack(alignment: .trailing, spacing: 4) {
@@ -243,17 +272,62 @@ struct ChatView: View {
         }
     }
 
-    private var photoButton: some View {
-        Menu {
+    private var attachButton: some View {
+        let photosFull = app.pendingPhotos.count >= AppModel.maxPhotosPerMessage
+        return Menu {
             Button { choosingPhotos = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
+                .disabled(photosFull)
             if CameraPicker.isAvailable {
                 Button { takingPhoto = true } label: { Label("Take Photo", systemImage: "camera") }
+                    .disabled(photosFull)
             }
+            Button { importing = .attach } label: { Label("Choose Files…", systemImage: "folder") }
         } label: {
-            Image(systemName: "photo.badge.plus").font(.title3)
+            Image(systemName: "paperclip").font(.title3)
         }
-        .disabled(!app.hasKey || app.pendingPhotos.count >= AppModel.maxPhotosPerMessage)
-        .accessibilityLabel("Attach a photo")
+        .disabled(!app.hasKey)
+        .accessibilityLabel("Attach photos or files")
+    }
+
+    /// PDFs (for the assistant) and project files (added with the message), each removable.
+    private var pendingFiles: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(app.pendingFiles) { f in
+                    HStack(spacing: 6) {
+                        Text(f.extensionLabel).font(.caption2.bold().monospaced()).foregroundStyle(.white)
+                            .padding(.horizontal, 4).padding(.vertical, 2)
+                            .background(f.kind == .pdf ? Color.red.opacity(0.8) : Color.accentColor, in: RoundedRectangle(cornerRadius: 4))
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(f.name).font(.caption).lineLimit(1)
+                            Text(f.kind == .pdf ? "for the assistant · \(f.sizeLabel)" : app.replaces(f) ? "replaces the project's file" : "adds to the project")
+                                .font(.caption2).foregroundStyle(app.replaces(f) ? .orange : .secondary)
+                        }
+                        Button { app.pendingFiles.removeAll { $0.id == f.id } } label: { Image(systemName: "xmark").font(.caption2.bold()) }
+                            .accessibilityLabel("Remove \(f.name)")
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                }
+            }
+            .padding(.horizontal, 12).padding(.top, 8)
+        }
+    }
+
+    /// add_files: the assistant's reason, with the button that opens Files.
+    private func fileRequestCard(_ reason: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(reason, systemImage: "folder.badge.plus").font(.callout)
+            HStack {
+                Button("Add files…") { importing = .request }.buttonStyle(.borderedProminent)
+                Button("Cancel") { app.answerFileRequest(nil) }.buttonStyle(.bordered)
+            }
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 12).padding(.top, 8)
     }
 
     private var pendingRefs: some View {
@@ -282,13 +356,45 @@ struct ChatView: View {
         VStack(spacing: 0) {
             if !app.pendingRefs.isEmpty { pendingRefs }
             if !app.pendingPhotos.isEmpty { pendingPhotos }
+            if !app.pendingFiles.isEmpty { pendingFiles }
+            if let reason = app.fileRequest { fileRequestCard(reason) }
             composerRow
         }
+        .fileImporter(isPresented: Binding(get: { importing != nil }, set: { if !$0 { importing = nil } }),
+                      allowedContentTypes: [.data], allowsMultipleSelection: true) { [importing] result in
+            guard case .success(let urls) = result else { return }
+            let files = Self.read(urls)
+            if importing == .request { app.answerFileRequest(files) } else { app.attach(files: files) }
+        }
+    }
+
+    /// Files picked in the Files sheet (outside the sandbox, so each is opened with its security scope).
+    static func read(_ urls: [URL]) -> [(name: String, data: Data)] {
+        urls.compactMap { url in
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            return (try? Data(contentsOf: url)).map { (url.lastPathComponent, $0) }
+        }
+    }
+
+    /// Files dropped on the chat (iPad: from Files or another app), with their names where the source gives one.
+    static func load(_ providers: [NSItemProvider]) async -> [(name: String, data: Data)] {
+        var out: [(name: String, data: Data)] = []
+        for p in providers {
+            guard let type = p.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .data) == true }) ?? p.registeredTypeIdentifiers.first else { continue }
+            let data: Data? = await withCheckedContinuation { c in _ = p.loadDataRepresentation(forTypeIdentifier: type) { d, _ in c.resume(returning: d) } }
+            guard let data else { continue }
+            let ext = UTType(type)?.preferredFilenameExtension
+            var name = p.suggestedName ?? "dropped"
+            if let ext, (name as NSString).pathExtension.isEmpty { name += "." + ext }
+            out.append((name, data))
+        }
+        return out
     }
 
     private var composerRow: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            photoButton.padding(.bottom, 4)
+            attachButton.padding(.bottom, 4)
             TextField(app.hasKey ? "Describe a change" : "Add your API key in Settings", text: $draft, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.roundedBorder)
@@ -299,7 +405,7 @@ struct ChatView: View {
                 Button("Stop") { app.stop() }.buttonStyle(.bordered)
             } else {
                 Button(action: sendDraft) { Image(systemName: "arrow.up.circle.fill").font(.title2) }
-                    .disabled((draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && app.pendingPhotos.isEmpty && app.pendingRefs.isEmpty) || !app.hasKey)
+                    .disabled((draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && app.pendingPhotos.isEmpty && app.pendingRefs.isEmpty && app.pendingFiles.isEmpty) || !app.hasKey)
                     .accessibilityLabel("Send")
             }
         }

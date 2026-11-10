@@ -35,6 +35,12 @@ straight from the device to api.anthropic.com, billed to the key's account).
   downscaled to 1568 px on the long edge as in the web app, and is kept full size in
   `Current/attachments/n.jpg` so the assistant can put it in the project with `save_attachment` (for a
   lithophane or heightmap). A new chat starts the numbering again.
+- Files: the paperclip's Choose Files… (or a drop on the chat, on iPad) attaches PDFs, which go to the
+  assistant as document blocks numbered with the photos (kept in `Current/attachments/n.pdf`, up to 30 MB
+  per message), and project files (.stl, .svg, .ttf, .otf, scripts), which are added to the project with
+  the message, so the reply's Undo takes them out; a chip says when one replaces a file. Images picked
+  there go as photos. The assistant can ask for files with `add_files`: a card above the message field
+  opens Files and returns the names added.
 - Undo per reply: a reply that changed the project gets Undo and Changes buttons and a summary
   (`main.js +4 −3`). Undo first keeps the current state, so the event line it adds can Put back (and then
   Undo again); the assistant is told with the next message (`<app_events>`, as in the web app). Changes
@@ -91,13 +97,13 @@ xcrun simctl launch booted com.temencad.app \
 `-TemenAPIBase` points the client at another server, `-TemenAPIKey` supplies a key, and
 `-TemenAutoPrompt` sends a message at launch; `-TemenOpen /path/a.temen` opens a project and
 `-TemenSaveTo /path/b.temen` saves it, without the system file sheets (the simulator can read and write
-the Mac's paths); `-TemenShare stl` (or `3mf`) exports and opens the share sheet; `-TemenAttach /path/photo.jpg` attaches a
-photo to the next message; `-TemenThen "undo,putback,undoagain,changes"` runs those steps once the turn is over (also `point`, `measure`, `tap:0.5:0.6` at fractions of the view,
+the Mac's paths); `-TemenShare stl` (or `3mf`) exports and opens the share sheet; `-TemenAttach "/a/photo.jpg|/b/drawing.pdf|/c/bolt.stl"` attaches
+those files to the next message as if picked in the chat; `-TemenAddFiles "/a/font.ttf"` answers the assistant's add_files with those files (`none` cancels); `-TemenThen "undo,putback,undoagain,changes"` runs those steps once the turn is over (also `point`, `measure`, `tap:0.5:0.6` at fractions of the view,
 `addmeasure`, `send`). None of them exist in release builds.
 
 ## Not yet
 
-PDFs and other files in the chat, more than one project, showing a
+More than one project, showing a
 conversation saved by the web app, the printer profile, and a Mac or visionOS build. SceneKit is the preview for now: Apple has stopped adding features
 to it in favour of RealityKit, and everything SceneKit touches is in `Views/ModelPreview.swift`, so moving
 is contained.

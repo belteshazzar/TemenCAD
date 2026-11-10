@@ -10,8 +10,8 @@ protocol AgentHost: AnyObject {
     func screenshotForAgent(view: String?) -> Data?
     /// The last build report, for the context sent with each message.
     var lastReport: JSONValue? { get }
-    /// A photo the user attached (attachment n, from 1), full size as JPEG; nil when there is none.
-    func attachment(_ n: Int) -> Data?
+    /// What the user attached (attachment n, from 1): a photo full size as JPEG (pdf false) or a PDF; nil when there is none.
+    func attachment(_ n: Int) -> (data: Data, pdf: Bool)?
     var attachmentCount: Int { get }
     /// The app as tools: the render sheet, export, the view, the plate, the parts' display.
     func renderViews(views: [String], section: (axis: String, value: Double)?, save: Bool) async throws -> Data
@@ -21,6 +21,8 @@ protocol AgentHost: AnyObject {
     func setPartDisplay(names: [String]?, visible: Bool?, ghost: Bool?, solo: Bool, reset: Bool) throws -> JSONValue
     /// The app's state for each message: the plate, wireframe, each part's display.
     var appState: JSONValue { get }
+    /// add_files: asks the user to add files to the project (a card in the chat with `reason`), waits for them.
+    func requestFiles(reason: String) async -> JSONValue
 }
 
 /// The modelling assistant: the same job as the web app's (src/agent.js), with the tools a phone needs.
@@ -61,7 +63,8 @@ final class Agent {
         - The project's files and the last build report are included with every user message. Read them before deciding what to change. main.js is the entry script; other .js files are ES modules it imports (`import { lid } from './lid.js'`).
         - Make the smallest edit that does the job with edit_script (exact-match replacement; pass `file` for anything other than main.js). Use write_script only for new models, new files or large rewrites; remove_file deletes a script file.
         - After every change call run_model and read the report. Fix any error or warning it reports (they include line numbers) before replying. run_model also shows the result in the user's preview.
-        - The user can attach photos to a message (labelled Attachment 1, 2, … in order across the conversation), often taken with the phone's camera. Use them as references: a broken part next to a ruler, a hand sketch with dimensions, a drawing. Read dimensions from a drawing's labels first; when you scale from a photo, say which reference you used (a ruler, a coin, a known part) and how sure you are, and ask for the one or two measurements that matter most (hole spacing, mating diameters) rather than guessing them. To use a photo in the model itself (lithophane, heightmap), save_attachment puts it in the project as a .jpg to import from main.js (`import photo from './photo.jpg'`).
+        - The user can attach photos and PDFs to a message (labelled Attachment 1, 2, … in order across the conversation), photos often taken with the phone's camera. Use them as references: a broken part next to a ruler, a hand sketch with dimensions, a drawing or datasheet. Read dimensions from a drawing's labels first; when you scale from a photo, say which reference you used (a ruler, a coin, a known part) and how sure you are, and ask for the one or two measurements that matter most (hole spacing, mating diameters) rather than guessing them. To use a photo in the model itself (lithophane, heightmap), save_attachment puts it in the project as a .jpg to import from main.js (`import photo from './photo.jpg'`); PDFs cannot be saved.
+        - Fonts, meshes (.stl) and SVG drawings can only be added by the user: they can attach them to a message (the message's <app_events> lists what was added), or you can ask with add_files.
         - The user can point at surfaces in the 3D view ("make this thicker"): such a message carries Reference n blocks (part name, which way the face points and where its plane is, its extent and area; or a hole / boss / fillet with its diameter or radius and axis) and a snapshot of their view with each reference highlighted in its colour. Work out which line of the script made that surface (the part name, the face's plane and extent against the shapes' sizes and positions) before editing, and say which feature you took it to be; if two features could match, ask. They can also measure between two points (distances, and the gap between parallel faces); trust those numbers, they come from the built mesh.
         - Use render_views when the shape of the result matters and the build report can't confirm it (first version of a new model, visual arrangement, fit against a ghost reference, anything you are unsure of): it returns labelled views (part names, sizes, scale bar, axes) with ghosts translucent, and can cut the model open with a section. take_screenshot gives the live 3D view instead. Both images also appear in the chat as thumbnails the user can open, so you can refer to them.
         - set_view, set_plate and set_part_display change what the user sees (the view direction and wireframe, a printer's build plate with a fit check, which parts show or are ghosts); export_model puts an STL or 3MF in the chat with a Share button.
@@ -113,10 +116,12 @@ final class Agent {
         tool("set_part_display", "Show, hide, ghost or solo parts in the view. parts: part names (default all). visible / ghost set those flags; solo: true shows only the named parts; reset: true goes back to what the script says. Display only: it does not edit the script, and hidden or ghost parts are left out of exports.",
              ["parts": ["type": "array", "items": ["type": "string"], "description": "Part names (default: every part)"],
               "visible": ["type": "boolean"], "ghost": ["type": "boolean"], "solo": ["type": "boolean"], "reset": ["type": "boolean"]]),
-        tool("save_attachment", "Add a photo the user attached to a message (Attachment n) to the project as a .jpg file, e.g. for lithophane() or heightmap(); then import it from main.js.",
+        tool("save_attachment", "Add a photo the user attached to a message (Attachment n) to the project as a .jpg file, e.g. for lithophane() or heightmap(); then import it from main.js. PDFs cannot be saved.",
              ["attachment": ["type": "integer", "description": "The attachment number from the message"],
               "name": ["type": "string", "description": "File name in the project (default photo-n.jpg); .jpg is added if missing"],
               "replace": ["type": "boolean", "description": "Replace a project file of the same name"]], required: ["attachment"]),
+        tool("add_files", "Ask the user to add files from their phone (images for heightmap/lithophane, fonts for text, STL meshes, SVG drawings, scripts). Puts an \"Add files\" card in the chat with your reason, waits for the user and returns the names added; import them from main.js.",
+             ["reason": ["type": "string", "description": "Shown on the card: what to add and why, e.g. \"Add the photo for the lithophane (.png or .jpg)\""]], required: ["reason"]),
     ]
 
     /// Context appended to every user message so the model always sees the live project.
@@ -200,10 +205,12 @@ final class Agent {
             } catch { return .string("Error: \(error)") }
         case "save_attachment":
             guard let n = input["attachment"]?.number.map({ Int($0) }) else { return "Error: attachment (a number) is required." }
-            guard let jpeg = host.attachment(n) else {
+            guard let att = host.attachment(n) else {
                 let count = host.attachmentCount
                 return .string("Error: no attachment \(n); there \(count == 1 ? "is 1" : "are \(count)").")
             }
+            if att.pdf { return .string("Error: attachment \(n) is a PDF; only photos can be saved to the project.") }
+            let jpeg = att.data
             var name = (input["name"]?.string ?? "photo-\(n)").trimmingCharacters(in: .whitespaces)
             let ext = (name as NSString).pathExtension.lowercased()
             if ext != "jpg" && ext != "jpeg" { name = (ext.isEmpty ? name : (name as NSString).deletingPathExtension) + ".jpg" }
@@ -213,6 +220,8 @@ final class Agent {
             }
             host.project.files[name] = jpeg
             return .string("Saved attachment \(n) as \(name) (JPEG). Import it from main.js: import photo from './\(name)';")
+        case "add_files":
+            return .string(await host.requestFiles(reason: input["reason"]?.string ?? "").text(pretty: true))
         default:
             return .string("Error: unknown tool \(name).")
         }

@@ -65,12 +65,21 @@ enum ProjectStore {
     static var chatFile: URL { folder.appendingPathComponent("chat.json") }
     static var extrasFolder: URL { folder.appendingPathComponent("extras", isDirectory: true) }
     static var nameFile: URL { folder.appendingPathComponent("name.txt") }
-    /// Photos attached in the conversation, full size: attachment n is attachments/n.jpg.
+    /// Photos and PDFs attached in the conversation, full size: attachment n is attachments/n.jpg or n.pdf.
     static var attachmentsFolder: URL { folder.appendingPathComponent("attachments", isDirectory: true) }
-    static func attachmentURL(_ n: Int) -> URL { attachmentsFolder.appendingPathComponent("\(n).jpg") }
+    static let attachmentExtensions = ["jpg", "pdf"]
+    static func attachmentURL(_ n: Int, ext: String) -> URL { attachmentsFolder.appendingPathComponent("\(n).\(ext)") }
+    /// Attachment n on disk, with its extension; nil when there is none.
+    static func attachment(_ n: Int) -> (url: URL, ext: String)? {
+        for ext in attachmentExtensions {
+            let url = attachmentURL(n, ext: ext)
+            if FileManager.default.fileExists(atPath: url.path) { return (url, ext) }
+        }
+        return nil
+    }
     static func attachmentCount() -> Int {
         var n = 0
-        while FileManager.default.fileExists(atPath: attachmentURL(n + 1).path) { n += 1 }
+        while attachment(n + 1) != nil { n += 1 }
         return n
     }
 

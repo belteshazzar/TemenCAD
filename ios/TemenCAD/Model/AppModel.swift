@@ -12,6 +12,8 @@ struct ChatEntry: Identifiable, Codable, Equatable {
     var image: Data? = nil
     /// Thumbnails of the photos attached to a user message.
     var photos: [Data]? = nil
+    /// Names of the PDFs and project files attached to a user message.
+    var files: [String]? = nil
     /// Labels of the faces pointed at and the measurements sent with a user message.
     var references: [String]? = nil
     /// .reply: the actions under a turn. `text` is the user's message it answered.
@@ -58,6 +60,11 @@ final class AppModel: ObservableObject, AgentHost {
     @Published var pendingPhotos: [PhotoAttachment] = []
     /// Faces pointed at and measurements taken in the 3D view, waiting to go with the next message.
     @Published var pendingRefs: [ViewReference] = []
+    /// PDFs and project files waiting to go with the next message.
+    @Published var pendingFiles: [FileAttachment] = []
+    /// add_files: the assistant's reason while it waits for the user to add files.
+    @Published private(set) var fileRequest: String?
+    private var fileRequestReply: CheckedContinuation<[(name: String, data: Data)]?, Never>?
     static let maxPhotosPerMessage = 5
     @Published var apiKey: String { didSet { Keychain.write(apiKey); agent.client.apiKey = apiKey } }
     @Published var model: String { didSet { UserDefaults.standard.set(model, forKey: "model"); agent.model = model } }
@@ -327,8 +334,8 @@ final class AppModel: ObservableObject, AgentHost {
 
     func send(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let photos = pendingPhotos, refs = pendingRefs
-        guard !text.isEmpty || !photos.isEmpty || !refs.isEmpty, !busy, hasKey else { return }
+        let photos = pendingPhotos, refs = pendingRefs, files = pendingFiles
+        guard !text.isEmpty || !photos.isEmpty || !refs.isEmpty || !files.isEmpty, !busy, hasKey else { return }
         var blocks: [JSONValue] = []
         // faces pointed at: the view as the user sees it, each highlighted in its colour, then each described
         // (worded as the web app words them, src/chat.js)
@@ -350,7 +357,7 @@ final class AppModel: ObservableObject, AgentHost {
             let n = ProjectStore.attachmentCount() + 1
             do {
                 try FileManager.default.createDirectory(at: ProjectStore.attachmentsFolder, withIntermediateDirectories: true)
-                try photo.original.write(to: ProjectStore.attachmentURL(n), options: .atomic)
+                try photo.original.write(to: ProjectStore.attachmentURL(n, ext: "jpg"), options: .atomic)
             } catch {
                 entries.append(ChatEntry(kind: .error, text: "Could not keep the photo: \(error.localizedDescription)"))
                 return
@@ -358,16 +365,37 @@ final class AppModel: ObservableObject, AgentHost {
             blocks.append(["type": "text", "text": .string("Attachment \(n): photo (image, \(photo.sizeLabel))")])
             blocks.append(["type": "image", "source": ["type": "base64", "media_type": "image/jpeg", "data": .string(photo.shown.base64EncodedString())]])
         }
+        // each PDF: kept as attachment n, shown to the model as a document block (src/chat.js words it the same)
+        for pdf in files where pdf.kind == .pdf {
+            let n = ProjectStore.attachmentCount() + 1
+            do {
+                try FileManager.default.createDirectory(at: ProjectStore.attachmentsFolder, withIntermediateDirectories: true)
+                try pdf.data.write(to: ProjectStore.attachmentURL(n, ext: "pdf"), options: .atomic)
+            } catch {
+                entries.append(ChatEntry(kind: .error, text: "Could not keep the PDF: \(error.localizedDescription)"))
+                return
+            }
+            blocks.append(["type": "text", "text": .string("Attachment \(n): \(pdf.name) (PDF)")])
+            blocks.append(["type": "document", "title": .string(pdf.name),
+                           "source": ["type": "base64", "media_type": "application/pdf", "data": .string(pdf.data.base64EncodedString())]])
+        }
         pendingPhotos = []
         pendingRefs = []
+        pendingFiles = []
         preview.clearPicks()
-        let message = !text.isEmpty ? text : !photos.isEmpty ? (photos.count == 1 ? "(a photo)" : "(\(photos.count) photos)") : "(see the references)"
+        let projectFiles = files.filter { $0.kind == .project }
+        let message = !text.isEmpty ? text : refs.isEmpty || !photos.isEmpty || !files.isEmpty ? "(see the attachments)" : "(see the references)"
         var thumbs = photos.map(\.thumbnail)
         if let shot, let img = UIImage(data: shot), let small = PhotoAttachment(image: img)?.thumbnail { thumbs.insert(small, at: 0) }
-        entries.append(ChatEntry(kind: .user, text: text, photos: thumbs.isEmpty ? nil : thumbs,
+        entries.append(ChatEntry(kind: .user, text: text, photos: thumbs.isEmpty ? nil : thumbs, files: files.isEmpty ? nil : files.map(\.name),
                                  references: refs.isEmpty ? nil : refs.map(\.label)))
         busy = true
         let before = project.files, turnGeneration = generation
+        // project files go in inside the turn, so the reply's Undo takes them out again
+        if !projectFiles.isEmpty {
+            let added = addToProject(projectFiles.map { ($0.name, $0.data) })
+            agent.note("The user added these files to the project with this message: \(added.joined(separator: ", ")). Import them from main.js to use them.")
+        }
         task = Task {
             var replyIndex: Int?
             do {
@@ -464,7 +492,10 @@ final class AppModel: ObservableObject, AgentHost {
     /// The latest reply row: the one that carries the STL / 3MF buttons.
     var latestReplyID: UUID? { entries.last { $0.kind == .reply }?.id }
 
-    func stop() { task?.cancel() }
+    func stop() {
+        answerFileRequest(nil)
+        task?.cancel()
+    }
 
     func newChat() {
         stop()
@@ -472,6 +503,7 @@ final class AppModel: ObservableObject, AgentHost {
         entries = []
         pendingPhotos = []
         pendingRefs = []
+        pendingFiles = []
         preview.clearPicks()
         checkpoints.clear()
         try? FileManager.default.removeItem(at: Self.exportsFolder)
@@ -489,7 +521,10 @@ final class AppModel: ObservableObject, AgentHost {
 
     // MARK: - Photos
 
-    func attachment(_ n: Int) -> Data? { n >= 1 ? try? Data(contentsOf: ProjectStore.attachmentURL(n)) : nil }
+    func attachment(_ n: Int) -> (data: Data, pdf: Bool)? {
+        guard n >= 1, let a = ProjectStore.attachment(n), let d = try? Data(contentsOf: a.url) else { return nil }
+        return (d, a.ext == "pdf")
+    }
     var attachmentCount: Int { ProjectStore.attachmentCount() }
 
     /// Adds photos to the next message (at most five per message); false for data that is not an image.
@@ -508,6 +543,87 @@ final class AppModel: ObservableObject, AgentHost {
     func removeReference(_ id: Int) {
         pendingRefs.removeAll { $0.id == id }
         preview.removePick(id)
+    }
+
+    /// Files picked or dropped in the chat: photos to the assistant, PDFs to the assistant, the rest to the project.
+    func attach(files: [(name: String, data: Data)]) {
+        var problems: [String] = []
+        for f in files {
+            switch FileAttachment.classify(name: f.name, data: f.data) {
+            case .photo:
+                if pendingPhotos.count >= Self.maxPhotosPerMessage { problems.append("\(f.name): at most \(Self.maxPhotosPerMessage) photos per message."); continue }
+                if let p = PhotoAttachment(imageData: f.data) { pendingPhotos.append(p) } else { problems.append("\(f.name) is not a photo the app can read.") }
+            case .file(let a):
+                if a.kind == .pdf {
+                    let total = pendingFiles.filter { $0.kind == .pdf }.reduce(a.data.count) { $0 + $1.data.count }
+                    if total > FileAttachment.maxPDFBytes { problems.append("\(a.name): the PDFs in one message must stay under 30 MB in all."); continue }
+                }
+                pendingFiles.removeAll { $0.kind == .project && $0.name == a.name } // the same file twice: the later one
+                pendingFiles.append(a)
+            case .error(let e):
+                problems.append(e)
+            }
+        }
+        if !problems.isEmpty { entries.append(ChatEntry(kind: .error, text: problems.joined(separator: "\n"))) }
+    }
+
+    /// Whether a pending project file replaces one the project already has (its chip says so).
+    func replaces(_ f: FileAttachment) -> Bool {
+        f.kind == .project && FileAttachment.projectName(f.name).map { project.files[$0] != nil } == true
+    }
+
+    /// Puts files in the project under their own names (replacing any of the same name); returns the names.
+    @discardableResult
+    private func addToProject(_ files: [(name: String, data: Data)]) -> [String] {
+        var added: [String] = []
+        for f in files {
+            guard let name = FileAttachment.projectName(f.name) else { continue }
+            project.files[name] = f.data
+            added.append(name)
+        }
+        return added
+    }
+
+    // MARK: - add_files
+
+    func requestFiles(reason: String) async -> JSONValue {
+        answerFileRequest(nil) // never two at once
+        fileRequest = reason.isEmpty ? "Add files to the project." : reason
+        #if DEBUG
+        // -TemenAddFiles "/a/bolt.stl|/b/logo.svg" answers add_files with these files ("none" cancels)
+        if let paths = UserDefaults.standard.string(forKey: "TemenAddFiles"), !paths.isEmpty {
+            Task {
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                answerFileRequest(paths == "none" ? nil : paths.split(separator: "|").compactMap { p in
+                    let url = URL(fileURLWithPath: String(p))
+                    return (try? Data(contentsOf: url)).map { (url.lastPathComponent, $0) }
+                })
+            }
+        }
+        #endif
+        let picked = await withCheckedContinuation { fileRequestReply = $0 }
+        guard let picked, !picked.isEmpty else { return ["done": false, "reason": "cancelled or no files chosen"] }
+        var ok: [(name: String, data: Data)] = [], skipped: [String] = []
+        for f in picked {
+            let ext = (f.name as NSString).pathExtension.lowercased()
+            if FileAttachment.projectExtensions.contains(ext) || FileAttachment.projectImageExtensions.contains(ext) { ok.append(f) } else { skipped.append(f.name) }
+        }
+        let added = addToProject(ok)
+        if !added.isEmpty { entries.append(ChatEntry(kind: .status, text: "Added \(added.joined(separator: ", ")) to the project.")) }
+        if !skipped.isEmpty {
+            entries.append(ChatEntry(kind: .error, text: "Not added (the project takes \((FileAttachment.projectExtensions + FileAttachment.projectImageExtensions).map { "." + $0 }.joined(separator: ", ")) files): \(skipped.joined(separator: ", "))"))
+        }
+        var r: JSONValue = ["done": .bool(!added.isEmpty), "added": .array(added.map(JSONValue.string)), "files": .array(project.names.map(JSONValue.string))]
+        if !skipped.isEmpty { r["skipped"] = .array(skipped.map(JSONValue.string)); r["note"] = "Those types cannot go in the project." }
+        return r
+    }
+
+    /// The user's answer to add_files: the files they picked, or nil for Cancel.
+    func answerFileRequest(_ files: [(name: String, data: Data)]?) {
+        fileRequest = nil
+        let reply = fileRequestReply
+        fileRequestReply = nil
+        reply?.resume(returning: files)
     }
 
     func attach(image: UIImage) {
@@ -575,6 +691,7 @@ final class AppModel: ObservableObject, AgentHost {
         "read_script": "Reading the script", "edit_script": "Editing the script", "write_script": "Writing the script",
         "remove_file": "Removing a file", "run_model": "Building the model", "take_screenshot": "Taking a screenshot",
         "save_attachment": "Adding the photo to the project",
+        "add_files": "Asking for files",
         "rename_file": "Renaming a file", "render_views": "Rendering views", "export_model": "Exporting the model",
         "set_view": "Changing the view", "set_plate": "Setting the build plate", "set_part_display": "Changing which parts show",
     ]
@@ -620,8 +737,12 @@ final class AppModel: ObservableObject, AgentHost {
         if let f = defaults.string(forKey: "TemenShare"), let format = ExportFormat(rawValue: f) {
             Task { await rebuild(); share(format) }
         }
-        if let path = defaults.string(forKey: "TemenAttach"), !path.isEmpty, let d = try? Data(contentsOf: URL(fileURLWithPath: path)) {
-            attach(imageData: [d])
+        // -TemenAttach "/a/photo.jpg|/b/drawing.pdf|/c/bolt.stl": attached as if picked in the chat
+        if let paths = defaults.string(forKey: "TemenAttach"), !paths.isEmpty {
+            attach(files: paths.split(separator: "|").compactMap { p in
+                let url = URL(fileURLWithPath: String(p))
+                return (try? Data(contentsOf: url)).map { (url.lastPathComponent, $0) }
+            })
         }
         if let p = defaults.string(forKey: "TemenAutoPrompt"), !p.isEmpty { send(p) }
         // -TemenThen "undo,putback,undoagain,changes" (undo), "point,tap:0.5:0.5,measure,tap:..,tap:..,addmeasure,send"
