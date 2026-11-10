@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var showParts = false
     @State private var showConsole = false
     @State private var customPlate = false
+    @State private var renderViews = false
     @FocusState private var typing: Bool
 
     var body: some View {
@@ -40,11 +41,12 @@ struct ContentView: View {
         .sheet(isPresented: $showParts) { PartsView().environmentObject(app).presentationDetents([.medium, .large]) }
         .sheet(isPresented: $showConsole) { ConsoleView().environmentObject(app).presentationDetents([.medium, .large]) }
         .sheet(isPresented: $customPlate) { CustomPlateView().environmentObject(app).presentationDetents([.medium]) }
+        .sheet(isPresented: $renderViews) { RenderViewsView().environmentObject(app) }
         .sheet(item: $app.sharing) { file in
             ShareSheet(url: file.url).presentationDetents([.medium, .large]).ignoresSafeArea()
         }
         #if DEBUG
-        .onChange(of: app.debugSheet) { _, s in showParts = s == "parts"; showConsole = s == "console" }
+        .onChange(of: app.debugSheet) { _, s in showParts = s == "parts"; showConsole = s == "console"; renderViews = s == "render" }
         #endif
         .onAppear {
             if !app.hasKey { showSettings = true }
@@ -70,6 +72,7 @@ struct ContentView: View {
                         .accessibilityLabel("Parts")
                     Menu {
                         Section("View") {
+                            Button { app.preview.resetView(plate: app.plate) } label: { Label("Reset view", systemImage: "scope") }
                             ForEach(Agent.views, id: \.self) { v in Button(v.capitalized) { app.preview.frame(view: v) } }
                         }
                         Toggle("Wireframe", isOn: Binding(get: { app.preview.wireframe }, set: { app.preview.wireframe = $0; app.objectWillChange.send() }))
@@ -80,8 +83,10 @@ struct ContentView: View {
                                 ForEach(Plate.presets, id: \.id) { p in Text(p.label).tag(p.id) }
                             }
                         }
+                        Button { renderViews = true } label: { Label("Render views…", systemImage: "photo.on.rectangle.angled") }
+                            .disabled(app.console?.ok != true)
                     } label: { Image(systemName: "cube") }
-                    .accessibilityLabel("View, wireframe and plate")
+                    .accessibilityLabel("View, wireframe, plate and render")
                     Button { expanded.toggle() } label: {
                         Image(systemName: expanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                     }

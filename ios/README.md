@@ -47,7 +47,9 @@ straight from the device to api.anthropic.com, billed to the key's account).
   within 12 pt snap); the panel shows the distance, |Δx| |Δy| |Δz|, the gap between parallel faces, and
   Add to message. The surface finding and every word sent are the core's (`TemenPicker`), the same as the
   web app's; the message carries a snapshot of the view with the picks highlighted, as on the web.
-- Plate, Parts and console: the cube menu has the views, Wireframe and Plate (the web presets or a custom
+- Plate, Parts and console: the cube menu has Reset view (the plate filling the view when one is shown, else
+  the model, as on the web), the views, Wireframe, Render views… (the web dialog: views, a section, the size of
+  each view and labels; the core draws the PNG, which can be shared) and Plate (the web presets or a custom
   size; a red note under the view says what does not fit). The layers button opens the Parts list: show
   or hide each part, make it a ghost, solo it (also a double tap), share it alone as STL, show all, hide
   all, or go back to what the script says; the choices survive rebuilds and decide what is exported, as on

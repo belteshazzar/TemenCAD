@@ -157,10 +157,10 @@ final class AppModel: ObservableObject, AgentHost {
     func renderViews(views: [String], section: (axis: String, value: Double)?, save: Bool) async throws -> Data {
         guard let r = lastResult else { throw AppError( "Nothing built yet; call run_model first") }
         let caption = views.joined(separator: ", ") + (section.map { ", cut at \($0.axis) = \(BuildReport.number($0.value))" } ?? "")
-        let png = try await builder.render(parts: r.parts, views: views, width: 640, height: 480, section: section, annotations: r.annotations)
+        let png = try await builder.render(parts: r.parts, views: views, width: 640, height: 480, labels: true, section: section, annotations: r.annotations)
         entries.append(ChatEntry(kind: .image, text: caption, image: png))
         if save {
-            let big = try await builder.render(parts: r.parts, views: views, width: 1280, height: 960, section: section, annotations: r.annotations)
+            let big = try await builder.render(parts: r.parts, views: views, width: 1280, height: 960, labels: true, section: section, annotations: r.annotations)
             let name = "\(project.fileStem)-views.png"
             try keepExport(big, name: name)
             entries.append(ChatEntry(kind: .file, text: "\(name), the views at full size", fileName: name))
@@ -198,7 +198,7 @@ final class AppModel: ObservableObject, AgentHost {
     }
 
     func setView(_ view: String?, wireframe: Bool?) -> JSONValue {
-        if let view { preview.frame(view: view == "reset" ? "iso" : view) }
+        if view == "reset" { preview.resetView(plate: plate) } else if let view { preview.frame(view: view) }
         if let wireframe { preview.wireframe = wireframe }
         return ["view": .string(view ?? "unchanged"), "wireframe": .bool(preview.wireframe)]
     }
@@ -273,6 +273,12 @@ final class AppModel: ObservableObject, AgentHost {
             try data.write(to: url, options: .atomic)
             sharing = SharedFile(url: url)
         } catch { entries.append(ChatEntry(kind: .error, text: "Could not export \(name): \(error)")) }
+    }
+
+    /// The Render views… sheet: the last build's parts as the script made them (as the web app's dialog).
+    func renderSheet(views: [String], width: Int, height: Int, labels: Bool, section: (axis: String, value: Double)?) async throws -> Data {
+        guard let r = lastResult else { throw AppError("Build the model first") }
+        return try await builder.render(parts: r.parts, views: views, width: width, height: height, labels: labels, section: section, annotations: r.annotations)
     }
 
     /// The plate menu: a preset id, "custom" with a size, or "none".
@@ -629,7 +635,8 @@ final class AppModel: ObservableObject, AgentHost {
                     case "undo": if let e = entries.last(where: { $0.reply?.changed == true }) { undo(e) }
                     case "putback", "undoagain": if let e = entries.last(where: { $0.kind == .event }) { reverse(e) }
                     case "changes": if let e = entries.last(where: { $0.reply?.changed == true }) { debugChanges = e }
-                    case "parts", "console": debugSheet = String(step)
+                    case "parts", "console", "render": debugSheet = String(step)
+                    case "reset": preview.resetView(plate: plate)
                     case let s where s.hasPrefix("plate:"): choosePlate(String(s.dropFirst(6)))
                     case let s where s.hasPrefix("ghost:"): setPart(String(s.dropFirst(6)), ghost: true)
                     case let s where s.hasPrefix("hide:"): setPart(String(s.dropFirst(5)), visible: false)

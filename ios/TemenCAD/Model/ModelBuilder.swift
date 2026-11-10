@@ -11,10 +11,10 @@ actor ModelBuilder {
     }
 
     /// The render sheet of built parts (the web app's, pixel for pixel).
-    func render(parts: [TemenPart], views: [String], width: Int, height: Int, section: (axis: String, value: Double)?, annotations: [String]) throws -> Data {
+    func render(parts: [TemenPart], views: [String], width: Int, height: Int, labels: Bool, section: (axis: String, value: Double)?, annotations: [String]) throws -> Data {
         if core == nil { core = try? TemenCore() }
         guard let core else { throw AppError( "The modelling core could not start.") }
-        return try core.render(parts: parts, views: views, width: width, height: height, labels: true, section: section, annotations: annotations)
+        return try core.render(parts: parts, views: views, width: width, height: height, labels: labels, section: section, annotations: annotations)
     }
 }
 

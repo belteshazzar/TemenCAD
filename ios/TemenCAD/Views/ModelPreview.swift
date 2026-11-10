@@ -197,17 +197,35 @@ final class PreviewController: NSObject, ObservableObject {
         gridNode.addChildNode(SCNNode(geometry: geo))
     }
 
+    /// Reset view (the web app's): the plate filling the view when one is shown, otherwise the model; a
+    /// 200 mm space when there is neither.
+    func resetView(plate: Plate?) {
+        if let plate {
+            let w = Float(plate.w) / 2, d = Float(plate.d) / 2
+            frame(view: "iso", box: (SCNVector3(-w, 0, -d), SCNVector3(w, Float(plate.h), d)), target: .zero, margin: 0.75) // the web uses 0.6; a phone's short, wide view needs a little more room for the corners
+        } else if let b = bounds {
+            frame(view: "iso", box: b)
+        } else {
+            frame(view: "iso", box: (SCNVector3(-100, 0, -100), SCNVector3(100, 100, 100)))
+        }
+    }
+
     /// Point the camera from a preset direction with the model filling the view.
     func frame(view name: String) {
+        frame(view: name, box: bounds ?? (SCNVector3(-20, 0, -20), SCNVector3(20, 20, 20)))
+    }
+
+    /// Point the camera from a preset direction at a box (centred, or at `target`) so it fills the view.
+    private func frame(view name: String, box: (SCNVector3, SCNVector3), target: SIMD3<Float>? = nil, margin: Float = 1.15) {
         let dirs: [String: SIMD3<Float>] = ["iso": [8, 7, 10], "top": [0, 1, 0.0001], "bottom": [0, -1, 0.0001],
                                             "front": [0, 0, 1], "back": [0, 0, -1], "left": [-1, 0, 0], "right": [1, 0, 0]]
         let dir = simd_normalize(dirs[name] ?? dirs["iso"]!)
-        let (lo, hi) = bounds ?? (SCNVector3(-20, 0, -20), SCNVector3(20, 20, 20))
-        let center = SIMD3<Float>((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, (lo.z + hi.z) / 2)
+        let (lo, hi) = box
+        let center = target ?? SIMD3<Float>((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, (lo.z + hi.z) / 2)
         let radius = max(simd_length(SIMD3<Float>(hi.x - lo.x, hi.y - lo.y, hi.z - lo.z)) / 2, 1)
         let aspect = Float(max(view.bounds.width, 1) / max(view.bounds.height, 1))
         let vfov = Float(45 * Double.pi / 180), hfov = 2 * atan(tan(vfov / 2) * aspect)
-        let dist = radius * 1.15 / sin(min(vfov, hfov) / 2)
+        let dist = radius * margin / sin(min(vfov, hfov) / 2)
         cameraNode.simdPosition = center + dir * dist
         cameraNode.simdLook(at: center, up: [0, 1, 0], localFront: [0, 0, -1])
         view.pointOfView = cameraNode
