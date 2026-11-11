@@ -287,9 +287,31 @@ that seems right. The core builds against `lamassu.h` alone.
    doubles on every host and in Node (checked on 28,590 strings and 256,195 printed doubles).
    The fdlibm sources also build under GCC with `-Werror` again, so lamassu's own CI is green on
    Linux and Windows for the first time since the kernel arrived.
-13. **Syntax errors are not SyntaxErrors — open.** A module that fails to compile rejects with
-   its message as a plain string, not a `SyntaxError` object, so a build reports
-   "Error: expected expression" where V8 would say "SyntaxError: Unexpected token ';'".
+13. **Errors worded as V8 words them — done.** A module that fails to compile rejected with its
+   message as a plain string, so a build said "Error: expected expression" where V8 says
+   "SyntaxError: Unexpected token ';'", and the runtime's messages were lamassu's own ("cannot
+   read properties of undefined or null"). Now:
+   - a module that does not compile rejects with a `SyntaxError` object, and the compiler's
+     messages are V8's: `Unexpected token ';'`, `Unexpected identifier 'x'`, `Unexpected end of
+     input`, `missing ) after argument list`, `Identifier 'x' has already been declared`,
+     `Invalid regular expression: /(/: Unterminated group`;
+   - runtime errors carry the names and values V8 puts in them: `Cannot read properties of
+     null (reading 'x')`, `Cannot destructure property 'w' of 'a.size' as it is undefined.`,
+     `o is not iterable`, `Cannot access 'W' before initialization`, `Cannot add property 1,
+     object is not extensible`, `number 5 is not a function`, `Method Map.prototype.get called
+     on incompatible receiver 5`; `JSON.parse` says what it expected and where (`Expected ':'
+     after property name in JSON at position 4 (line 1 column 5)`);
+   - assigning to a `const` is a `TypeError` when the assignment runs, not a compile error, and
+     array destructuring of something that is not iterable throws (`const [x] = 5` used to give
+     `undefined`) and takes a Map or Set apart by its entries or values.
+
+   The compiler records the text an error needs (an iterated or destructured expression, a
+   binding read before its declaration) in the call-site table from item 11, so it costs
+   nothing until an error is thrown; the bytecode cache format is version 5. Checked against
+   Node on 140 runtime and 76 syntax cases: the differences left are lamassu's "not supported"
+   messages, a few V8 quirks, and features lamassu does not have (`Object.create`, a global
+   `Function`); lamassu's `docs-site/guide/deviations.md` lists them. An exported `let`/`const`
+   read before its declaration runs is still `undefined` rather than a TDZ error.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
