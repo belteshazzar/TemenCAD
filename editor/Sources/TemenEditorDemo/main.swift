@@ -51,6 +51,11 @@ struct Root: View {
     window.layoutIfNeeded()
 
     func pump(_ t: TimeInterval = 0.05) { RunLoop.main.run(until: Date().addingTimeInterval(t)) }
+    /// Runs the loop until `done` holds or `timeout` passes (a slow CI machine needs more than a fixed wait).
+    func waitUntil(_ timeout: TimeInterval = 3, _ done: () -> Bool) {
+        let end = Date().addingTimeInterval(timeout)
+        while !done() && Date() < end { pump(0.05) }
+    }
     func textView() -> NSTextView {
         func find(_ v: NSView) -> NSTextView? { if let t = v as? NSTextView { return t }; for s in v.subviews { if let t = find(s) { return t } }; return nil }
         return find(window.contentView!)!
@@ -171,15 +176,16 @@ struct Root: View {
     type("const bad = (1 + ;")
     pump(0.1)
     check(a.checkedDiagnostics.isEmpty, "it waits for a pause in typing")
-    pump(0.5)
+    waitUntil { !a.checkedDiagnostics.isEmpty }
     check(a.checkedDiagnostics.first?.line == a.text.components(separatedBy: "\n").firstIndex(where: { $0.contains("+ ;") }).map { $0 + 1 }, "then reports the error at its line")
     check(!clickMarker("const holes"), "the build's error is hidden while the text does not compile")
     check(clickMarker("const bad"), "the check's error has a marker and a message")
     snapshot("6-check")
     textView().cancelOperation(nil)
     a.replaceText(before)
-    pump(0.5)
-    check(a.checkedDiagnostics.isEmpty && clickMarker("const holes"), "fixed: the check clears and the build's error is back")
+    waitUntil { a.checkedDiagnostics.isEmpty }
+    check(a.checkedDiagnostics.isEmpty, "fixed: the check clears")
+    check(clickMarker("const holes"), "and the build's error is back")
     textView().cancelOperation(nil)
     a.checker = nil
     pump()
