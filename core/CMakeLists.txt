@@ -47,7 +47,7 @@ set(LAMASSU_RUNTIME
 list(TRANSFORM LAMASSU_RUNTIME PREPEND ${LAMASSU_DIR}/src/runtime/)
 # the fdlibm-derived math kernel (same bits as Node; see lamassu's Makefile)
 set(LAMASSU_FDLIBM scalbn.c rem_pio2_large.c rem_pio2.c k_sin.c k_cos.c k_tan.c sin.c cos.c tan.c
-  atan.c atan2.c asin.c acos.c exp.c log.c pow.c log2.c log10.c cbrt.c)
+  atan.c atan2.c asin.c acos.c exp.c log.c pow.c log2.c log10.c cbrt.c floatscan.c)
 list(TRANSFORM LAMASSU_FDLIBM PREPEND ${LAMASSU_DIR}/src/runtime/fdlibm/)
 list(APPEND LAMASSU_RUNTIME ${LAMASSU_FDLIBM})
 set(LAMASSU_FRONTEND
