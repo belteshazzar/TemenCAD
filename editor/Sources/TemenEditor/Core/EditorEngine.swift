@@ -37,7 +37,16 @@ final class EditorEngine {
 
     private(set) var completion: CompletionList?
     private var snippet: SnippetSession?
-    private(set) var diagnostics: [(Diagnostic, NSRange)] = []
+    /// The app's diagnostics (a build's), and the checker's (a syntax check as the text is typed), each
+    /// with its range in the text, following edits until replaced.
+    private var given: [(Diagnostic, NSRange)] = []
+    private var checked: [(Diagnostic, NSRange)] = []
+    /// What shows: both, except that while the check finds an error the app's errors are hidden: they come
+    /// from text that has changed since, or are the same error found by the build.
+    var diagnostics: [(Diagnostic, NSRange)] {
+        guard checked.contains(where: { $0.0.severity == .error }) else { return given + checked }
+        return given.filter { $0.0.severity != .error } + checked
+    }
     private(set) var bubble: (line: Int, bubble: DiagnosticBubble)?
 
     private var pending: (range: NSRange, delta: Int)?
@@ -67,7 +76,8 @@ final class EditorEngine {
         s.endEditing()
         overlays = Overlays()
         highlighter.applyAll(configuration.language.tokenize(units), to: s, theme: theme)
-        resolveDiagnostics(diagnostics.map(\.0))
+        given = resolveDiagnostics(given.map(\.0))
+        checked = resolveDiagnostics(checked.map(\.0))
         refreshOverlays()
         host.resetTypingAttributes()
         host.decorationsChanged()
@@ -109,7 +119,8 @@ final class EditorEngine {
         if full { highlighter.applyAll(new, to: s, theme: theme) }
         else { highlighter.apply(new, to: s, edited: edited, delta: p.delta, theme: theme) }
         if var sn = snippet { snippet = sn.adjust(editedRange: edited, delta: p.delta) ? sn : nil; _ = sn }
-        shiftDiagnostics(edited: edited, delta: p.delta)
+        given = shiftDiagnostics(given, edited: edited, delta: p.delta)
+        checked = shiftDiagnostics(checked, edited: edited, delta: p.delta)
         bubble = nil
         if completion != nil || openCompletion { updateCompletion(explicit: completion?.context.explicit ?? false) }
         openCompletion = false
@@ -152,12 +163,24 @@ final class EditorEngine {
     func setText(_ text: String, undoable: Bool) {
         guard let host else { return }
         completion = nil; snippet = nil; bubble = nil
-        let all = NSRange(location: 0, length: host.storage.length)
         if undoable {
-            let keep = min(host.selection.location, (text as NSString).length)
-            perform(TextEdit(range: all, text: text, selection: NSRange(location: keep, length: 0)))
+            // replace only what differs, so the rest keeps its diagnostics, scroll position and cursor
+            let old = units, new = Array(text.utf16)
+            var pre = 0
+            while pre < old.count && pre < new.count && old[pre] == new[pre] { pre += 1 }
+            if pre > 0 && UTF16.isLeadSurrogate(old[pre - 1]) { pre -= 1 }
+            var suf = 0
+            while suf < old.count - pre && suf < new.count - pre && old[old.count - 1 - suf] == new[new.count - 1 - suf] { suf += 1 }
+            if suf > 0 && UTF16.isTrailSurrogate(old[old.count - suf]) { suf -= 1 }
+            let range = NSRange(location: pre, length: old.count - pre - suf)
+            let middle = String(decoding: new[pre..<(new.count - suf)], as: UTF16.self)
+            let cursor = host.selection.location
+            let keep = cursor <= range.location ? cursor
+                : cursor >= range.end ? cursor + new.count - old.count
+                : pre + (new.count - pre - suf)
+            perform(TextEdit(range: range, text: middle, selection: NSRange(location: keep, length: 0)))
         } else {
-            host.storage.replaceCharacters(in: all, with: text)
+            host.storage.replaceCharacters(in: NSRange(location: 0, length: host.storage.length), with: text)
             pending = nil; pendingFull = false
             host.selection = NSRange(location: 0, length: 0)
             reload()
@@ -298,15 +321,27 @@ final class EditorEngine {
     // MARK: - Diagnostics
 
     func setDiagnostics(_ list: [Diagnostic]) {
-        resolveDiagnostics(list)
+        given = resolveDiagnostics(list)
+        diagnosticsChanged()
+    }
+
+    /// The checker's messages for the current text.
+    func setChecked(_ list: [Diagnostic]) {
+        let new = resolveDiagnostics(list)
+        guard !new.elementsEqual(checked, by: { $0.0 == $1.0 && $0.1 == $1.1 }) else { return }
+        checked = new
+        diagnosticsChanged()
+    }
+
+    private func diagnosticsChanged() {
         bubble = nil
         refreshOverlays()
         host?.decorationsChanged()
         host?.popupsChanged()
     }
 
-    private func resolveDiagnostics(_ list: [Diagnostic]) {
-        diagnostics = list.map { d in
+    private func resolveDiagnostics(_ list: [Diagnostic]) -> [(Diagnostic, NSRange)] {
+        list.map { d in
             let line = max(0, min(d.line - 1, lines.count - 1))
             let lr = lines.range(ofLine: line, in: units)
             if let col = d.column {
@@ -324,9 +359,9 @@ final class EditorEngine {
         }
     }
 
-    private func shiftDiagnostics(edited: NSRange, delta: Int) {
+    private func shiftDiagnostics(_ list: [(Diagnostic, NSRange)], edited: NSRange, delta: Int) -> [(Diagnostic, NSRange)] {
         let oldEnd = edited.end - delta
-        diagnostics = diagnostics.map { d, r in
+        return list.map { d, r in
             if r.location >= oldEnd { return (d, NSRange(location: r.location + delta, length: r.length)) }
             if r.end <= edited.location { return (d, r) }
             // the edit touched it: keep it where the edit is, cut to what is left

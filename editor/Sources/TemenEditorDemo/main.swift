@@ -90,22 +90,26 @@ struct Root: View {
     a.diagnostics = [Diagnostic(line: 4, column: 66, severity: .error, message: "t is not a number"), Diagnostic(line: 2, severity: .warning, message: "unused")]
     pump()
     snapshot("1-open")
-    // clicking the marker on line 4 shows its message
-    if let sv = tv.enclosingScrollView, let ruler = sv.verticalRulerView, let lm = tv.layoutManager {
-        let line4 = (tv.string as NSString).range(of: "const holes").location
-        let rect = lm.lineFragmentRect(forGlyphAt: lm.glyphIndexForCharacter(at: line4), effectiveRange: nil)
+    // clicks the gutter beside the line holding `needle`; true when a message bubble shows
+    func clickMarker(_ needle: String) -> Bool {
+        let tv = textView()
+        guard let sv = tv.enclosingScrollView, let ruler = sv.verticalRulerView, let lm = tv.layoutManager else { return false }
+        let loc = (tv.string as NSString).range(of: needle).location
+        let rect = lm.lineFragmentRect(forGlyphAt: lm.glyphIndexForCharacter(at: loc), effectiveRange: nil)
         let p = ruler.convert(NSPoint(x: 5, y: rect.midY + tv.textContainerOrigin.y), from: tv)
         let wp = ruler.convert(p, to: nil)
         if let e = NSEvent.mouseEvent(with: .leftMouseDown, location: wp, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
             ruler.mouseDown(with: e)
         }
         pump()
-        check(tv.subviews.contains { !$0.isHidden && $0.frame.height > 10 }, "clicking a gutter marker shows its message")
-        snapshot("1b-bubble")
-        tv.cancelOperation(nil)
-        pump()
-        check(!tv.subviews.contains { !$0.isHidden && $0.frame.height > 10 }, "Escape hides it")
+        return tv.subviews.contains { !$0.isHidden && $0.frame.height > 10 }
     }
+    // clicking the marker on line 4 shows its message
+    check(clickMarker("const holes"), "clicking a gutter marker shows its message")
+    snapshot("1b-bubble")
+    tv.cancelOperation(nil)
+    pump()
+    check(!tv.subviews.contains { !$0.isHidden && $0.frame.height > 10 }, "Escape hides it")
 
     // typing a new line with completion
     at("z]));")
@@ -153,6 +157,32 @@ struct Root: View {
     a.toggleComment(); pump()
     check(textView().string.contains("// const t = 4;"), "Command-/ comments a line")
     a.toggleComment(); pump()
+
+    // a checker (a syntax check as you type): runs after a pause, hides the older build error meanwhile
+    a.checker = { text in
+        let lines = text.components(separatedBy: "\n")
+        guard let i = lines.firstIndex(where: { $0.contains("+ ;") }) else { return [] }
+        let col = (lines[i] as NSString).range(of: "+ ;").location + 3
+        return [Diagnostic(line: i + 1, column: col, severity: .error, message: "expected expression")]
+    }
+    pump(0.1)
+    check(a.checkedDiagnostics.isEmpty, "the checker finds nothing in good text")
+    textView().setSelectedRange(NSRange(location: (textView().string as NSString).length, length: 0))
+    type("const bad = (1 + ;")
+    pump(0.1)
+    check(a.checkedDiagnostics.isEmpty, "it waits for a pause in typing")
+    pump(0.5)
+    check(a.checkedDiagnostics.first?.line == a.text.components(separatedBy: "\n").firstIndex(where: { $0.contains("+ ;") }).map { $0 + 1 }, "then reports the error at its line")
+    check(!clickMarker("const holes"), "the build's error is hidden while the text does not compile")
+    check(clickMarker("const bad"), "the check's error has a marker and a message")
+    snapshot("6-check")
+    textView().cancelOperation(nil)
+    a.replaceText(before)
+    pump(0.5)
+    check(a.checkedDiagnostics.isEmpty && clickMarker("const holes"), "fixed: the check clears and the build's error is back")
+    textView().cancelOperation(nil)
+    a.checker = nil
+    pump()
 
     // replacing the text from outside
     a.replaceText("const x = 1;\n")

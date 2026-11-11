@@ -51,7 +51,9 @@ straight from the device to api.anthropic.com, billed to the key's account).
 - The code editor is the `TemenEditor` package in `editor/` (iOS and macOS, no TemenCAD code in it):
   highlighting of the JavaScript lamassu runs, line numbers, completion of the API with Tab through the
   arguments (the web app's list: `public/api-catalog.json` from `src/api-catalog.js`), the last build's
-  errors and warnings marked at their line (tap the marker for the message), bracket pairs, indentation,
+  errors and warnings marked at their line (tap the marker for the message), syntax errors marked as
+  you type (the core compiles the script without running it, on its own core so a long build never
+  delays it), bracket pairs, indentation,
   ⌘/ to comment, the system find bar, and a row of code symbols, undo and redo over the keyboard. Each
   file keeps its own undo history and unbuilt edits while the project is open; a change the assistant
   makes replaces the text as one undoable step. Build puts the edits in the project and builds; on an

@@ -57,6 +57,7 @@ final class CodeTextView: UITextView, EditorHost, UITextViewDelegate, NSTextStor
 
         apply(configuration)
         engine.setDiagnostics(document.diagnostics)
+        engine.setChecked(document.checkedDiagnostics)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }

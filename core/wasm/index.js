@@ -144,5 +144,19 @@ export async function createRuntime(moduleOptions = {}) {
     return { json, blobs };
   };
 
-  return { run, textOutlines, cutMesh, packConversation, unpackConversation, version: str(M._tw_version()) };
+  /**
+   * One script's syntax, checked as a run compiles it (main.js may return at top level) without running
+   * it or loading its imports: null when it compiles, else { message, line, column } (1-based; column in
+   * UTF-16 code units, 0 when the error is past the end of the text).
+   */
+  const checkScript = (name, source) => {
+    const n = putString(name), bytes = new TextEncoder().encode(source), p = putBytes(bytes);
+    const status = M._tw_check(n, p, bytes.length);
+    M._free(n); M._free(p);
+    if (status === 0) return null;
+    if (status !== 1) throw new Error(str(M._tw_check_message()) ?? 'syntax check failed');
+    return { message: str(M._tw_check_message()), line: M._tw_check_line(), column: M._tw_check_column() };
+  };
+
+  return { run, textOutlines, cutMesh, checkScript, packConversation, unpackConversation, version: str(M._tw_version()) };
 }

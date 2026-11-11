@@ -72,6 +72,17 @@ void temen_set_message_fn(TemenCore *core, TemenMessageFn fn, void *ud);
  */
 int temen_run(TemenCore *core, const TemenFile *files, size_t n_files);
 
+/*
+ * Checks one script's syntax as a run would compile it, without running it or loading what it imports:
+ * for an editor, on every pause in typing. `name` decides the rules: main.js may return at top level.
+ * Returns 0 when it compiles; 1 on a syntax error, with the message (static) in *message, its 1-based
+ * line in *line and 1-based column in UTF-16 code units in *column (0 when the error is past the end of
+ * the text and *line is the last line); 2 when out of memory. Uses the core's engine context but leaves
+ * the last run's results alone.
+ */
+int temen_check_script(TemenCore *core, const char *name, const char *source, size_t len,
+                       const char **message, int *line, int *column);
+
 /* After a failed run: the message, and where it came from (file NULL / line 0 when unknown). */
 const char *temen_error(const TemenCore *core);
 const char *temen_error_file(const TemenCore *core);

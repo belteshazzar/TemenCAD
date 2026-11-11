@@ -3,8 +3,8 @@ import TemenCAD
 import TemenEditor
 
 /// The script editor's side of the app: completion entries from the API catalogue (the same list as the
-/// web app's autocomplete), one document per file with its own undo history, and the last build's
-/// errors and warnings shown in the files they point at.
+/// web app's autocomplete), one document per file with its own undo history, the last build's errors
+/// and warnings shown in the files they point at, and syntax errors as you type.
 enum EditorSupport {
     /// The editor configuration: the JavaScript subset with the API completions.
     static let configuration = EditorConfiguration(completions: completions)
@@ -26,6 +26,24 @@ enum EditorSupport {
     }()
 }
 
+/// The syntax check as you type: the core compiles a script as a build would, without running it. It has
+/// its own core, so a check never waits behind a long build.
+actor SyntaxChecker {
+    static let shared = SyntaxChecker()
+    private var core: TemenCore?
+
+    func check(_ name: String, _ source: String) -> [Diagnostic] {
+        if core == nil { core = try? TemenCore() }
+        guard let e = core?.checkSyntax(name: name, source: source) else { return [] }
+        return [Diagnostic(line: e.line, column: e.column, severity: .error, message: e.message)]
+    }
+
+    /// The editor's checker for a file (its name sets the rules: main.js may return at top level).
+    nonisolated static func checker(for file: String) -> @Sendable (String) async -> [Diagnostic] {
+        { text in await shared.check(file, text) }
+    }
+}
+
 extension AppModel {
     /// The editor document for a text file, brought up to date with the project: a change made elsewhere
     /// (the assistant, an undo in the chat) replaces the text as one undoable step, unless the editor has
@@ -43,6 +61,7 @@ extension AppModel {
         editorDocuments[file] = doc
         editorSynced[file] = current
         doc.diagnostics = diagnostics(for: file)
+        doc.checker = SyntaxChecker.checker(for: file)
         return doc
     }
 
@@ -64,7 +83,10 @@ extension AppModel {
 
     func moveEditorDocument(_ from: String, to: String?) {
         let doc = editorDocuments.removeValue(forKey: from), synced = editorSynced.removeValue(forKey: from)
-        if let to, let doc { editorDocuments[to] = doc; editorSynced[to] = synced }
+        if let to, let doc {
+            editorDocuments[to] = doc; editorSynced[to] = synced
+            doc.checker = SyntaxChecker.checker(for: to)
+        }
     }
 
     /// The last build's error and warnings that point at a file.

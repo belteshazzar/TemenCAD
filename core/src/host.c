@@ -504,6 +504,32 @@ static void evict_project_modules(TemenCore *core) {
 /* Reads one part descriptor { h, name, named, color, ghost, hidden } into a TemenPart with its mesh. */
 static bool collect_part(TemenCore *core, JsValue desc);
 
+int temen_check_script(TemenCore *core, const char *name, const char *source, size_t len,
+                       const char **message, int *line, int *column) {
+    *message = NULL; *line = 0; *column = 0;
+    if (!core->ctx && !fresh_context(core)) return 2;
+    size_t n;
+    uint16_t *u = temen_utf8_to_utf16(source, len, &n);
+    if (!u) { *message = "out of memory"; return 2; }
+    const char *msg;
+    uint32_t pos;
+    bool entry = name && strcmp(name, ENTRY) == 0;
+    if (js_check_module(core->ctx, u, n, entry, &msg, &pos)) { free(u); return 0; }
+    *message = msg;
+    if (strcmp(msg, "out of memory") == 0) { free(u); return 2; }
+    uint32_t l, c;
+    js_source_line_col(u, n, pos, &l, &c);
+    free(u);
+    /* as a run reports it: an error at the very end (an unterminated statement) sits on the last line */
+    int lines = 1;
+    for (size_t i = 0; i < len; i++) if (source[i] == '\n') lines++;
+    if (len && source[len - 1] == '\n') lines--;
+    if (lines < 1) lines = 1;
+    if ((int)l > lines) { *line = lines; *column = 0; }
+    else { *line = l < 1 ? 1 : (int)l; *column = (int)c; }
+    return 1;
+}
+
 int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
     double t0 = now_ms();
     free_parts(core);

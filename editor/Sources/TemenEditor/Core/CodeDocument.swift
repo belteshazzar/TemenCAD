@@ -12,6 +12,19 @@ public final class CodeDocument: ObservableObject, Identifiable {
     @Published public var diagnostics: [Diagnostic] = [] {
         didSet { view?.engine.setDiagnostics(diagnostics) }
     }
+    /// Checks the text as it is typed, such as a syntax check: it runs a moment after each pause in typing
+    /// (`checkDelay`) and when set, and its messages show with `diagnostics`. While it reports an error,
+    /// the errors in `diagnostics` are hidden (they belong to text that has changed since); warnings stay.
+    /// A result that arrives after the text changed again is dropped.
+    public var checker: (@Sendable (String) async -> [Diagnostic])? {
+        didSet { scheduleCheck(delay: 0) }
+    }
+    /// Seconds after the last edit before the checker runs.
+    public var checkDelay: TimeInterval = 0.35
+    /// The checker's messages for the current text.
+    @Published public private(set) var checkedDiagnostics: [Diagnostic] = []
+    private var checkTask: Task<Void, Never>?
+
     @Published public private(set) var selectedRange = NSRange(location: 0, length: 0)
     public let undoManager = UndoManager()
 
@@ -29,6 +42,7 @@ public final class CodeDocument: ObservableObject, Identifiable {
             view.engine.setText(newText, undoable: undoable)
         } else {
             text = newText
+            scheduleCheck(delay: 0)
         }
         if !undoable { undoManager.removeAllActions() }
     }
@@ -64,7 +78,29 @@ public final class CodeDocument: ObservableObject, Identifiable {
     }
 
     func textChanged(_ s: String) {
-        if text != s { text = s }
+        if text != s { text = s; scheduleCheck(delay: checkDelay) }
+    }
+
+    private func scheduleCheck(delay: TimeInterval) {
+        checkTask?.cancel()
+        guard let checker else {
+            checkTask = nil
+            setChecked([])
+            return
+        }
+        let snapshot = text
+        checkTask = Task { [weak self] in
+            if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+            if Task.isCancelled { return }
+            let found = await checker(snapshot)
+            guard let self, !Task.isCancelled, self.text == snapshot else { return }
+            self.setChecked(found)
+        }
+    }
+
+    private func setChecked(_ list: [Diagnostic]) {
+        if checkedDiagnostics != list { checkedDiagnostics = list }
+        view?.engine.setChecked(list)
     }
 
     func selectionChanged(_ r: NSRange) {

@@ -273,6 +273,16 @@ that seems right. The core builds against `lamassu.h` alone.
    callee as text in a per-function side table read only when a call fails (and carried in
    bytecode caches, format version 4); an expression with no readable name still says "value".
    `test/test_callee.c` in lamassu covers it.
+12. **A syntax check without running — done.** Editors mark syntax errors as the user types.
+   `js_compile_module` refuses import/export and `js_bytecode_compile_module` never compiles an
+   entry, so main.js's top-level `return` came back as an error. lamassu's `js_check_module`
+   compiles a module as the loader would, with an `entry` flag, on a record nothing registers,
+   links or runs, and returns the message and offset. The core's `temen_check_script` (wasm
+   `checkScript`, Swift `TemenCore.checkSyntax`) gives the line and the column in UTF-16 units.
+   `test_check_module` in lamassu's `test/test_modules.c` covers it.
+13. **Syntax errors are not SyntaxErrors — open.** A module that fails to compile rejects with
+   its message as a plain string, not a `SyntaxError` object, so a build reports
+   "Error: expected expression" where V8 would say "SyntaxError: Unexpected token ';'".
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,

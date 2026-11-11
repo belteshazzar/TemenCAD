@@ -5,7 +5,7 @@ A code editor view for iOS 17+ and macOS 14+, in SwiftUI. It has:
 - syntax highlighting that updates as you type
 - line numbers
 - completion with snippet fields
-- diagnostics marked inline
+- diagnostics marked inline, and a checker that runs as you type
 - bracket and quote pairs, auto-indent and comment toggling
 - bracket and word matching
 - the system find bar
@@ -38,7 +38,8 @@ struct ScriptView: View {
   - its own `undoManager`
 
   Keep one document per file and pass a different one to `CodeEditor` to switch files. Each file keeps its undo history, selection and scroll position. Other methods:
-  - `replaceText(_:undoable:)`, for when the file changed elsewhere
+  - `replaceText(_:undoable:)`, for when the file changed elsewhere (it replaces only the part that
+    differs, so the rest keeps its diagnostics and the cursor)
   - `reveal(line:column:)`
   - `showFind(replace:)`
   - `focus()`
@@ -51,6 +52,12 @@ struct ScriptView: View {
   - a bubble with the message when you tap or click the dot
 
   Diagnostics follow edits until you set new ones.
+- **`checker`** on a document checks the text as it is typed, such as a syntax check: an async
+  function from the text to diagnostics. It runs `checkDelay` seconds (0.35) after the last edit, off
+  the main actor, and a result for text that has changed since is dropped. Its messages show with
+  `diagnostics` and are published as `checkedDiagnostics`. While it reports an error, the errors in
+  `diagnostics` are hidden: they come from a build of text that has changed since, or are the same
+  error. Warnings stay.
 - **`EditorConfiguration`** sets:
   - `language` (any `CodeLanguage`; the default is `JavaScriptSubset`)
   - `theme`
@@ -121,6 +128,7 @@ The demo program types into the real `NSTextView` through its own input methods.
 - member completion
 - brackets and indentation
 - diagnostics and the bubble
+- the checker: waiting for a pause, hiding the older build error, clearing when fixed
 - undo per document
 - comment toggling
 - `replaceText`

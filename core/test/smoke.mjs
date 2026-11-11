@@ -474,5 +474,18 @@ check('empty part warning', (() => { const x = rt.run({ 'main.js': 'return diffe
   check('a damaged blob is refused', /damaged/.test(msg), msg);
 }
 
+// 7. the syntax check: as a run compiles each script, without running it or loading its imports
+{
+  check('a good main.js checks clean, with its top-level return', rt.checkScript('main.js', 'const a = cube(10);\nreturn a;\n') === null);
+  check('a module with imports and exports checks clean', rt.checkScript('parts/a.js', "import { x } from './nowhere.js';\nexport const y = x;\n") === null);
+  const e = rt.checkScript('main.js', 'const a = cube(10);\nconst b = (a + ;\nreturn a;\n');
+  check('a syntax error has its line and column', e?.line === 2 && e.column >= 15 && e.column <= 16 && /expected/.test(e.message), JSON.stringify(e));
+  check('top-level return is an error outside main.js', /return/.test(rt.checkScript('parts/a.js', 'return 1;')?.message ?? ''));
+  check('an unterminated block is reported on the last line', rt.checkScript('main.js', 'if (true) {\n  cube(1);\n')?.line === 2);
+  check('subset words are errors', rt.checkScript('main.js', 'var a = 1;') !== null);
+  check('a check runs nothing', rt.checkScript('main.js', "throw new Error('no');") === null);
+  check('the run still works after checks', rt.run({ 'main.js': 'return cube(10);' }).ok);
+}
+
 console.log(failed ? `${failed} failed` : 'all passed');
 process.exit(failed ? 1 : 0);

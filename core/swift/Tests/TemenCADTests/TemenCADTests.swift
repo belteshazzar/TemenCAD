@@ -42,6 +42,19 @@ final class TemenCADTests: XCTestCase {
     }
 
     /// core/test/project.temen was written by fflate, as the web app saves projects.
+    func testSyntaxCheck() throws {
+        let core = try TemenCore()
+        XCTAssertNil(core.checkSyntax(name: "main.js", source: "const a = cube(10);\nreturn a;\n"))
+        XCTAssertNil(core.checkSyntax(name: "parts/a.js", source: "import { x } from './nowhere.js';\nexport const y = x;\n"))
+        // a column counts UTF-16 units, as the editor does: "é" and an emoji before the error
+        let e = core.checkSyntax(name: "main.js", source: "// é 😀\nconst s = '😀'; const b = (1 + ;\n")
+        XCTAssertEqual(e?.line, 2)
+        XCTAssertEqual(e?.column, 32)
+        XCTAssertNotNil(core.checkSyntax(name: "parts/a.js", source: "return 1;"))
+        XCTAssertEqual(core.checkSyntax(name: "main.js", source: "if (true) {\n  cube(1);\n"), TemenSyntaxError(message: core.checkSyntax(name: "main.js", source: "if (true) {\n  cube(1);\n")!.message, line: 2, column: nil))
+        XCTAssertTrue(core.build(script: "return cube(10);").ok)
+    }
+
     func testReadsAWebProject() throws {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../test/project.temen").standardized
         let project = try TemenArchive.readProject(try Data(contentsOf: url))

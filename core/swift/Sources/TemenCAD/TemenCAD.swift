@@ -44,6 +44,16 @@ public struct TemenBuildError: Error, Sendable {
     public let line: Int?
 }
 
+/// A script that does not compile: the engine's message and where, as an editor marks it.
+public struct TemenSyntaxError: Error, Sendable, Equatable {
+    public let message: String
+    /// 1-based.
+    public let line: Int
+    /// 1-based, in UTF-16 code units (as NSString and the editor count); nil when the error is past the
+    /// end of the text (an unterminated block) and `line` is the last line.
+    public let column: Int?
+}
+
 /// The printer profile a script declared with printer().
 public struct TemenPrinterProfile: Sendable {
     public let nozzle: Double
@@ -124,6 +134,20 @@ public final class TemenCore {
         let profile = prof.declared != 0 ? TemenPrinterProfile(nozzle: prof.nozzle, layer: prof.layer, holeCompensation: prof.hole_compensation,
                                                                material: prof.material.map { String(cString: $0) }) : nil
         return TemenBuildResult(parts: parts, messages: messages, annotations: annotations, profile: profile, error: nil, milliseconds: ms)
+    }
+
+    /// Checks one script's syntax as a build compiles it, without running it or loading what it imports:
+    /// nil when it compiles. `name` sets the rules (main.js may return at top level). Cheap enough for
+    /// every pause in typing; the last build's results are left alone.
+    public func checkSyntax(name: String, source: String) -> TemenSyntaxError? {
+        var message: UnsafePointer<CChar>?
+        var line: Int32 = 0, column: Int32 = 0
+        let status = source.withCString { src in
+            temen_check_script(core, name, src, strlen(src), &message, &line, &column)
+        }
+        guard status != 0 else { return nil }
+        return TemenSyntaxError(message: message.map { String(cString: $0) } ?? "syntax error",
+                                line: max(1, Int(line)), column: column > 0 ? Int(column) : nil)
     }
 
     /// Convenience: one script as main.js.

@@ -179,3 +179,15 @@ EXPORT const char *tw_conv_blob_key(int i) { return temen_conversation_blob(g_co
 EXPORT const void *tw_conv_blob_data(int i) { return temen_conversation_blob(g_conv, (size_t)i)->data; }
 EXPORT int tw_conv_blob_len(int i) { return (int)temen_conversation_blob(g_conv, (size_t)i)->len; }
 EXPORT const char *tw_conv_error(void) { return g_conv_error ? g_conv_error : ""; }
+
+/* ---- syntax check (temen_check_script) ---- */
+static const char *g_check_msg;
+static int g_check_line, g_check_col;
+
+EXPORT int tw_check(const char *name, const char *src, int len) {
+    if (!tw_init()) return 2;
+    return temen_check_script(g_core, name, src, (size_t)len, &g_check_msg, &g_check_line, &g_check_col);
+}
+EXPORT const char *tw_check_message(void) { return g_check_msg; }
+EXPORT int tw_check_line(void) { return g_check_line; }
+EXPORT int tw_check_column(void) { return g_check_col; }
