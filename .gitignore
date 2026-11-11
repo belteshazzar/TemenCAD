@@ -78,3 +78,4 @@ core/wasm/dist/
 # Swift package binary artefact, built by core/swift/build-xcframework.sh
 core/swift/TemenCore.xcframework/
 core/swift/.build/
+.vscode/
