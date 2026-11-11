@@ -280,6 +280,13 @@ that seems right. The core builds against `lamassu.h` alone.
    links or runs, and returns the message and offset. The core's `temen_check_script` (wasm
    `checkScript`, Swift `TemenCore.checkSyntax`) gives the line and the column in UTF-16 units.
    `test_check_module` in lamassu's `test/test_modules.c` covers it.
+14. **Number parsing the same everywhere — done.** lamassu fell back on the C library's `strtod`,
+   which Windows (UCRT) does not round correctly next to a power of two, and literals kept only
+   their first 19 digits. lamassu now parses with musl's decimal scanner
+   (`src/runtime/fdlibm/floatscan.c`) and reads every digit, so a script's numbers are the same
+   doubles on every host and in Node (checked on 28,590 strings and 256,195 printed doubles).
+   The fdlibm sources also build under GCC with `-Werror` again, so lamassu's own CI is green on
+   Linux and Windows for the first time since the kernel arrived.
 13. **Syntax errors are not SyntaxErrors — open.** A module that fails to compile rejects with
    its message as a plain string, not a `SyntaxError` object, so a build reports
    "Error: expected expression" where V8 would say "SyntaxError: Unexpected token ';'".
