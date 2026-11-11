@@ -1,32 +1,63 @@
 import SwiftUI
+import TemenEditor
 
-/// A text file of the project, editable: the assistant writes them, but they stay the user's. Build saves
-/// the change and rebuilds. Opened from the Files sheet.
+/// A text file of the project in the code editor: highlighting, completion of the API, inline errors from
+/// the last build, undo per file. The assistant writes the files, but they stay the user's: Build puts the
+/// edits in the project and builds it, and stays here to show an error. Opened from the Files sheet.
 struct CodeView: View {
     @EnvironmentObject var app: AppModel
     @Environment(\.dismiss) private var dismiss
     let file: String
-    @State private var text = ""
-    @State private var edited = false
+    @State private var document: CodeDocument?
+    @State private var building = false
 
     var body: some View {
-        TextEditor(text: $text)
-            .font(.system(.footnote, design: .monospaced))
-            .autocorrectionDisabled()
-            .textInputAutocapitalization(.never)
-            .onChange(of: text) { _, _ in edited = text != (app.project.text(file) ?? "") }
-            .navigationTitle(file)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Build") {
-                        app.project.files[file] = Data(text.utf8)
-                        Task { await app.rebuild() }
-                        dismiss()
+        Group {
+            if let document {
+                Editor(document: document, file: file, building: $building) { dismiss() }
+            } else {
+                Color.clear
+            }
+        }
+        .navigationTitle(file)
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { document = app.editorDocument(file) }
+        .onChange(of: app.project.text(file)) { _, _ in document = app.editorDocument(file) }
+    }
+
+    /// The editor and its toolbar; observes the document so Build follows the edits.
+    private struct Editor: View {
+        @EnvironmentObject var app: AppModel
+        @ObservedObject var document: CodeDocument
+        let file: String
+        @Binding var building: Bool
+        let done: () -> Void
+
+        var body: some View {
+            CodeEditor(document: document, configuration: EditorSupport.configuration)
+                .ignoresSafeArea(.container, edges: .bottom)
+                .toolbar {
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        Button { document.showFind() } label: { Image(systemName: "magnifyingglass") }
+                            .accessibilityLabel("Find")
+                        Button("Build") { build() }
+                            .disabled(building || document.text == (app.project.text(file) ?? ""))
                     }
-                    .disabled(!edited)
+                }
+        }
+
+        private func build() {
+            building = true
+            Task {
+                let result = await app.buildFromEditor(file)
+                building = false
+                if let e = result?.error {
+                    // stay with the error: show it where it is
+                    if let line = e.line, (e.file ?? Project.entry) == file { document.reveal(line: line) }
+                } else {
+                    done()
                 }
             }
-            .onAppear { text = app.project.text(file) ?? "" }
+        }
     }
 }

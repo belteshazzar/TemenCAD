@@ -44,10 +44,18 @@ straight from the device to api.anthropic.com, billed to the key's account).
   `TemenConversation`): opening a file brings back its conversation (from this app or the web app),
   with its undo points and attachments, and Save writes this one. Settings can turn that off.
 - Files: the code button opens the project's files, as the web app's file tabs offer them: a script opens
-  in the editor (Build saves and rebuilds), a font, mesh or image shows its kind, size and the import line
+  in the code editor, a font, mesh or image shows its kind, size and the import line
   to paste (with a preview for images); + makes a new script or adds files (asking before replacing one);
   swipe or long-press to rename (the web app's rules: main.js stays, a rename keeps its kind of extension
   and cannot take an existing name), share or remove. Rules in `Model/ProjectFiles.swift`.
+- The code editor is the `TemenEditor` package in `editor/` (iOS and macOS, no TemenCAD code in it):
+  highlighting of the JavaScript lamassu runs, line numbers, completion of the API with Tab through the
+  arguments (the web app's list: `public/api-catalog.json` from `src/api-catalog.js`), the last build's
+  errors and warnings marked at their line (tap the marker for the message), bracket pairs, indentation,
+  ⌘/ to comment, the system find bar, and a row of code symbols, undo and redo over the keyboard. Each
+  file keeps its own undo history and unbuilt edits while the project is open; a change the assistant
+  makes replaces the text as one undoable step. Build puts the edits in the project and builds; on an
+  error the editor stays at its line. `Model/Editing.swift` connects it.
 - Photos: the photo button beside the message field attaches up to five photos from the library
   (PhotosPicker, no permission needed) or the camera. Each goes to the assistant as "Attachment n",
   downscaled to 1568 px on the long edge as in the web app, and is kept full size in
@@ -98,9 +106,10 @@ straight from the device to api.anthropic.com, billed to the key's account).
   prompt cached, refusal fallbacks on, eager input streaming on the tools.
 - `Views/` SwiftUI: the adaptive layout, the chat, settings and the code sheet; `ModelPreview.swift` is the
   SceneKit preview (flat-shaded parts, ghosts, grid, orbit, snapshots for the assistant).
-- `Resources/api.txt` and `Resources/assistant-rules.txt` are copies of what the web assistant uses:
-  the API reference (generated from `api.html`) and the modelling rules (`src/assistant-rules.txt`).
-  Run `ios/scripts/sync-resources.sh` after changing either and commit the copies.
+- `Resources/api.txt`, `Resources/api-catalog.json` and `Resources/assistant-rules.txt` are copies of what
+  the web app uses: the API reference (generated from `api.html`), the editor's completion entries
+  (generated from `src/api-catalog.js`) and the modelling rules (`src/assistant-rules.txt`).
+  Run `ios/scripts/sync-resources.sh` after changing any of them and commit the copies.
 
 ## Developing without spending tokens
 
@@ -119,11 +128,12 @@ the Mac's paths); `-TemenShare stl` (or `3mf`) exports and opens the share sheet
 those files to the next message as if picked in the chat; `-TemenAddFiles "/a/font.ttf"` answers the assistant's add_files with those files (`none` cancels); `-TemenRequestURL /path/c.temen` answers open_project (opens it) or save_project's Save as (writes there); `-TemenThen "undo,putback,undoagain,changes"` runs those steps once the turn is over (also `point`, `measure`, `tap:0.5:0.6` at fractions of the view,
 `addmeasure`, `send`, and for projects `new`, `save`, `saveforce`, `close`, `switch:n`, `open:/path`, `edit:<main.js>`,
 `touch:/path` to date a file as changed elsewhere; for files `files`, `fileopen:name`, `newscript:name`,
-`renamefile:a.js>b.js`, `removefile:name`, `addfile:/path`). None of them exist in release builds.
+`renamefile:a.js>b.js`, `removefile:name`, `addfile:/path`; in the open editor `cursor:text` puts the
+cursor after that text, `type:text` types it through the keyboard path, ⏎ for Return, ⇥ for Tab and ‚ for
+a comma, `editbuild` presses Build, `wait:seconds`). None of them exist in release builds.
 
 ## Not yet
 
-Autocomplete in the script editor, the catalogue,
-the printer profile, and a Mac or visionOS build. SceneKit is the preview for now: Apple has stopped adding features
+The catalogue and a Mac or visionOS build (the editor package already runs on macOS). SceneKit is the preview for now: Apple has stopped adding features
 to it in favour of RealityKit, and everything SceneKit touches is in `Views/ModelPreview.swift`, so moving
 is contained.

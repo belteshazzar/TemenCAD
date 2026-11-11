@@ -3,7 +3,7 @@ name: Core on every platform
 # The TemenCAD core (lamassu-js + Manifold + the API) built and tested on each target it ships for:
 #   native Linux and macOS (CMake, the temencore CLI over every test script and the demo)
 #   WebAssembly (Emscripten; the smoke test and the old-runner-vs-core differential test)
-#   Apple (TemenCore.xcframework for macOS, iOS and the simulator; the Swift package tests; the iOS app builds)
+#   Apple (TemenCore.xcframework for macOS, iOS and the simulator; the Swift package tests; the editor package; the iOS app builds)
 
 on:
   push:
@@ -119,6 +119,12 @@ jobs:
       - name: Swift tests
         working-directory: core/swift
         run: swift test
+      - name: The editor package (unit tests; the macOS editor driven offscreen; the iOS build)
+        working-directory: editor
+        run: |
+          xcodebuild test -scheme TemenEditor-Package -destination 'platform=macOS' -quiet
+          swift build && .build/debug/TemenEditorDemo "$RUNNER_TEMP"
+          xcodebuild -scheme TemenEditor -destination 'generic/platform=iOS Simulator' build -quiet
       - name: iOS app (simulator and device, unsigned)
         working-directory: ios
         run: |

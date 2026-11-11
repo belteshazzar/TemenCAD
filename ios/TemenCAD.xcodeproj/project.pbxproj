@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		636B80D96D7994E3FA879523 /* TemenCAD in Frameworks */ = {isa = PBXBuildFile; productRef = E7597BD40E8A49F811FBFC64 /* TemenCAD */; };
+		5E1D17A0B2C34D6E8F901A01 /* TemenEditor in Frameworks */ = {isa = PBXBuildFile; productRef = 5E1D17A0B2C34D6E8F901A02 /* TemenEditor */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +42,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				636B80D96D7994E3FA879523 /* TemenCAD in Frameworks */,
+				5E1D17A0B2C34D6E8F901A01 /* TemenEditor in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -84,6 +86,7 @@
 			name = TemenCADApp;
 			packageProductDependencies = (
 				E7597BD40E8A49F811FBFC64 /* TemenCAD */,
+				5E1D17A0B2C34D6E8F901A02 /* TemenEditor */,
 			);
 			productName = TemenCADApp;
 			productReference = A0A34624D822E7BBA19CF1FB /* TemenCADApp.app */;
@@ -115,6 +118,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				C8C88CCB0ED942579B3442FB /* XCLocalSwiftPackageReference "../core/swift" */,
+				5E1D17A0B2C34D6E8F901A03 /* XCLocalSwiftPackageReference "../editor" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 80C583BB02BC099191754064 /* Products */;
@@ -283,12 +287,20 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../core/swift;
 		};
+		5E1D17A0B2C34D6E8F901A03 /* XCLocalSwiftPackageReference "../editor" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../editor;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		E7597BD40E8A49F811FBFC64 /* TemenCAD */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = TemenCAD;
+		};
+		5E1D17A0B2C34D6E8F901A02 /* TemenEditor */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TemenEditor;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

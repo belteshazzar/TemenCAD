@@ -1,0 +1,1234 @@
+{
+ "globals": [
+  {
+   "label": "box",
+   "snippet": "box(${w}, ${h}, ${d})",
+   "detail": "(w, h, d) | ([x, y, z]) | ({ x, y, z, center })",
+   "info": "Box centred on the origin; one size makes a cube; the size may also be [x, y, z] or { x, y, z }.",
+   "kind": "function"
+  },
+  {
+   "label": "cube",
+   "snippet": "cube(${size})",
+   "detail": "(size)",
+   "info": "Alias of box().",
+   "kind": "function"
+  },
+  {
+   "label": "roundedBox",
+   "snippet": "roundedBox(${w}, ${h}, ${d}, ${r}, { edges: '${vertical}' })",
+   "detail": "(w, h, d, r, { edges }) | ([x, y, z], r, { edges })",
+   "info": "Box with rounded edges; edges: 'all' or 'vertical' (only the four vertical edges, prints flat). The size may also be [x, y, z] or { x, y, z, r }.",
+   "kind": "function"
+  },
+  {
+   "label": "sphere",
+   "snippet": "sphere(${r})",
+   "detail": "(r, { segments })",
+   "info": "Sphere centred on the origin.",
+   "kind": "function"
+  },
+  {
+   "label": "cylinder",
+   "snippet": "cylinder(${r}, ${h})",
+   "detail": "(r, h) | ({ r1, r2, h })",
+   "info": "Cylinder along Y, centred; r1/r2 give a tapered cylinder.",
+   "kind": "function"
+  },
+  {
+   "label": "cone",
+   "snippet": "cone(${r}, ${h})",
+   "detail": "(r, h)",
+   "info": "Cone along Y with its base radius r.",
+   "kind": "function"
+  },
+  {
+   "label": "torus",
+   "snippet": "torus(${r}, ${tube})",
+   "detail": "(r, tube)",
+   "info": "Torus in the XZ plane: ring radius r, tube radius tube.",
+   "kind": "function"
+  },
+  {
+   "label": "prism",
+   "snippet": "prism(${sides}, ${r}, ${h})",
+   "detail": "(sides, r, h)",
+   "info": "Regular n-sided prism with circumradius r and height h.",
+   "kind": "function"
+  },
+  {
+   "label": "polygon",
+   "snippet": "polygon([${points}], ${h})",
+   "detail": "([[x, y], ...], h)",
+   "info": "Extrude a 2D point list up along Y by h.",
+   "kind": "function"
+  },
+  {
+   "label": "polyhedron",
+   "snippet": "polyhedron([${points}], [${faces}])",
+   "detail": "(points, faces)",
+   "info": "Solid from raw vertices and faces, like OpenSCAD; winding is fixed automatically.",
+   "kind": "function"
+  },
+  {
+   "label": "loft",
+   "snippet": "loft([${sketches}], ${height})",
+   "detail": "([sk1, sk2, ...], height | [y1, y2, ...])",
+   "info": "Skin between 2D profiles stacked along Y.",
+   "kind": "function"
+  },
+  {
+   "label": "text3d",
+   "snippet": "text3d('${text}', { size: ${10}, height: ${2} })",
+   "detail": "(str, { size, height, font, align })",
+   "info": "Raised or engraved text as a solid, baseline at y = 0.",
+   "kind": "function"
+  },
+  {
+   "label": "circle",
+   "snippet": "circle(${r})",
+   "detail": "(r, { segments })",
+   "info": "2D circle.",
+   "kind": "function"
+  },
+  {
+   "label": "ellipse",
+   "snippet": "ellipse(${rx}, ${ry})",
+   "detail": "(rx, ry)",
+   "info": "2D ellipse.",
+   "kind": "function"
+  },
+  {
+   "label": "rect",
+   "snippet": "rect(${w}, ${h})",
+   "detail": "(w, h, { center })",
+   "info": "2D rectangle, centred by default.",
+   "kind": "function"
+  },
+  {
+   "label": "square",
+   "snippet": "square(${size})",
+   "detail": "(size)",
+   "info": "Alias of rect().",
+   "kind": "function"
+  },
+  {
+   "label": "roundedRect",
+   "snippet": "roundedRect(${w}, ${h}, ${r})",
+   "detail": "(w, h, r, { center, segments })",
+   "info": "2D rectangle with rounded corners.",
+   "kind": "function"
+  },
+  {
+   "label": "slot",
+   "snippet": "slot(${length}, ${r})",
+   "detail": "(length, r)",
+   "info": "Capsule: two semicircles length apart (centre to centre).",
+   "kind": "function"
+  },
+  {
+   "label": "teardrop",
+   "snippet": "teardrop(${r})",
+   "detail": "(r, { angle, flat, segments })",
+   "info": "Circle with a 45° point at +y: a horizontal hole that prints without sagging.",
+   "kind": "function"
+  },
+  {
+   "label": "bridgedCircle",
+   "snippet": "bridgedCircle(${r})",
+   "detail": "(r, { angle, segments })",
+   "info": "Circle with a flat ceiling for the slicer to bridge.",
+   "kind": "function"
+  },
+  {
+   "label": "regularPolygon",
+   "snippet": "regularPolygon(${sides}, ${r})",
+   "detail": "(sides, r)",
+   "info": "Regular polygon with circumradius r.",
+   "kind": "function"
+  },
+  {
+   "label": "polygon2d",
+   "snippet": "polygon2d([${points}])",
+   "detail": "(points, { holes })",
+   "info": "Arbitrary 2D polygon from [[x, y], ...]; pass { holes: [[...]] } for holes.",
+   "kind": "function"
+  },
+  {
+   "label": "text",
+   "snippet": "text('${text}', { size: ${10} })",
+   "detail": "(str, { size, font, align, letterSpacing })",
+   "info": "2D text outline, baseline at y = 0. Fonts: 'Inter', 'Inter Bold', 'Nunito Bold', 'Source Serif 4', 'JetBrains Mono'.",
+   "kind": "function"
+  },
+  {
+   "label": "sketch",
+   "snippet": "sketch().moveTo(${0}, ${0}).lineTo(${x}, ${y}).close()",
+   "detail": "() | ([[x, y], ...])",
+   "info": "Draw a profile step by step: moveTo, lineTo, line, horizontal, vertical, quadTo, bezierTo, arcTo, tangentArcTo, fillet, close.",
+   "kind": "function"
+  },
+  {
+   "label": "extrude",
+   "snippet": "extrude(${sketch}, ${h})",
+   "detail": "(sketch, h, { center, twist, scale })",
+   "info": "Extrude a sketch up along Y; twist in degrees, scale at the top.",
+   "kind": "function"
+  },
+  {
+   "label": "revolve",
+   "snippet": "revolve(${sketch})",
+   "detail": "(sketch, { angle, segments })",
+   "info": "Revolve a sketch around Y; sketch x is the radius.",
+   "kind": "function"
+  },
+  {
+   "label": "roof",
+   "snippet": "roof(${sketch})",
+   "detail": "(sketch, { angle, segments, tolerance })",
+   "info": "Solid whose height is the distance to the outline: pyramid from a square, hip roof from a rectangle.",
+   "kind": "function"
+  },
+  {
+   "label": "projection",
+   "snippet": "projection(${shape})",
+   "detail": "(shape, { cut: true | y })",
+   "info": "Flatten a solid to a 2D sketch: footprint from above, or the slice at height y.",
+   "kind": "function"
+  },
+  {
+   "label": "path",
+   "snippet": "path([${points}])",
+   "detail": "([[x, y, z], ...], { closed, smooth })",
+   "info": "Polyline through 3D points (Y up); [x, y] points lie on the ground plane.",
+   "kind": "function"
+  },
+  {
+   "label": "line",
+   "snippet": "line([${x1}, ${y1}, ${z1}], [${x2}, ${y2}, ${z2}])",
+   "detail": "(a, b)",
+   "info": "Straight path from a to b.",
+   "kind": "function"
+  },
+  {
+   "label": "arc",
+   "snippet": "arc(${r}, ${90})",
+   "detail": "(r, angle, { segments })",
+   "info": "Arc on the ground plane centred on the origin, from +X anticlockwise seen from above.",
+   "kind": "function"
+  },
+  {
+   "label": "helix",
+   "snippet": "helix(${r}, ${height}, ${turns})",
+   "detail": "(r, height, turns, { segments })",
+   "info": "Helix around Y starting at [r, 0, 0].",
+   "kind": "function"
+  },
+  {
+   "label": "bezier",
+   "snippet": "bezier([${p0}], [${p1}], [${p2}], [${p3}])",
+   "detail": "(p0, p1, p2, p3, { segments })",
+   "info": "Cubic Bézier curve as a path.",
+   "kind": "function"
+  },
+  {
+   "label": "sweep",
+   "snippet": "sweep(${sketch}, ${path})",
+   "detail": "(sketch | (t) => sketch, path, { frame, up, twist, scale, segments })",
+   "info": "Sweep a 2D profile along a path; closed paths make rings. frame: 'minimal' (no twist) or 'upright'.",
+   "kind": "function"
+  },
+  {
+   "label": "svg",
+   "snippet": "svg(${markup}, { width: ${50} })",
+   "detail": "(markup, { segments, id, width, height })",
+   "info": "An SVG drawing as a Sketch: filled paths, rects, circles, polygons, in mm with Y up. import logo from './logo.svg' does the same for a project file.",
+   "kind": "function"
+  },
+  {
+   "label": "svgPath",
+   "snippet": "svgPath('${M0 0 h10 v10 Z}')",
+   "detail": "(d, { segments, evenOdd })",
+   "info": "SVG path data as a Sketch in its own units, Y flipped.",
+   "kind": "function"
+  },
+  {
+   "label": "heightmap",
+   "snippet": "heightmap(${image}, { width: ${60}, height: ${4} })",
+   "detail": "(image | (x, z) => 0..1, { width, depth, height, base, invert, smooth, gamma, resolution })",
+   "info": "Relief solid: brightness (or a function of position) becomes height above a base plate.",
+   "kind": "function"
+  },
+  {
+   "label": "lithophane",
+   "snippet": "lithophane(${image}, { width: ${80}, upright: true })",
+   "detail": "(image, { width, depth, minThickness, maxThickness, border, smooth, gamma, resolution, upright })",
+   "info": "Plate whose thickness follows the image: dark is thick, light is thin. Light it from behind.",
+   "kind": "function"
+  },
+  {
+   "label": "distance",
+   "snippet": "distance(${a}, ${b})",
+   "detail": "(face | point, face | point)",
+   "info": "Distance between faces (along the normal), a face and a point, or two points.",
+   "kind": "function"
+  },
+  {
+   "label": "rectPattern",
+   "snippet": "rectPattern(${w}, ${d})",
+   "detail": "(w, d)",
+   "info": "The four corners of a w × d rectangle as [u, v] points, for hole patterns.",
+   "kind": "function"
+  },
+  {
+   "label": "gridPattern",
+   "snippet": "gridPattern(${nu}, ${nv}, ${pitch})",
+   "detail": "(nu, nv, du, dv)",
+   "info": "A grid of [u, v] points at that pitch, centred.",
+   "kind": "function"
+  },
+  {
+   "label": "printer",
+   "snippet": "printer({ nozzle: ${0.4}, layer: ${0.2} })",
+   "detail": "({ nozzle, layer, holeCompensation, material })",
+   "info": "Declare the printer once; hole(), wall(), layers(), fit() and peg() use it.",
+   "kind": "function"
+  },
+  {
+   "label": "wall",
+   "snippet": "wall(${t})",
+   "detail": "(t, { lines })",
+   "info": "Wall thickness rounded up to whole extrusion lines.",
+   "kind": "function"
+  },
+  {
+   "label": "layers",
+   "snippet": "layers(${h})",
+   "detail": "(h, { count })",
+   "info": "Height rounded up to whole layers.",
+   "kind": "function"
+  },
+  {
+   "label": "fit",
+   "snippet": "fit(${d}, '${clearance}')",
+   "detail": "(d, 'press' | 'snug' | 'slide' | 'clearance' | 'loose' | mm)",
+   "info": "Hole diameter to model so a d mm part fits.",
+   "kind": "function"
+  },
+  {
+   "label": "peg",
+   "snippet": "peg(${d}, '${slide}')",
+   "detail": "(d, kind)",
+   "info": "Peg diameter to model so it fits a d mm hole.",
+   "kind": "function"
+  },
+  {
+   "label": "dimension",
+   "snippet": "dimension(${a}, ${b})",
+   "detail": "(a, b, { label, offset })",
+   "info": "A measured line between points, faces or shapes, drawn on rendered views; returns the length.",
+   "kind": "function"
+  },
+  {
+   "label": "mark",
+   "snippet": "mark(${point}, '${text}')",
+   "detail": "(point | face | shape, text)",
+   "info": "A labelled dot drawn on rendered views.",
+   "kind": "function"
+  },
+  {
+   "label": "clearance",
+   "snippet": "clearance(${a}, ${b})",
+   "detail": "(a, b)",
+   "info": "Smallest gap between two shapes in mm; 0 when they touch or overlap.",
+   "kind": "function"
+  },
+  {
+   "label": "interference",
+   "snippet": "interference(${a}, ${b})",
+   "detail": "(a, b)",
+   "info": "Volume two shapes share in mm³.",
+   "kind": "function"
+  },
+  {
+   "label": "intersects",
+   "snippet": "intersects(${a}, ${b})",
+   "detail": "(a, b)",
+   "info": "True when two shapes share any volume.",
+   "kind": "function"
+  },
+  {
+   "label": "overlap",
+   "snippet": "overlap(${a}, ${b})",
+   "detail": "(a, b)",
+   "info": "The volume two shapes share, as a Shape.",
+   "kind": "function"
+  },
+  {
+   "label": "printability",
+   "snippet": "printability(${shape})",
+   "detail": "(shape, { angle, minWall, maxUnsupported })",
+   "info": "Printing verdict: { ok, problems, overhangs, unsupported, minWall }.",
+   "kind": "function"
+  },
+  {
+   "label": "overhangs",
+   "snippet": "overhangs(${shape})",
+   "detail": "(shape, { angle })",
+   "info": "Area of undersides steeper than angle (45°) from vertical.",
+   "kind": "function"
+  },
+  {
+   "label": "unsupported",
+   "snippet": "unsupported(${shape})",
+   "detail": "(shape, { angle })",
+   "info": "Overhangs with nothing below them: islands and bridges.",
+   "kind": "function"
+  },
+  {
+   "label": "minWallThickness",
+   "snippet": "minWallThickness(${shape})",
+   "detail": "(shape)",
+   "info": "The thinnest wall: { thickness, at }.",
+   "kind": "function"
+  },
+  {
+   "label": "fillet",
+   "snippet": "fillet(${shape}, ${r}, { edges: '${top}' })",
+   "detail": "(shape | sketch, r, { edges, segments })",
+   "info": "Round the sharp edges of a solid (or the corners of a sketch).",
+   "kind": "function"
+  },
+  {
+   "label": "chamfer",
+   "snippet": "chamfer(${shape}, ${d}, { edges: '${top}' })",
+   "detail": "(shape | sketch, d, { edges })",
+   "info": "Bevel the sharp edges of a solid (or cut the corners of a sketch).",
+   "kind": "function"
+  },
+  {
+   "label": "sharpEdges",
+   "snippet": "sharpEdges(${shape})",
+   "detail": "(shape, minAngle)",
+   "info": "List the sharp edges of a solid: { p0, p1, t, nA, nB, convex, angle, length }.",
+   "kind": "function"
+  },
+  {
+   "label": "union",
+   "snippet": "union(${a}, ${b})",
+   "detail": "(a, b, ...)",
+   "info": "Merge shapes (or 2D sketches). Arrays are accepted.",
+   "kind": "function"
+  },
+  {
+   "label": "difference",
+   "snippet": "difference(${a}, ${b})",
+   "detail": "(a, b, ...)",
+   "info": "Subtract every following shape from the first.",
+   "kind": "function"
+  },
+  {
+   "label": "intersect",
+   "snippet": "intersect(${a}, ${b})",
+   "detail": "(a, b, ...)",
+   "info": "Keep only the common volume.",
+   "kind": "function"
+  },
+  {
+   "label": "hull",
+   "snippet": "hull(${a}, ${b})",
+   "detail": "(a, b, ... | [x, y, z] points)",
+   "info": "Convex hull of shapes, sketches or raw points.",
+   "kind": "function"
+  },
+  {
+   "label": "minkowski",
+   "snippet": "minkowski(${a}, ${b})",
+   "detail": "(a, b)",
+   "info": "Minkowski sum: sweep b over every point of a.",
+   "kind": "function"
+  },
+  {
+   "label": "shell",
+   "snippet": "shell(${shape}, ${t}, { open: '${top}' })",
+   "detail": "(shape, t, { open: 'top' | ['top', 'front'] })",
+   "info": "Hollow a solid to wall thickness t, optionally removing faces.",
+   "kind": "function"
+  },
+  {
+   "label": "resize",
+   "snippet": "resize(${shape}, [${w}, ${h}, ${d}])",
+   "detail": "(shape, [w, h, d], { auto })",
+   "info": "Scale to a bounding-box size; 0 keeps an axis, auto scales it proportionally.",
+   "kind": "function"
+  },
+  {
+   "label": "linearArray",
+   "snippet": "linearArray(${shape}, ${count}, [${dx}, 0, 0])",
+   "detail": "(shape, count, [dx, dy, dz])",
+   "info": "count copies stepped by a vector (returns an array; wrap in union()).",
+   "kind": "function"
+  },
+  {
+   "label": "polarArray",
+   "snippet": "polarArray(${shape}, ${count}, { radius: ${r} })",
+   "detail": "(shape, count, { radius, axis, start, sweep })",
+   "info": "count copies around an axis (returns an array).",
+   "kind": "function"
+  },
+  {
+   "label": "grid",
+   "snippet": "grid(${shape}, [${nx}, ${nz}], [${dx}, ${dz}])",
+   "detail": "(shape, [nx, nz], [dx, dz])",
+   "info": "nx × nz grid on the ground plane (returns an array).",
+   "kind": "function"
+  },
+  {
+   "label": "gear",
+   "snippet": "gear({ module: ${1}, teeth: ${20}, thickness: ${5} })",
+   "detail": "({ module, teeth, pressureAngle, thickness, helix, backlash, bore })",
+   "info": "Involute spur or helical gear: axis Y, base on y = 0, tooth 0 along +X.",
+   "kind": "function"
+  },
+  {
+   "label": "gear2d",
+   "snippet": "gear2d({ module: ${1}, teeth: ${20} })",
+   "detail": "({ module, teeth, pressureAngle, backlash, bore })",
+   "info": "The outline of an involute gear as a 2D sketch.",
+   "kind": "function"
+  },
+  {
+   "label": "gearPair",
+   "snippet": "gearPair({ module: ${1}, teeth: [${20}, ${10}], backlash: ${0.2} })",
+   "detail": "({ module, teeth: [t1, t2], ... })",
+   "info": "Two meshing gears: [first, second], the second along +X at the right distance and turned to mesh.",
+   "kind": "function"
+  },
+  {
+   "label": "gearDistance",
+   "snippet": "gearDistance(${module}, ${teeth1}, ${teeth2})",
+   "detail": "(module, teeth1, teeth2)",
+   "info": "Centre distance of two meshing gears: module × (teeth1 + teeth2) / 2.",
+   "kind": "function"
+  },
+  {
+   "label": "rack",
+   "snippet": "rack({ module: ${1}, teeth: ${10} })",
+   "detail": "({ module, teeth, pressureAngle, thickness, height, backlash })",
+   "info": "Straight gear rack: pitch line along X at z = 0, teeth toward -Z.",
+   "kind": "function"
+  },
+  {
+   "label": "ringGear",
+   "snippet": "ringGear({ module: ${1}, teeth: ${36}, thickness: ${5} })",
+   "detail": "({ module, teeth, thickness, rim, backlash, helix })",
+   "info": "Internal (ring) gear: teeth inside a rim, centred on the origin, axis Y.",
+   "kind": "function"
+  },
+  {
+   "label": "ringAddendum",
+   "snippet": "ringAddendum(${ringTeeth}, ${pinionTeeth})",
+   "detail": "(ringTeeth, pinionTeeth, pressureAngle)",
+   "info": "The ring tooth height in modules (at most 1) that keeps a small pinion clear of the ring's tips.",
+   "kind": "function"
+  },
+  {
+   "label": "planetary",
+   "snippet": "planetary({ module: ${1}, sun: ${12}, planet: ${12}, planets: ${3}, backlash: ${0.2} })",
+   "detail": "({ module, sun, planet, planets, thickness, backlash, helix, rim, sunBore, planetBore })",
+   "info": "A planetary set { sun, planets, ring }, assembled and phased; ring teeth = sun + 2 x planet.",
+   "kind": "function"
+  },
+  {
+   "label": "thread",
+   "snippet": "thread({ size: '${M8}', length: ${20} })",
+   "detail": "({ size: 'M8' | 'M8x1' | 'Tr8x8(P2)', length, internal, pitch, profile, starts, left, tolerance, chamfer })",
+   "info": "Screw thread along Y from y = 0: a threaded rod, or with internal: true the cutter for a threaded hole.",
+   "kind": "function"
+  },
+  {
+   "label": "split",
+   "snippet": "split(${shape}, { ${y}: ${40} }, { dowels: ${2}, layout: true })",
+   "detail": "(shape, { x | y | z: at | [at, ...] }, { dowels, dowelDiameter, dowelLength, tolerance, wall, layout, gap })",
+   "info": "Cut a shape into pieces across one axis, optionally with dowel holes and laid out cut-face-down for printing.",
+   "kind": "function"
+  },
+  {
+   "label": "hole",
+   "snippet": "hole(${r}, ${length}, { axis: '${z}' })",
+   "detail": "(r, length, { axis: 'x' | 'y' | 'z', shape: 'teardrop' | 'bridge' | 'round', angle, flat, tolerance })",
+   "info": "Printable hole cutter centred on the origin; horizontal holes get a teardrop top by default.",
+   "kind": "function"
+  },
+  {
+   "label": "screwHole",
+   "snippet": "screwHole('${M3}', ${length})",
+   "detail": "(size, length, { type: 'clearance' | 'tap' | 'countersunk' | 'counterbore', tolerance, bridge })",
+   "info": "Cutter for a screw hole: axis Y, top surface at y = 0. Sizes M2 M2.5 M3 M4 M5 M6 M8.",
+   "kind": "function"
+  },
+  {
+   "label": "nutPocket",
+   "snippet": "nutPocket('${M3}')",
+   "detail": "(size, { depth, tolerance })",
+   "info": "Hexagonal nut pocket cutter: axis Y, top at y = 0.",
+   "kind": "function"
+  },
+  {
+   "label": "heatInsert",
+   "snippet": "heatInsert('${M3}')",
+   "detail": "(size, { depth, tolerance })",
+   "info": "Heat-set insert hole cutter: axis Y, top at y = 0.",
+   "kind": "function"
+  },
+  {
+   "label": "screw",
+   "snippet": "screw('${M3}')",
+   "detail": "(size)",
+   "info": "Screw dimensions: { d, clearance, head, csk, nut, insert, tap }.",
+   "kind": "function"
+  },
+  {
+   "label": "SCREWS",
+   "detail": "object",
+   "info": "Table of metric screw dimensions by size.",
+   "kind": "constant"
+  },
+  {
+   "label": "show",
+   "snippet": "show(${shape})",
+   "detail": "(shape | [shapes], { name, color, ghost, hidden })",
+   "info": "Display a shape without returning it.",
+   "kind": "function"
+  },
+  {
+   "label": "log",
+   "snippet": "log(${value})",
+   "detail": "(...values)",
+   "info": "Print to the console.",
+   "kind": "function"
+  },
+  {
+   "label": "echo",
+   "snippet": "echo(${value})",
+   "detail": "(...values)",
+   "info": "OpenSCAD-style console output with the line number; returns the first value.",
+   "kind": "function"
+  },
+  {
+   "label": "assert",
+   "snippet": "assert(${condition}, '${message}')",
+   "detail": "(condition, message)",
+   "info": "Stop the build with an error on this line when the condition is falsy.",
+   "kind": "function"
+  },
+  {
+   "label": "deg",
+   "snippet": "deg(${radians})",
+   "detail": "(radians)",
+   "info": "Radians to degrees.",
+   "kind": "function"
+  },
+  {
+   "label": "rad",
+   "snippet": "rad(${degrees})",
+   "detail": "(degrees)",
+   "info": "Degrees to radians.",
+   "kind": "function"
+  }
+ ],
+ "methods": [
+  {
+   "label": "translate",
+   "snippet": "translate(${x}, ${y}, ${z})",
+   "detail": "(x, y, z)",
+   "info": "Move; sketches take (x, y).",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "rotate",
+   "snippet": "rotate(${x}, ${y}, ${z})",
+   "detail": "(xDeg, yDeg, zDeg)",
+   "info": "Rotate in degrees; sketches take one angle.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "scale",
+   "snippet": "scale(${f})",
+   "detail": "(f | x, y, z)",
+   "info": "Scale uniformly or per axis.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "mirror",
+   "snippet": "mirror('${x}')",
+   "detail": "('x' | 'y' | 'z')",
+   "info": "Mirror across an axis plane.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "resize",
+   "snippet": "resize([${w}, ${h}, ${d}])",
+   "detail": "([w, h, d], { auto })",
+   "info": "Scale to a bounding-box size; 0 keeps an axis.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "color",
+   "snippet": "color('${#8fb3ff}')",
+   "detail": "(css)",
+   "info": "Display colour: #hex, a CSS name, rgb() or hsl().",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "onPlate",
+   "snippet": "onPlate()",
+   "detail": "(y = 0)",
+   "info": "Put the bottom on the build plate.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "center",
+   "snippet": "center()",
+   "detail": "()",
+   "info": "Centre on the origin.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "centerXZ",
+   "snippet": "centerXZ()",
+   "detail": "()",
+   "info": "Centre in X and Z, keeping Y.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "align",
+   "snippet": "align({ ${y}: '${min}' })",
+   "detail": "({ x, y, z: 'min' | 'center' | 'max' }, [tx, ty, tz])",
+   "info": "Align the bounding box to a point.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "add",
+   "snippet": "add(${other})",
+   "detail": "(other, ...)",
+   "info": "Union.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "union",
+   "snippet": "union(${other})",
+   "detail": "(other, ...)",
+   "info": "Union.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "subtract",
+   "snippet": "subtract(${other})",
+   "detail": "(other, ...)",
+   "info": "Difference.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "intersect",
+   "snippet": "intersect(${other})",
+   "detail": "(other, ...)",
+   "info": "Intersection.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "hull",
+   "snippet": "hull(${other})",
+   "detail": "(other, ...)",
+   "info": "Convex hull with other shapes.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "minkowski",
+   "snippet": "minkowski(${other})",
+   "detail": "(other)",
+   "info": "Minkowski sum.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "round",
+   "snippet": "round(${r})",
+   "detail": "(r, { segments })",
+   "info": "Round all edges and corners (grows by r).",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "erode",
+   "snippet": "erode(${t})",
+   "detail": "(t)",
+   "info": "Shrink inward by t on every face.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "shell",
+   "snippet": "shell(${t}, { open: '${top}' })",
+   "detail": "(t, { open })",
+   "info": "Hollow to a wall thickness.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "projection",
+   "snippet": "projection()",
+   "detail": "({ cut: true | y })",
+   "info": "Footprint or cut slice as a 2D sketch.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "name",
+   "snippet": "name('${part}')",
+   "detail": "(name)",
+   "info": "Name the part (Parts panel, export file names).",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "ghost",
+   "snippet": "ghost()",
+   "detail": "(on = true)",
+   "info": "Render transparent as a reference; never exported.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "hide",
+   "snippet": "hide()",
+   "detail": "(on = true)",
+   "info": "List in the Parts panel but do not draw.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "bounds",
+   "snippet": "bounds()",
+   "detail": "()",
+   "info": "{ min, max, size, center }.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "volume",
+   "snippet": "volume()",
+   "detail": "()",
+   "info": "Volume in mm³.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "clearance",
+   "snippet": "clearance(${other})",
+   "detail": "(other)",
+   "info": "Smallest gap to another shape in mm; 0 when they touch or overlap.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "interference",
+   "snippet": "interference(${other})",
+   "detail": "(other)",
+   "info": "Volume shared with another shape in mm³.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "intersects",
+   "snippet": "intersects(${other})",
+   "detail": "(other)",
+   "info": "True when the shapes share any volume.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "overlap",
+   "snippet": "overlap(${other})",
+   "detail": "(other)",
+   "info": "The volume shared with another shape, as a Shape.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "anchor",
+   "snippet": "anchor('${name}', [${x}, ${y}, ${z}])",
+   "detail": "(name, [x, y, z], [nx, ny, nz]?) | (name)",
+   "info": "Record a named point that moves with the shape, or get it back as { point, normal }.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "emboss",
+   "snippet": "emboss('${text}', ${face}, { depth: ${1} })",
+   "detail": "(sketch | 'text', face | anchor, { depth, at, angle, size, font, center })",
+   "info": "Raise a sketch or text out of a face, oriented to read from outside.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "engrave",
+   "snippet": "engrave('${text}', ${face}, { depth: ${0.6} })",
+   "detail": "(sketch | 'text', face | anchor, { depth, at, angle, size, font, center })",
+   "info": "Cut a sketch or text into a face.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "face",
+   "snippet": "face('${top}')",
+   "detail": "('top' | 'bottom' | 'front' | 'back' | 'left' | 'right')",
+   "info": "A face of the bounding box: { center, normal, min, max, size }.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "at",
+   "snippet": "at(${face}, [${u}, ${v}])",
+   "detail": "(face, [u, v], { gap, orient })",
+   "info": "Put the shape's origin on a face with +Y along its normal (cutters and bosses land on it).",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "placeOn",
+   "snippet": "placeOn(${base}, '${top}')",
+   "detail": "(base, face, { at: [u, v], gap, align })",
+   "info": "Put the shape on a face of another, touching and centred.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "alignTo",
+   "snippet": "alignTo(${other}, { y: '${above}' })",
+   "detail": "(other, { x, y, z }, { gap })",
+   "info": "Align bounding boxes per axis: 'min' | 'center' | 'max', or 'left'/'right', 'below'/'above', 'back'/'front'.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "printability",
+   "snippet": "printability()",
+   "detail": "({ angle, minWall })",
+   "info": "Printing verdict: { ok, problems, ... }.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "overhangs",
+   "snippet": "overhangs()",
+   "detail": "({ angle })",
+   "info": "Undersides steeper than 45°: { area, worstAngle }.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "unsupported",
+   "snippet": "unsupported()",
+   "detail": "({ angle })",
+   "info": "Islands and bridges: overhangs with nothing below.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "minWallThickness",
+   "snippet": "minWallThickness()",
+   "detail": "()",
+   "info": "The thinnest wall: { thickness, at }.",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "surfaceArea",
+   "snippet": "surfaceArea()",
+   "detail": "()",
+   "info": "Surface area in mm².",
+   "kind": "method",
+   "on": "shape"
+  },
+  {
+   "label": "isEmpty",
+   "snippet": "isEmpty()",
+   "detail": "()",
+   "info": "True if the shape has no volume / area.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "area",
+   "snippet": "area()",
+   "detail": "()",
+   "info": "Area of a sketch in mm².",
+   "kind": "method",
+   "on": "sketch"
+  },
+  {
+   "label": "offset",
+   "snippet": "offset(${delta}, { join: '${round}' })",
+   "detail": "(delta, { join: 'round' | 'miter' | 'square' })",
+   "info": "Grow (+) or shrink (−) a 2D region.",
+   "kind": "method",
+   "on": "sketch"
+  },
+  {
+   "label": "fillet",
+   "snippet": "fillet(${r})",
+   "detail": "(r, { edges, segments })",
+   "info": "Round every corner of a sketch, or the sharp edges of a solid; edges: 'all' | 'top' | 'bottom' | 'horizontal' | 'vertical' | 'convex' | 'concave'.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "chamfer",
+   "snippet": "chamfer(${d})",
+   "detail": "(d, { edges })",
+   "info": "Cut every corner of a sketch, or bevel the sharp edges of a solid; edges as for fillet.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "extrude",
+   "snippet": "extrude(${h})",
+   "detail": "(h, { center, twist, scale })",
+   "info": "Extrude a sketch up along Y.",
+   "kind": "method",
+   "on": "sketch"
+  },
+  {
+   "label": "revolve",
+   "snippet": "revolve()",
+   "detail": "({ angle, segments })",
+   "info": "Revolve a sketch around Y.",
+   "kind": "method",
+   "on": "sketch"
+  },
+  {
+   "label": "roof",
+   "snippet": "roof()",
+   "detail": "({ angle, segments, tolerance })",
+   "info": "Roof solid from a sketch.",
+   "kind": "method",
+   "on": "sketch"
+  },
+  {
+   "label": "toPolygons",
+   "snippet": "toPolygons()",
+   "detail": "()",
+   "info": "Outline rings of a sketch as [[x, y], ...][].",
+   "kind": "method",
+   "on": "sketch"
+  },
+  {
+   "label": "sweep",
+   "snippet": "sweep(${path})",
+   "detail": "(path, { frame, up, twist, scale, segments })",
+   "info": "Sweep a sketch along a path.",
+   "kind": "method",
+   "on": "sketch"
+  },
+  {
+   "label": "blur",
+   "snippet": "blur(${radius})",
+   "detail": "(radius)",
+   "info": "Soften an image by a radius in pixels.",
+   "kind": "method",
+   "on": "image"
+  },
+  {
+   "label": "crop",
+   "snippet": "crop(${x}, ${y}, ${w}, ${h})",
+   "detail": "(x, y, w, h)",
+   "info": "Cut a rectangle out of an image (pixels).",
+   "kind": "method",
+   "on": "image"
+  },
+  {
+   "label": "gamma",
+   "snippet": "gamma(${g})",
+   "detail": "(g)",
+   "info": "Lighten (< 1) or darken (> 1) the mid-tones of an image.",
+   "kind": "method",
+   "on": "image"
+  },
+  {
+   "label": "invert",
+   "snippet": "invert()",
+   "detail": "()",
+   "info": "Swap light and dark in an image.",
+   "kind": "method",
+   "on": "image"
+  },
+  {
+   "label": "normalize",
+   "snippet": "normalize()",
+   "detail": "()",
+   "info": "Stretch an image to the full 0..1 range.",
+   "kind": "method",
+   "on": "image"
+  },
+  {
+   "label": "flip",
+   "snippet": "flip('${y}')",
+   "detail": "('x' | 'y')",
+   "info": "Mirror an image.",
+   "kind": "method",
+   "on": "image"
+  },
+  {
+   "label": "moveTo",
+   "snippet": "moveTo(${x}, ${y})",
+   "detail": "(x, y)",
+   "info": "Start the outline here.",
+   "kind": "method",
+   "on": "builder"
+  },
+  {
+   "label": "lineTo",
+   "snippet": "lineTo(${x}, ${y})",
+   "detail": "(x, y)",
+   "info": "Segment to a point.",
+   "kind": "method",
+   "on": "builder"
+  },
+  {
+   "label": "line",
+   "snippet": "line(${dx}, ${dy})",
+   "detail": "(dx, dy)",
+   "info": "Relative segment.",
+   "kind": "method",
+   "on": "builder"
+  },
+  {
+   "label": "horizontal",
+   "snippet": "horizontal(${dx})",
+   "detail": "(dx)",
+   "info": "Horizontal relative segment.",
+   "kind": "method",
+   "on": "builder"
+  },
+  {
+   "label": "vertical",
+   "snippet": "vertical(${dy})",
+   "detail": "(dy)",
+   "info": "Vertical relative segment.",
+   "kind": "method",
+   "on": "builder"
+  },
+  {
+   "label": "arcTo",
+   "snippet": "arcTo(${x}, ${y}, { r: ${r} })",
+   "detail": "(x, y, { r, side: 'left' | 'right', large, segments })",
+   "info": "Circular arc of radius r to a point.",
+   "kind": "method",
+   "on": "builder"
+  },
+  {
+   "label": "tangentArcTo",
+   "snippet": "tangentArcTo(${x}, ${y})",
+   "detail": "(x, y, { segments })",
+   "info": "Arc tangent to the previous segment, ending at a point.",
+   "kind": "method",
+   "on": "builder"
+  },
+  {
+   "label": "quadTo",
+   "snippet": "quadTo(${cx}, ${cy}, ${x}, ${y})",
+   "detail": "(cx, cy, x, y, { segments })",
+   "info": "Quadratic Bézier curve to a point, pulled toward one control point.",
+   "kind": "method",
+   "on": "builder"
+  },
+  {
+   "label": "bezierTo",
+   "snippet": "bezierTo(${c1x}, ${c1y}, ${c2x}, ${c2y}, ${x}, ${y})",
+   "detail": "(c1x, c1y, c2x, c2y, x, y, { segments })",
+   "info": "Cubic Bézier curve to a point with two control points.",
+   "kind": "method",
+   "on": "builder"
+  },
+  {
+   "label": "close",
+   "snippet": "close()",
+   "detail": "({ mirror: 'x' | 'y', segments })",
+   "info": "Finish the outline as a Sketch; mirror appends the mirror image.",
+   "kind": "method",
+   "on": "builder"
+  },
+  {
+   "label": "append",
+   "snippet": "append(${path})",
+   "detail": "(path)",
+   "info": "Continue with another path, moved to start where this one ends.",
+   "kind": "method",
+   "on": "path"
+  },
+  {
+   "label": "close",
+   "snippet": "close()",
+   "detail": "()",
+   "info": "Join the ends of a path so the sweep is a ring.",
+   "kind": "method",
+   "on": "path"
+  },
+  {
+   "label": "smooth",
+   "snippet": "smooth()",
+   "detail": "({ segments })",
+   "info": "Replace the corners of a path with a smooth curve.",
+   "kind": "method",
+   "on": "path"
+  },
+  {
+   "label": "reverse",
+   "snippet": "reverse()",
+   "detail": "()",
+   "info": "Travel a path the other way.",
+   "kind": "method",
+   "on": "path"
+  },
+  {
+   "label": "length",
+   "snippet": "length()",
+   "detail": "()",
+   "info": "Length of a path in mm.",
+   "kind": "method",
+   "on": "path"
+  },
+  {
+   "label": "pointAt",
+   "snippet": "pointAt(${t})",
+   "detail": "(t)",
+   "info": "Point at fraction t (0..1) of a path.",
+   "kind": "method",
+   "on": "path"
+  },
+  {
+   "label": "tangentAt",
+   "snippet": "tangentAt(${t})",
+   "detail": "(t)",
+   "info": "Unit direction at fraction t (0..1) of a path.",
+   "kind": "method",
+   "on": "path"
+  }
+ ]
+}

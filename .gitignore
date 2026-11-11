@@ -68,6 +68,7 @@ dist/
 *.local
 .DS_Store
 public/api.txt
+public/api-catalog.json
 public/llms.txt
 
 # TemenCAD core (CMake build trees and the wasm artefact)

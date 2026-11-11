@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import UIKit
 import TemenCAD
+import TemenEditor
 
 /// One line of the conversation as the user sees it.
 struct ChatEntry: Identifiable, Codable, Equatable {
@@ -99,6 +100,10 @@ final class AppModel: ObservableObject, AgentHost {
     /// A printer's build plate shown under the model, with whether the visible parts fit.
     @Published private(set) var plate: Plate? { didSet { savePlate() } }
     @Published private(set) var plateFit: (fits: Bool, problems: [String]) = (true, [])
+    /// One editor document per text file opened in the editor: its undo history and unsaved edits (see Editing.swift).
+    var editorDocuments: [String: CodeDocument] = [:]
+    /// Each document's text as last taken from the project, to tell edits in the editor from changes made elsewhere.
+    var editorSynced: [String: String] = [:]
     /// The last build's messages and error, for the console.
     @Published private(set) var console: TemenBuildResult?
     /// Bumped whenever the parts' display changes, so the Parts list redraws.
@@ -152,6 +157,7 @@ final class AppModel: ObservableObject, AgentHost {
         lastReport = BuildReport.make(result)
         buildStatus = BuildReport.summary(result)
         console = result
+        updateDiagnostics()
         if let result, result.ok {
             lastResult = result
             let names = Set(result.parts.map(\.name))
@@ -723,6 +729,7 @@ final class AppModel: ObservableObject, AgentHost {
         generation += 1
         partOverrides = [:]
         lastResult = nil
+        editorDocuments = [:]; editorSynced = [:]
         project = given ?? ProjectStore.load()
         if let i = currentIndex { project.name = workspaces[i].name }
         if carry {
@@ -1187,12 +1194,14 @@ final class AppModel: ObservableObject, AgentHost {
             guard n != from, let data = project.files[from] else { return }
             project.files.removeValue(forKey: from)
             project.files[n] = data
+            moveEditorDocument(from, to: n)
             Task { await rebuild() }
         }
     }
 
     func removeFile(_ name: String) {
         guard name != Project.entry, project.files.removeValue(forKey: name) != nil else { return }
+        moveEditorDocument(name, to: nil)
         Task { await rebuild() }
     }
 
@@ -1354,6 +1363,21 @@ final class AppModel: ObservableObject, AgentHost {
                     case let s where s.hasPrefix("addfile:"):
                         let url = URL(fileURLWithPath: String(s.dropFirst(8)))
                         if let d = try? Data(contentsOf: url) { addFiles([(url.lastPathComponent, d)], replace: []) }
+                    case let s where s.hasPrefix("type:"): // types into the open editor; ⏎ Return, ⇥ Tab, ‚ a comma
+                        if let tv = Self.debugTextView() {
+                            for ch in s.dropFirst(5) {
+                                let k = ch == "⏎" ? "\n" : ch == "⇥" ? "\t" : ch == "‚" ? "," : String(ch)
+                                tv.insertText(k)
+                                try? await Task.sleep(nanoseconds: 60_000_000)
+                            }
+                        }
+                    case let s where s.hasPrefix("cursor:"): // cursor:needle puts the cursor after the text
+                        if let tv = Self.debugTextView() {
+                            let r = (tv.text as NSString).range(of: String(s.dropFirst(7)).replacingOccurrences(of: "‚", with: ","))
+                            if r.location != NSNotFound { tv.becomeFirstResponder(); tv.selectedRange = NSRange(location: r.location + r.length, length: 0) }
+                        }
+                    case "editbuild": if let f = debugOpenFile { await buildFromEditor(f) }
+                    case let s where s.hasPrefix("wait:"): try? await Task.sleep(nanoseconds: UInt64((Double(s.dropFirst(5)) ?? 1) * 1e9))
                     case "reset": preview.resetView(plate: plate)
                     case let s where s.hasPrefix("plate:"): choosePlate(String(s.dropFirst(6)))
                     case let s where s.hasPrefix("ghost:"): setPart(String(s.dropFirst(6)), ghost: true)
@@ -1381,6 +1405,19 @@ final class AppModel: ObservableObject, AgentHost {
                 }
             }
         }
+    }
+
+    /// The editor's text view in the key window (development).
+    static func debugTextView() -> UITextView? {
+        func find(_ v: UIView) -> UITextView? {
+            if let t = v as? UITextView, t.isEditable, String(describing: type(of: t)).contains("CodeTextView") { return t }
+            for s in v.subviews { if let t = find(s) { return t } }
+            return nil
+        }
+        for scene in UIApplication.shared.connectedScenes {
+            for w in (scene as? UIWindowScene)?.windows ?? [] { if let t = find(w) { return t } }
+        }
+        return nil
     }
     #endif
 }
