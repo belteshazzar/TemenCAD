@@ -322,9 +322,17 @@ that seems right. The core builds against `lamassu.h` alone.
    (only the first was written), a listed `const` stays constant, an imported name exported again
    is a re-export (it was `undefined`), an undeclared name is `SyntaxError: Export 'x' is not
    defined in module`. Namespace objects are sealed, read-only and list their keys in name order.
-   The bytecode cache format is version 6. One difference remains: an exported function exists
-   once its module starts running, not before any module runs, so in an import cycle the module
-   that runs first cannot call it from its top-level code.
+   The bytecode cache format is version 6.
+15. **Functions made before any module runs — done.** An exported function existed only once its
+   own module started running, so in an import cycle the module that ran first could not call
+   it from top-level code (`f is not a function`). Now, as in V8, every module's functions are
+   made before any module body runs: after linking, each body runs up to a new
+   `JS_OP_MODULE_READY` (emitted after its hoisted functions) and parks there, and evaluation
+   resumes the parked bodies in dependency order, top-level await included. `export default
+   function` is made at that point too, and a named one binds its name in the module. The
+   bytecode cache format is version 7. Found on the way: lamassu's own CLI had rejected module
+   files with an `export function` since 7e4a96f, and a collection at one point of module
+   evaluation was a use-after-free; both are fixed.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
