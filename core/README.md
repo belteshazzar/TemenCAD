@@ -333,6 +333,14 @@ that seems right. The core builds against `lamassu.h` alone.
    bytecode cache format is version 7. Found on the way: lamassu's own CLI had rejected module
    files with an `export function` since 7e4a96f, and a collection at one point of module
    evaluation was a use-after-free; both are fixed.
+16. **Function names as V8 gives them — done.** `f.name` was `undefined` for every function. Now
+   it is V8's read-only `name`: the function's own, or for an anonymous function or arrow the
+   name of what it is defined as (`const part = () => ...` is `part`, and so are object keys,
+   methods, defaults and `export default`), builtins' names, `bound f`. Stack frames show the
+   inferred names as V8's do. A named function expression can also call itself by name
+   (`const f = function inner(n) { ... inner(n - 1) ... }` threw `inner is not defined`). The
+   bytecode cache format is version 8. Still missing: `f.length`, and `String(f)` is
+   `"[function]"` rather than the source.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
