@@ -310,8 +310,21 @@ that seems right. The core builds against `lamassu.h` alone.
    nothing until an error is thrown; the bytecode cache format is version 5. Checked against
    Node on 140 runtime and 76 syntax cases: the differences left are lamassu's "not supported"
    messages, a few V8 quirks, and features lamassu does not have (`Object.create`, a global
-   `Function`); lamassu's `docs-site/guide/deviations.md` lists them. An exported `let`/`const`
-   read before its declaration runs is still `undefined` rather than a TDZ error.
+   `Function`); lamassu's `docs-site/guide/deviations.md` lists them.
+14. **Declaration rules as V8 applies them — done.** A `let`/`const` written before its
+   declaration ran (`w = 20` in a function called above `let w = 10`) used to store silently, and
+   an exported `let`/`const` read early was `undefined`. Now both throw `Cannot access 'w' before
+   initialization`, for writes too (directly, from a closure, from a later `switch` case; a `const`
+   reports this before its `TypeError`). The compiler emits checked stores only where a write can
+   come early, and module exports start in the TDZ (the exports object holds the marker from
+   compile time, and every read of a namespace checks for it), so other code pays nothing.
+   Export lists follow V8 as well: `export { a as b }` beside `export let a` writes both names
+   (only the first was written), a listed `const` stays constant, an imported name exported again
+   is a re-export (it was `undefined`), an undeclared name is `SyntaxError: Export 'x' is not
+   defined in module`. Namespace objects are sealed, read-only and list their keys in name order.
+   The bytecode cache format is version 6. One difference remains: an exported function exists
+   once its module starts running, not before any module runs, so in an import cycle the module
+   that runs first cannot call it from its top-level code.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
