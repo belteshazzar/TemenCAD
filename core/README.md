@@ -351,6 +351,13 @@ that seems right. The core builds against `lamassu.h` alone.
    `function () { [native code] }` for a bound function. lamassu keeps one copy of each module's
    source (the prelude's and the script's) while a function from it is alive. The bytecode cache
    format is version 10 and carries the source.
+19. **e.stack as V8 gives it — done.** Errors had no `stack`. Now they have V8's: frames taken
+   when the error is made, text built when `stack` is first read, V8's frame names (`Object.m`,
+   `new C`, `async f`, `at Array.map (<anonymous>)`) and columns, `Error.stackTraceLimit` and
+   `Error.captureStackTrace`. Error positions moved to where V8 puts them (a call at its
+   callee's name, a property read at the property), which `js_context_error_pos` reports too.
+   Found on the way, not yet fixed: `JSON.parse` ignores a reviver, and `replace` with a string
+   pattern ignores a function replacement. The bytecode cache format is version 11.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
