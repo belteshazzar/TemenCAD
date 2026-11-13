@@ -358,6 +358,13 @@ that seems right. The core builds against `lamassu.h` alone.
    callee's name, a property read at the property), which `js_context_error_pos` reports too.
    Found on the way, not yet fixed: `JSON.parse` ignores a reviver, and `replace` with a string
    pattern ignores a function replacement. The bytecode cache format is version 11.
+20. **Errors as V8 has them, `instanceof` and `Object.create` — done.** An error's `message` and
+   `cause` are no longer enumerated (`JSON.stringify(new Error('x'))` is `{}`). `instanceof` is
+   V8's (`e instanceof TypeError`), and `Promise.prototype` is the object with `then`.
+   `Object.create(proto)` works; its second argument (property descriptors) is a TypeError, as
+   there are no property attributes. Found on the way, not yet fixed: every function has a
+   `prototype` (V8 gives arrows, async functions, methods and builtins none), and assigning a
+   non-object `F.prototype` is ignored. The bytecode cache format is version 12.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
