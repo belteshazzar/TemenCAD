@@ -372,9 +372,10 @@ that seems right. The core builds against `lamassu.h` alone.
    (`[object Error]`, `[object Array]`, ...). Found on the way and fixed: the promise
    combinators took only arrays and threw on anything else, where V8 takes any iterable and
    rejects; `Object.getPrototypeOf` of a function, number, string or promise was `null`; and
-   `Number.prototype`/`String.prototype` were empty objects apart from the methods. Still
-   missing: `encodeURI`/`decodeURI` and their component forms (the only V8 source of a
-   URIError).
+   `Number.prototype`/`String.prototype` were empty objects apart from the methods.
+22. **`encodeURI`/`decodeURI` and their component forms — done**, as V8 has them (`URIError: URI
+   malformed`). lamassu's dispatch loop is now aligned to 64 bytes: its speed had depended on
+   where unrelated code put it (up to 22% on the benchmarks).
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
