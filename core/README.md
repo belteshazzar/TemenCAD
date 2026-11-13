@@ -376,6 +376,11 @@ that seems right. The core builds against `lamassu.h` alone.
 22. **`encodeURI`/`decodeURI` and their component forms — done**, as V8 has them (`URIError: URI
    malformed`). lamassu's dispatch loop is now aligned to 64 bytes: its speed had depended on
    where unrelated code put it (up to 22% on the benchmarks).
+23. **`replace` with a string pattern and a function — done.** `replace` and `replaceAll` with a
+   string pattern call a function replacement as `fn(match, position, string)`, as V8 does, and
+   a replacement string expands `` $` `` and `$'` too. Found on the way, not yet fixed: turning
+   an object into a string never calls its own `toString` or `valueOf` (`String(o)`, `'' + o`,
+   a template literal all give `[object Object]`).
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
