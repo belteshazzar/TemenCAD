@@ -398,7 +398,7 @@ Scripts are strict-mode ES modules in a JavaScript subset that every TemenCAD ho
 //      async / await (top-level await too), import / export, Math, JSON, Array, String, Object, Map, Set.
 // Not available: class, var, for...in, generators (function* / yield), eval and new Function,
 //      Proxy, Reflect, Symbol, typed arrays and ArrayBuffer, Intl, with, labels, __proto__,
-//      instanceof (a syntax error), getters/setters in object literals, object rest in destructuring, flatMap, Array.from({ length: n }) and holes (Array(n)).
+//      getters/setters in object literals, object rest in destructuring, flatMap, Array.from({ length: n }) and holes (Array(n)).
 // Build arrays with a counted for loop and push(), or map an existing array.
 // Group helpers as plain functions or object literals instead of classes.
 ```

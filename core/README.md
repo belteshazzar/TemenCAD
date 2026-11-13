@@ -365,10 +365,20 @@ that seems right. The core builds against `lamassu.h` alone.
    there are no property attributes. Found on the way, not yet fixed: every function has a
    `prototype` (V8 gives arrows, async functions, methods and builtins none), and assigning a
    non-object `F.prototype` is ignored. The bytecode cache format is version 12.
+21. **The missing error types — done.** `EvalError`, `URIError` and `AggregateError` (its own
+   `errors` listed from any iterable, not enumerated), and `Promise.any`, which rejects with
+   V8's AggregateError. Each error constructor's prototype is `Error`, so
+   `TypeError.captureStackTrace` works. `Object.prototype.toString` gives V8's tags
+   (`[object Error]`, `[object Array]`, ...). Found on the way and fixed: the promise
+   combinators took only arrays and threw on anything else, where V8 takes any iterable and
+   rejects; `Object.getPrototypeOf` of a function, number, string or promise was `null`; and
+   `Number.prototype`/`String.prototype` were empty objects apart from the methods. Still
+   missing: `encodeURI`/`decodeURI` and their component forms (the only V8 source of a
+   URIError).
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
-`instanceof`, `Array.from({ length })`, `flatMap`. Object keys enumerate in the language's order
+`Array.from({ length })`, `flatMap`. Object keys enumerate in the language's order
 (array-index names ascending, then insertion order), so parts from `return { body, lid }` come out
 as body, lid in every runtime.
 
