@@ -325,9 +325,9 @@ rad(degrees)                                      // degrees to radians</pre>
 //      if / for / for...of / while / do / switch, try / catch / finally, regular expressions,
 //      async / await (top-level await too), import / export, Math, JSON, Array, String, Object, Map, Set.
 // Not available: class, var, for...in, generators (function* / yield), eval and new Function,
-//      Proxy, Reflect, Symbol, typed arrays and ArrayBuffer, Intl, with, labels, __proto__,
-//      getters/setters in object literals, object rest in destructuring, flatMap, Array.from({ length: n }) and holes (Array(n)).
-// Build arrays with a counted for loop and push(), or map an existing array.
+//      Proxy, Reflect, Symbol, typed arrays and ArrayBuffer, Intl, with, __proto__,
+//      getters/setters in object literals, object rest in destructuring, flatMap and holes (Array(n)).
+// Build arrays with a counted for loop and push(), Array.from({ length: n }, (_, i) => ...), or map an existing array.
 // Group helpers as plain functions or object literals instead of classes.</pre>
       <p class="muted">Geometry kernel: <a href="https://github.com/elalish/manifold" target="_blank" rel="noopener">Manifold</a> (C++ via WebAssembly). All output is watertight.</p>
       <p class="muted">Units are millimetres, Y is up, the build plate is y = 0. Every operation returns a new shape; nothing is mutated.</p>

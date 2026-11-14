@@ -469,12 +469,24 @@ that seems right. The core builds against `lamassu.h` alone.
    x)` and `String.prototype`'s reach every function and string. Left out on purpose, documented:
    `constructor` on both (it would be `Function` and `AsyncFunction`, which compile code) and the
    throwing `arguments`/`caller` accessors. Benchmarks level.
+31. **Iterators, and everything that takes an iterable — done.** `Map`/`Set` `keys()`, `values()`
+   and `entries()` and `matchAll` return real iterators with `next()` (V8's prototypes and tags),
+   live as V8's are: an entry added before the end is visited, one deleted before it is reached is
+   not (the VM keeps a weak list of open collection iterators and a delete moves their positions),
+   and `forEach` and `for...of` walk the same way. Spread, `Array.from`, `Object.fromEntries`, the
+   `Map`/`Set` constructors (through a patched `set`/`add`, as V8) and the `Promise` combinators
+   take strings, arrays, Maps, Sets and iterators alike; array destructuring steps an iterator
+   only as far as the pattern needs and reads strings by code point (two new opcodes, bytecode
+   version 14). `Array.from` takes array-likes, `mapFn`'s index and `thisArg`; `split` takes its
+   limit; a spread call's errors are worded as V8's. Found on the way and fixed: a function
+   property read could load the `[[Prototype]]` flag of a bare compiled function from tampered
+   bytecode (out of bounds); the sanitizer build now fails on undefined behaviour instead of
+   printing it. Array iteration and destructuring are about 28% faster; other benchmarks level.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
-getters/setters in object literals, object rest in destructuring,
-`Array.from({ length })`, `flatMap`. Object keys enumerate in the language's order
-(array-index names ascending, then insertion order), so parts from `return { body, lid }` come out
-as body, lid in every runtime.
+getters/setters in object literals, object rest in destructuring, `flatMap`. Object keys enumerate
+in the language's order (array-index names ascending, then insertion order), so parts from
+`return { body, lid }` come out as body, lid in every runtime.
 
 ## Swift and native use
 

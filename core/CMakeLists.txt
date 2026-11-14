@@ -43,7 +43,7 @@ list(JOIN TEMEN_MANIFOLD_VERSION_PARTS "." TEMEN_MANIFOLD_VERSION)
 set(LAMASSU_RUNTIME
   js_vm.c js_gc.c js_string.c js_map.c js_object.c js_number.c js_interp.c
   js_builtins.c js_promise.c js_case.c js_module.c js_regexp.c js_bytecode_read.c js_date.c
-  js_mapobj.c js_setobj.c js_error.c)
+  js_mapobj.c js_setobj.c js_iter.c js_error.c)
 list(TRANSFORM LAMASSU_RUNTIME PREPEND ${LAMASSU_DIR}/src/runtime/)
 # the fdlibm-derived math kernel (same bits as Node; see lamassu's Makefile)
 set(LAMASSU_FDLIBM scalbn.c rem_pio2_large.c rem_pio2.c k_sin.c k_cos.c k_tan.c sin.c cos.c tan.c
