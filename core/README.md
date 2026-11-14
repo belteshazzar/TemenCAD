@@ -459,6 +459,16 @@ that seems right. The core builds against `lamassu.h` alone.
    a bound function starts with its target's prototype. Found on the way: a chain could be made to
    loop (now V8's `TypeError: Cyclic __proto__ value`), and setting a frozen function's or
    promise's prototype was silently ignored (now `is not extensible`). Benchmarks level.
+30. **`Function.prototype` is a function — done.** As in V8: callable with anything, returning
+   `undefined`, not a constructor, `length` 0, `name` `""`, prototype `Object.prototype`, its own
+   properties the method table every function already looked up (so the hot paths are as they
+   were). `AsyncFunction.prototype` sits between async functions and it, as in V8, and
+   `Object.prototype.toString` reports the tags V8 inherits through `Symbol.toStringTag`
+   (`[object AsyncFunction]`, and `[object Promise]`/`[object Math]` for what inherits from those).
+   A method table's own [[Prototype]] is followed, so `Object.setPrototypeOf(Function.prototype,
+   x)` and `String.prototype`'s reach every function and string. Left out on purpose, documented:
+   `constructor` on both (it would be `Function` and `AsyncFunction`, which compile code) and the
+   throwing `arguments`/`caller` accessors. Benchmarks level.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
