@@ -440,6 +440,17 @@ that seems right. The core builds against `lamassu.h` alone.
    not fixed: `setPrototypeOf` cannot change or point at a function or promise, and
    `JSON.stringify` has no replacer or `toJSON` and `JSON.parse` no reviver (a `Date` inside a
    value serializes as `{}`).
+28. **JSON as V8 has it — done.** `JSON.stringify` calls `toJSON` (a `Date` inside a value is its
+   ISO string; it was `{}`), a replacer function (holder as `this`, `{"": value}` first) or
+   property list, writes `JSON.rawJSON` values as they are, escapes lone surrogates, and throws
+   V8's circular-structure message with the path. `JSON.parse` takes a reviver, with V8's source
+   text access (`context.source` for a primitive still as parsed). `JSON.rawJSON` and
+   `JSON.isRawJSON` added. Found on the way: a raw U+2028/U+2029 in a string literal was a syntax
+   error (ES2019 allows it); nesting past 200 in stringify said "out of memory" (now `RangeError`,
+   the limit documented); `js_builtin_lengths.h` was missing from the Makefile's header list.
+   Every value held across a guest call is rooted (a GC-stress test under ASan covers toJSON,
+   replacer and reviver mutating what is still to be walked). `JSON.stringify` is about 8% slower
+   for the `toJSON` lookup V8 also does on each object; the interpreter benchmarks are level.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
