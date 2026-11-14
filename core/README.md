@@ -427,6 +427,19 @@ that seems right. The core builds against `lamassu.h` alone.
    reach `Object.prototype` (hidden by a stray `hasOwnProperty` on `Function.prototype`). Left as
    documented deviations: builtins list only what is implemented, and `Array.prototype`,
    `arguments` and `Function.prototype` lack V8's `length`, `callee` and function properties.
+27. **Promises hold properties; builtin statics replace and delete; sealed deletes — done.** A
+   promise takes properties like any object (it threw `Cannot create property 'x' on boolean
+   '#<Promise>'`); `in` on a promise had thrown. A replaced builtin static was listed twice by
+   `getOwnPropertyNames` and a deleted one stayed. `Object.assign` copies a string's characters,
+   and spread and `assign` copy a function's own properties. `delete` of a property a sealed or
+   frozen object lacks is `true`; an array's `length` is never deletable. `f[0]` on a function
+   reads what was written there. `JSON.stringify` of a promise had read the promise cell as an
+   object (memory-unsafe; it now serializes its own properties). The CLI resolves `./m.mjs` as
+   written. The dispatch loop's `delete` raises its refusal inside the helper, keeping the case's
+   code shape (a first version cost 22% on `array_sum`); benchmarks level. Found and documented,
+   not fixed: `setPrototypeOf` cannot change or point at a function or promise, and
+   `JSON.stringify` has no replacer or `toJSON` and `JSON.parse` no reviver (a `Date` inside a
+   value serializes as `{}`).
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
