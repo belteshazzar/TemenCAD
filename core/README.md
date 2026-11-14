@@ -451,6 +451,14 @@ that seems right. The core builds against `lamassu.h` alone.
    Every value held across a guest call is rooted (a GC-stress test under ASan covers toJSON,
    replacer and reviver mutating what is still to be walked). `JSON.stringify` is about 8% slower
    for the `toJSON` lookup V8 also does on each object; the interpreter benchmarks are level.
+29. **`Object.setPrototypeOf` on functions and promises — done.** A function or promise has a
+   [[Prototype]] a script can set (`Object.setPrototypeOf(B, A)` for inherited statics, `null`
+   for none), and either can be an object's prototype (`Object.create(f)`, `F.prototype = g`):
+   lookups pass through it with its own rules (`name`, statics, `call`). One `js_get_proto` /
+   `js_set_proto` pair serves `getPrototypeOf`, `setPrototypeOf`, `create`, `instanceof` and `new`;
+   a bound function starts with its target's prototype. Found on the way: a chain could be made to
+   loop (now V8's `TypeError: Cyclic __proto__ value`), and setting a frozen function's or
+   promise's prototype was silently ignored (now `is not extensible`). Benchmarks level.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
