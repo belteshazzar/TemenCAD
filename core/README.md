@@ -394,6 +394,27 @@ that seems right. The core builds against `lamassu.h` alone.
    promise had the result dropped. The interpreter loop's speed depends on its call sites as well
    as its alignment (sending builtin constructors through a helper cost 15-20% on every
    benchmark), so builtins are still called straight from the loop. Bytecode cache format 13.
+25. **Objects convert through their own `toString` and `valueOf` — done.** ToPrimitive as V8 has
+   it, in every operator, comparison, template, computed key and builtin argument: `valueOf` then
+   `toString` (string hint: the reverse), a `Date` taking the string hint for `+`, `TypeError:
+   Cannot convert object to primitive value` when neither gives a primitive, and whatever they throw
+   propagates. Before, every object was `"[object Object]"` (or its builtin form) and its methods
+   were never called. A computed key converts on each use and after the right-hand side, as V8.
+   `Array.prototype.join` detects cycles (a cyclic array joined its contents eight levels deep);
+   `Array.prototype.toString` is generic. Found on the way: `(5).valueOf()` returned `"5"`; Number
+   and String `toString`/`valueOf` converted any receiver where V8 throws; booleans had no
+   `toString`/`valueOf` and no `Boolean.prototype`; functions, numbers, strings and promises did
+   not reach `Object.prototype` (`f.valueOf` was undefined); `Math.max`/`min` stopped converting at
+   a NaN; the interpreter's own stack-overflow error was a bare string. Conversions report failure
+   through a pending error on the context (`js_take_error`), and a native keeps what it converted
+   rooted in its activation while later arguments' `valueOf` run (a GC-stress test under ASan
+   covers each such site). The dispatch loop is at the limit of what the register allocator keeps
+   in registers: the first version cost 25-55% on the benchmarks with the hot handlers' code
+   unchanged, because the loop head reloaded six values from the stack per instruction. The
+   conversions' slow paths are therefore out-of-line calls, object keys convert inside the property
+   functions, and the loop's existing out-of-memory raises take the pending error; the benchmarks
+   are level. Left as documented deviations: conversions nest at most 200 deep, and a stack trace
+   through an object key's `toString` shows the caller at its previous call.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
