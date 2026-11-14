@@ -381,6 +381,19 @@ that seems right. The core builds against `lamassu.h` alone.
    a replacement string expands `` $` `` and `$'` too. Found on the way, not yet fixed: turning
    an object into a string never calls its own `toString` or `valueOf` (`String(o)`, `'' + o`,
    a template literal all give `[object Object]`).
+24. **A function's `prototype` as V8 has it — done.** Only constructors have one (a `function`,
+   a builtin or host constructor); arrows, methods, async functions, builtin functions and bound
+   functions have none and `new` on them is `TypeError: f is not a constructor` (methods were
+   constructible before). `prototype` takes any value (`F.prototype = 5`; `new F()` then uses
+   `Object.prototype`), cannot be deleted, and is read-only on builtins and frozen functions. To
+   get there lamassu gained per-property enumerability: `F.prototype.constructor`, every builtin
+   prototype's methods, the globals and `Math`/`JSON` are no longer listed by `Object.keys`, JSON,
+   spread or `Object.assign` (they all were). A host native is a constructor by default, as in
+   V8's embedding API (`js_native_set_constructor` turns it off, `js_native_is_construct_call`
+   tells `new` from a call). Found and fixed on the way: a constructor returning a function or a
+   promise had the result dropped. The interpreter loop's speed depends on its call sites as well
+   as its alignment (sending builtin constructors through a helper cost 15-20% on every
+   benchmark), so builtins are still called straight from the loop. Bytecode cache format 13.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
