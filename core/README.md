@@ -415,6 +415,18 @@ that seems right. The core builds against `lamassu.h` alone.
    functions, and the loop's existing out-of-memory raises take the pending error; the benchmarks
    are level. Left as documented deviations: conversions nest at most 200 deep, and a stack trace
    through an object key's `toString` shows the caller at its previous call.
+26. **`Object.getOwnPropertyNames` — done.** Every own key, enumerable or not, in V8's order: a
+   string's indices and `length`, an array's indices, `length` and named properties, a function's
+   `length`, `name`, `prototype` (constructors) and statics, an error's `stack`/`message`/`cause`, a
+   regexp's `lastIndex`; a namespace's uninitialized export is listed, not thrown. `Object.hasOwn`
+   and `hasOwnProperty` now share one check that agrees with it. Found on the way: they said false
+   for an array's `length`, a regexp's `lastIndex` and builtin statics (`Object.keys`,
+   `Array.isArray`), `hasOwn` for a string's indices, `hasOwn([1,2], "01")` was true and
+   `Object.hasOwn(null, k)` did not throw; `Object.keys`/`values`/`entries` gave `[]` for a string
+   and did not throw for `null`/`undefined`; `TypeError` and the other error constructors did not
+   reach `Object.prototype` (hidden by a stray `hasOwnProperty` on `Function.prototype`). Left as
+   documented deviations: builtins list only what is implemented, and `Array.prototype`,
+   `arguments` and `Function.prototype` lack V8's `length`, `callee` and function properties.
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring,
