@@ -40,6 +40,7 @@ final class TokenizerTests: XCTestCase {
     func testNumericSeparators() {
         XCTAssertEqual(kinds("1_000 0xFF_FF 1_0.5_5 1__0").map(\.0), ["1_000", "0xFF_FF", "1_0.5_5", "1", "__0"])
         XCTAssertEqual(kinds("1_000").first?.1, .number)
+        XCTAssertEqual(kinds("10n 0xFFn 1.5n").map(\.0), ["10n", "0xFFn", "1.5", "n"])
     }
 
     func testStringsAndComments() {

@@ -2,7 +2,7 @@ import Foundation
 
 /// The JavaScript that lamassu runs: ES modules in strict mode, `let`/`const`, template literals,
 /// regular expressions, destructuring, async/await. The words lamassu reserves or rejects (`var`,
-/// `class`, …) are marked invalid; numbers take numeric separators (`1_000`); BigInt literals are not numbers.
+/// `class`, …) are marked invalid; numbers take numeric separators (`1_000`) and BigInt's `n` (`10n`).
 public struct JavaScriptSubset: CodeLanguage {
     public init() {}
 
@@ -128,18 +128,21 @@ public struct JavaScriptSubset: CodeLanguage {
                     j > i && j + 1 < n && s[j] == 95 && digit(s[j - 1]) && digit(s[j + 1])
                 }
                 let isHex: (UInt16) -> Bool = { hexValue($0) != nil }
+                var integer = true // a BigInt's `n` follows an integer only
                 if c == 48, next == 120 || next == 88 || next == 98 || next == 66 || next == 111 || next == 79 {
                     j += 2
                     while j < n, isHex(s[j]) || separated(j, isHex) { j += 1 }
                 } else {
+                    integer = c != C.dot
                     while j < n && (C.isDigit(s[j]) || separated(j, C.isDigit)) { j += 1 }
-                    if j < n && s[j] == C.dot { j += 1; while j < n && (C.isDigit(s[j]) || separated(j, C.isDigit)) { j += 1 } }
+                    if j < n && s[j] == C.dot { integer = false; j += 1; while j < n && (C.isDigit(s[j]) || separated(j, C.isDigit)) { j += 1 } }
                     if j < n && (s[j] == 101 || s[j] == 69) {
                         var k = j + 1
                         if k < n && (s[k] == 43 || s[k] == 45) { k += 1 }
-                        if k < n && C.isDigit(s[k]) { j = k; while j < n && (C.isDigit(s[j]) || separated(j, C.isDigit)) { j += 1 } }
+                        if k < n && C.isDigit(s[k]) { integer = false; j = k; while j < n && (C.isDigit(s[j]) || separated(j, C.isDigit)) { j += 1 } }
                     }
                 }
+                if integer && j < n && s[j] == 110 { j += 1 } // n: a BigInt
                 emit(.number, i, j); i = j; continue
             }
             // names
