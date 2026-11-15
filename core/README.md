@@ -215,7 +215,7 @@ lamassu's [deviations page](../third_party/lamassu-js/docs-site/guide/deviations
 found while building the core goes there, with the fix that seems right; none is worked around here.
 
 Language gaps that scripts hit are documented in `api.html` (Script language) and the skill:
-getters/setters in object literals, object rest in destructuring. Object keys enumerate in the
+getters/setters in object literals. Object keys enumerate in the
 language's order (array-index names ascending, then insertion order), so parts from
 `return { body, lid }` come out as body, lid in every runtime.
 
