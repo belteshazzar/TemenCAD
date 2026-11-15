@@ -482,6 +482,23 @@ that seems right. The core builds against `lamassu.h` alone.
    property read could load the `[[Prototype]]` flag of a bare compiled function from tampered
    bytecode (out of bounds); the sanitizer build now fails on undefined behaviour instead of
    printing it. Array iteration and destructuring are about 28% faster; other benchmarks level.
+32. **Iterator helpers and the iterator protocol — done.** The `Iterator` global (`from`,
+   `concat`, abstract as in V8) and V8's helpers on `Iterator.prototype` (`map`, `filter`, `take`,
+   `drop`, `flatMap` lazy; `reduce`, `toArray`, `forEach`, `some`, `every`, `find`);
+   `Array.prototype.keys`/`values`/`entries` return live `Array Iterator`s. An object that inherits
+   `Iterator.prototype` is iterable by its own `next` everywhere (for-of, spread, destructuring,
+   the natives), stepped through an Iterator Record that reads `next` once, and closed (`return()`)
+   when iteration stops early: for-of left by `break`/`return`/a labelled `continue`/a throw,
+   destructuring that takes fewer values, a native whose callback throws (three new opcodes,
+   bytecode version 15). Found on the way and fixed: `break`/`continue` out of a `try` left its
+   handler installed (a later throw in the function jumped back into the old `catch`), and a
+   `finally` that threw during `return`/`break` ran twice (its own handler caught it) — the
+   compiler now unwinds one stack of handlers, finallys and for-of iterators on every exit; an
+   assignment pattern evaluated `o().x` after stepping the iterator (V8 evaluates it first);
+   `Map()`/`Set()` without `new` did not throw; and two GC-rooting bugs under allocation stress
+   (`Array.from` before rooting a new iterator, and `js_run_module`'s completion value across the
+   microtask drain). Plain loops within about 2%; entering a for-of or destructuring an array
+   about 7% slower (the close they now do).
 
 Language gaps that scripts hit, now documented in `api.html` (Script language) and the skill:
 getters/setters in object literals, object rest in destructuring, `flatMap`. Object keys enumerate
