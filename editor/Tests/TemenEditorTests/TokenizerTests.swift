@@ -29,9 +29,17 @@ final class TokenizerTests: XCTestCase {
     }
 
     func testUnsupportedWordsAreInvalid() {
-        for w in ["var", "class", "instanceof", "debugger", "with"] {
+        for w in ["var", "class", "with"] {
             XCTAssertEqual(kinds("\(w) x").first?.1, .invalid, w)
         }
+        for w in ["instanceof", "debugger"] {
+            XCTAssertEqual(kinds("\(w) x").first?.1, .keyword, w)
+        }
+    }
+
+    func testNumericSeparators() {
+        XCTAssertEqual(kinds("1_000 0xFF_FF 1_0.5_5 1__0").map(\.0), ["1_000", "0xFF_FF", "1_0.5_5", "1", "__0"])
+        XCTAssertEqual(kinds("1_000").first?.1, .number)
     }
 
     func testStringsAndComments() {
