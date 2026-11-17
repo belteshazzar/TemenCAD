@@ -473,6 +473,14 @@ check('a getter says getters are not supported', !r.ok && r.error?.message === '
 r = rt.run({ 'main.js': 'const get = 2, size = 3;\nconst part = { get, size };\nreturn box(part.get);' });
 check('get is a name where no accessor follows', r.ok && near(r.parts[0].volume, 8), JSON.stringify(r.error));
 
+// 4o6. a method in a destructuring declaration is no target (V8's words, at the property); a BigInt is a key and an index
+r = rt.run({ 'main.js': 'const part = { size: 2 };\nconst { size, grow() {} } = part;\nreturn box(size);' });
+check('a method in a destructuring declaration is an invalid target', !r.ok && r.error?.message === 'SyntaxError: Invalid destructuring assignment target' && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const part = { size: 2 };\nconst { get size } = part;\nreturn box(size);' });
+check('get before a name in a destructuring declaration is an invalid target', !r.ok && r.error?.message === 'SyntaxError: Invalid destructuring assignment target' && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const sizes = { 2n: 3 };\nconst { 2n: side } = sizes;\nconst list = [1, 2, 4];\nlist[1n] = side;\nreturn box(list[1n] + list[2n]);' });
+check('a BigInt is a property key and an array index', r.ok && near(r.parts[0].volume, 343), JSON.stringify(r.error));
+
 // 4p. parts come out in the order the object lists them (index names first, as in JavaScript)
 r = rt.run({ 'main.js': 'const lid = box(1), body = box(2), base = box(3);\nreturn { lid, body, 2: base, base, 1: box(4) };' });
 check('part order follows the object', r.ok && r.parts.map((p) => p.name).join() === '1,2,lid,body,base', r.error?.message ?? r.parts?.map((p) => p.name).join());
