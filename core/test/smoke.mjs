@@ -481,6 +481,18 @@ check('get before a name in a destructuring declaration is an invalid target', !
 r = rt.run({ 'main.js': 'const sizes = { 2n: 3 };\nconst { 2n: side } = sizes;\nconst list = [1, 2, 4];\nlist[1n] = side;\nreturn box(list[1n] + list[2n]);' });
 check('a BigInt is a property key and an array index', r.ok && near(r.parts[0].volume, 343), JSON.stringify(r.error));
 
+// 4o7. `__proto__: v` in an object literal sets the prototype (once); a malformed number is reported where it starts
+r = rt.run({ 'main.js': 'const base = { side: 2, volume() { return this.side ** 3; } };\nconst part = { __proto__: base, side: 3 };\nif (Object.keys(part).join() !== "side" || Object.getPrototypeOf(part) !== base) throw new Error("no prototype");\nreturn box(part.volume() / 9);' });
+check('__proto__ in an object literal sets the prototype', r.ok && near(r.parts[0].volume, 27), JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const base = { side: 2 };\nconst part = {\n  __proto__: base,\n  __proto__: null,\n};\nreturn box(part.side);' });
+check('a second __proto__ in a literal is a syntax error', !r.ok && r.error?.message === 'SyntaxError: Duplicate __proto__ fields are not allowed in object literals' && r.error?.line === 4, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const size = { __proto__: 1, __proto__: 2 };\nlet side;\n({ __proto__: side = 2, __proto__: side = 2 } = size);\nreturn box(side);' });
+check('a pattern may name __proto__ twice, a literal may not', !r.ok && r.error?.message === 'SyntaxError: Duplicate __proto__ fields are not allowed in object literals' && r.error?.line === 1, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const wall = 2;\nconst width = wall * 5mm;\nreturn box(width);' });
+check('a number that runs on is reported at the number', !r.ok && r.error?.message === 'SyntaxError: Invalid or unexpected token' && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const wall = 2;\nconst width = wall * 5\\u006dm;\nreturn box(width);' });
+check('an escape that runs on from a number is the number\'s error', !r.ok && r.error?.message === 'SyntaxError: Invalid or unexpected token' && r.error?.line === 2, JSON.stringify(r.error));
+
 // 4p. parts come out in the order the object lists them (index names first, as in JavaScript)
 r = rt.run({ 'main.js': 'const lid = box(1), body = box(2), base = box(3);\nreturn { lid, body, 2: base, base, 1: box(4) };' });
 check('part order follows the object', r.ok && r.parts.map((p) => p.name).join() === '1,2,lid,body,base', r.error?.message ?? r.parts?.map((p) => p.name).join());
