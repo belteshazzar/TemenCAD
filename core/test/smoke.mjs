@@ -464,6 +464,14 @@ r = rt.run({ 'main.js': 'const side = (class) => class * 2;\nreturn box(side(1))
 check('class as a parameter is an unexpected token after it', !r.ok && r.error?.message === "SyntaxError: Unexpected token ')'" && r.error?.line === 1, JSON.stringify(r.error));
 r = rt.run({ 'main.js': 'const Part = class {\n  size() { return 2; }\n};\nreturn box(2);' });
 check('a class expression says classes are not supported', !r.ok && r.error?.message === 'SyntaxError: classes are not supported' && r.error?.line === 1, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'function* sizes() {\n  yield 2;\n}\nreturn box(2);' });
+check('a generator says generators are not supported', !r.ok && r.error?.message === 'SyntaxError: generators are not supported' && r.error?.line === 1, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const part = {\n  *sizes() { yield 2; },\n};\nreturn box(2);' });
+check('a generator method says so on its line', !r.ok && r.error?.message === 'SyntaxError: generators are not supported' && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const part = {\n  get size() { return 2; },\n};\nreturn box(part.size);' });
+check('a getter says getters are not supported', !r.ok && r.error?.message === 'SyntaxError: getter/setter properties are not supported' && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const get = 2, size = 3;\nconst part = { get, size };\nreturn box(part.get);' });
+check('get is a name where no accessor follows', r.ok && near(r.parts[0].volume, 8), JSON.stringify(r.error));
 
 // 4p. parts come out in the order the object lists them (index names first, as in JavaScript)
 r = rt.run({ 'main.js': 'const lid = box(1), body = box(2), base = box(3);\nreturn { lid, body, 2: base, base, 1: box(4) };' });
