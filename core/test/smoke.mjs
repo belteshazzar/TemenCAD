@@ -402,6 +402,20 @@ r = rt.run({ 'main.js': 'const s = box(10, 10, 10);\nreturn s.filet(2);' });
 check('typo fails', !r.ok);
 check('error names the method and line', r.error?.message === 'TypeError: s.filet is not a function' && r.error?.line === 2, JSON.stringify(r.error));
 
+// 4o2. an error's line is its own: where it was made, whatever fails after it
+r = rt.run({ 'main.js': 'async function later() { await 0; throw new Error("later"); }\nlater();\n\nthrow new Error("first");' });
+check('a later error in a job does not take the line', !r.ok && r.error?.message === 'Error: first' && r.error?.file === 'main.js' && r.error?.line === 4, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const e = new Error("made here");\nconst w = 1;\nthrow e;' });
+check('an error is reported where it was made', !r.ok && r.error?.message === 'Error: made here' && r.error?.line === 1, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const w = 1;\nif (w < 2) throw "too thin";\nreturn box(w);' });
+check('a thrown string is reported where it was thrown', !r.ok && r.error?.message === 'too thin' && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'async function later() { await 0; throw new Error("later"); }\nlater();\nthrow "mine";' });
+check('a thrown string never takes another error\'s line', !r.ok && r.error?.message === 'mine' && r.error?.line !== 1, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'function deep(n) { return n ? deep(n - 1) : box(-1); }\nreturn deep(40);' });
+check('an api error deep in the script points at the call', !r.ok && r.error?.file === 'main.js' && r.error?.line === 1, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'export function make() {\n  return [1, 2].map((n) =>\n    box(n - 2));\n}\nreturn make();' });
+check('an api error under a builtin\'s callback points at the call', !r.ok && r.error?.file === 'main.js' && r.error?.line === 3, JSON.stringify(r.error));
+
 // 4p. parts come out in the order the object lists them (index names first, as in JavaScript)
 r = rt.run({ 'main.js': 'const lid = box(1), body = box(2), base = box(3);\nreturn { lid, body, 2: base, base, 1: box(4) };' });
 check('part order follows the object', r.ok && r.parts.map((p) => p.name).join() === '1,2,lid,body,base', r.error?.message ?? r.parts?.map((p) => p.name).join());

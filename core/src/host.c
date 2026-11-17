@@ -412,8 +412,9 @@ static int settle(TemenCore *core, JsValue promise) {
     return js_promise_state(promise);
 }
 
-/* The thrown value as a message, with the script location when the engine can tell us. */
-static void report_rejection(TemenCore *core, JsValue reason) {
+/* The thrown value as a message, with the script location when the engine can tell us. FROM is
+ * the rejected promise REASON came out of, or undefined when a call threw it just now. */
+static void report_rejection(TemenCore *core, JsValue reason, JsValue from) {
     char *text = temen_value_to_utf8(core, reason);
     const char *msg = text ? text : "error";
     /* assert() failures and plain throws are reported without an "Error:" prefix, like the browser runner */
@@ -430,10 +431,18 @@ static void report_rejection(TemenCore *core, JsValue reason) {
             free(n);
         }
     }
-    /* The engine's trace, innermost first; the first frame in one of the project's own files is
-     * the line to show — frames inside the prelude (assert, argument checks) are skipped. */
+    /* The error's own trace, innermost first (where it was made, as V8 reports it; for a thrown
+     * string or number, where it was thrown); the first frame in one of the project's own files
+     * is the line to show — frames inside the prelude (assert, argument checks) are skipped.
+     * The context's last trace is not asked of a promise: jobs have run since it was rejected,
+     * and that trace may be another error's by now. */
     JsStackFrame fr[JS_TRACE_MAX];
-    size_t n = js_context_error_stack(core->ctx, fr, JS_TRACE_MAX);
+    size_t n;
+    if (js_is_promise(from)) n = js_promise_error_stack(core->ctx, from, fr, JS_TRACE_MAX);
+    else {
+        n = js_error_stack(core->ctx, reason, fr, JS_TRACE_MAX);
+        if (!n) n = js_context_error_stack(core->ctx, fr, JS_TRACE_MAX); /* nothing has run since the call */
+    }
     const char *file = NULL;
     int line = 0;
     temen_locate(core, fr, n, &file, &line);
@@ -451,8 +460,9 @@ static bool load_prelude(TemenCore *core) {
         char msg[512];
         uint32_t l = 0, c = 0;
         size_t pl;
-        uint16_t *pu = temen_utf8_to_utf16((const char *)temen_prelude_js, temen_prelude_js_len, &pl);
-        if (pu) { js_source_line_col(pu, pl, js_context_error_pos(core->ctx), &l, &c); free(pu); }
+        JsStackFrame at;
+        uint16_t *pu = js_promise_error_stack(core->ctx, core->slot_a, &at, 1) ? temen_utf8_to_utf16((const char *)temen_prelude_js, temen_prelude_js_len, &pl) : NULL;
+        if (pu) { js_source_line_col(pu, pl, at.pos, &l, &c); free(pu); }
         snprintf(msg, sizeof msg, "prelude failed: %s (prelude.js:%u:%u)", t ? t : "?", l, c);
         free(t);
         set_error(core, msg, NULL, 0);
@@ -558,20 +568,20 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
     int status = 0;
     JsValue out;
     /* the run's state is reset before any of the project's modules evaluate (their top level can show()) */
-    if (!js_call(core->ctx, core->api_begin, js_undefined(), NULL, 0, &out)) { core->slot_c = out; report_rejection(core, out); status = 1; goto done; }
+    if (!js_call(core->ctx, core->api_begin, js_undefined(), NULL, 0, &out)) { core->slot_c = out; report_rejection(core, out, js_undefined()); status = 1; goto done; }
     static const uint16_t entry[] = { 'm', 'a', 'i', 'n', '.', 'j', 's' };
     /* main.js is the entry: its top-level `return` is what the promise fulfills with */
     core->slot_a = js_eval_entry(core->ctx, entry, 7);
     if (js_is_undefined(core->slot_a)) { set_error(core, "out of memory", NULL, 0); status = 2; goto done; }
-    if (settle(core, core->slot_a) != 1) { report_rejection(core, js_promise_result(core->slot_a)); status = 1; goto done; }
+    if (settle(core, core->slot_a) != 1) { report_rejection(core, js_promise_result(core->slot_a), core->slot_a); status = 1; goto done; }
     {
         JsValue returned = js_promise_result(core->slot_a);
         core->slot_b = returned;
         JsValue args[1] = { returned };
-        if (!js_call(core->ctx, core->api_run, js_undefined(), args, 1, &out)) { core->slot_c = out; report_rejection(core, out); status = 1; goto done; }
+        if (!js_call(core->ctx, core->api_run, js_undefined(), args, 1, &out)) { core->slot_c = out; report_rejection(core, out, js_undefined()); status = 1; goto done; }
         core->slot_c = out; /* the promise run() returns */
         if (!js_is_promise(out)) { set_error(core, "prelude run() did not return a promise", NULL, 0); status = 2; goto done; }
-        if (settle(core, out) != 1) { report_rejection(core, js_promise_result(out)); status = 1; goto done; }
+        if (settle(core, out) != 1) { report_rejection(core, js_promise_result(out), out); status = 1; goto done; }
         JsValue res = js_promise_result(out);
         core->slot_a = res;
         JsValue list = js_object_get(core->vm, res, temen_atom(core, "parts"));

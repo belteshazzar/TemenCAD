@@ -10,6 +10,11 @@
 // globals) and `run(main)` (calls the entry, collects the parts).
 
 const cad = __cad;
+
+// An error is reported at the first of its frames that is in the project's files (host.c), and
+// an error keeps Error.stackTraceLimit frames from where it was made: 10 as V8 has it, which a
+// deep run of checks in here could use up before reaching the script. 32 is all the host reads.
+Error.stackTraceLimit = 32;
 const DEFAULT_COLOR = '#8fb3ff';
 
 // ---- argument checks (shape.js) ----------------------------------------
