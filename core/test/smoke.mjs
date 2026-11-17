@@ -455,6 +455,16 @@ check('export of what is no declaration faults the export', !r.ok && r.error?.me
 r = rt.run({ 'main.js': 'const size = 2;\nexport { size as "the size" };\nreturn box(size);' });
 check('a string is no export name', !r.ok && r.error?.message === 'SyntaxError: Unexpected string' && r.error?.line === 2, JSON.stringify(r.error));
 
+// 4o5. var and class name the feature where the script has one, and are a word out of place otherwise
+r = rt.run({ 'main.js': 'const size = 2;\nvar side = size;\nreturn box(side);' });
+check('a var declaration says var is not supported', !r.ok && r.error?.message === "SyntaxError: 'var' is not supported; use 'let' or 'const'" && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const sizes = [2];\nconst [var] = sizes;\nreturn box(2);' });
+check('var as a name in a pattern is an unexpected token', !r.ok && r.error?.message === "SyntaxError: Unexpected token 'var'" && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const side = (class) => class * 2;\nreturn box(side(1));' });
+check('class as a parameter is an unexpected token after it', !r.ok && r.error?.message === "SyntaxError: Unexpected token ')'" && r.error?.line === 1, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const Part = class {\n  size() { return 2; }\n};\nreturn box(2);' });
+check('a class expression says classes are not supported', !r.ok && r.error?.message === 'SyntaxError: classes are not supported' && r.error?.line === 1, JSON.stringify(r.error));
+
 // 4p. parts come out in the order the object lists them (index names first, as in JavaScript)
 r = rt.run({ 'main.js': 'const lid = box(1), body = box(2), base = box(3);\nreturn { lid, body, 2: base, base, 1: box(4) };' });
 check('part order follows the object', r.ok && r.parts.map((p) => p.name).join() === '1,2,lid,body,base', r.error?.message ?? r.parts?.map((p) => p.name).join());
