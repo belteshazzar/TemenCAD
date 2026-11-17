@@ -493,6 +493,15 @@ check('a number that runs on is reported at the number', !r.ok && r.error?.messa
 r = rt.run({ 'main.js': 'const wall = 2;\nconst width = wall * 5\\u006dm;\nreturn box(width);' });
 check('an escape that runs on from a number is the number\'s error', !r.ok && r.error?.message === 'SyntaxError: Invalid or unexpected token' && r.error?.line === 2, JSON.stringify(r.error));
 
+// 4o8. prototypes and array methods as in V8: `obj.__proto__` reads and sets the prototype, what inherits
+// from an array reads its elements and length, and an array method takes any object with a length
+r = rt.run({ 'main.js': 'const base = { side: 3 };\nconst part = { tag: "p" };\npart.__proto__ = base;\nif (part.__proto__ !== base || Object.getPrototypeOf(part) !== base || Object.keys(part).join() !== "tag") throw new Error("no prototype");\nconst bare = Object.create(null);\nbare.__proto__ = base;\nif (Object.getPrototypeOf(bare) !== null || bare.side !== undefined) throw new Error("an own property where there is no accessor");\nreturn box(part.side);' });
+check('obj.__proto__ reads and sets the prototype', r.ok && near(r.parts[0].volume, 27), JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const sizes = Object.create([1, 2, 3]);\nif (sizes.length !== 3 || sizes[1] !== 2 || [...sizes].join() !== "1,2,3" || Object.keys(sizes).length !== 0) throw new Error("not inherited");\nsizes.push(4);\nif (sizes.length !== 4 || Object.getPrototypeOf(sizes).length !== 3) throw new Error("push wrote through");\nreturn box(sizes.map((n) => n).length - 1);' });
+check('an object that inherits from an array reads its elements and length', r.ok && near(r.parts[0].volume, 27), JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const sizes = { length: 3, 0: 1, 1: 2, 2: 3 };\nconst A = Array.prototype;\nconst total = A.reduce.call(sizes, (a, b) => a + b, 0);\nif (A.push.call(sizes, 4) !== 4 || sizes[3] !== 4 || A.join.call(sizes, "+") !== "1+2+3+4") throw new Error("push");\nif (A.map.call("abc", (c) => c.toUpperCase()).join("") !== "ABC" || Math.max.apply(null, sizes) !== 4) throw new Error("string or apply");\nlet refused;\ntry { A.push.call(Object.freeze({ length: 0 }), 1); } catch (e) { refused = e.message; }\nif (refused !== "Cannot add property 0, object is not extensible") throw new Error(refused);\nreturn box(total / 2);' });
+check('array methods take any object with a length', r.ok && near(r.parts[0].volume, 27), JSON.stringify(r.error));
+
 // 4p. parts come out in the order the object lists them (index names first, as in JavaScript)
 r = rt.run({ 'main.js': 'const lid = box(1), body = box(2), base = box(3);\nreturn { lid, body, 2: base, base, 1: box(4) };' });
 check('part order follows the object', r.ok && r.parts.map((p) => p.name).join() === '1,2,lid,body,base', r.error?.message ?? r.parts?.map((p) => p.name).join());
