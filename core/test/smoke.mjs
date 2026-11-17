@@ -410,7 +410,34 @@ check('an error is reported where it was made', !r.ok && r.error?.message === 'E
 r = rt.run({ 'main.js': 'const w = 1;\nif (w < 2) throw "too thin";\nreturn box(w);' });
 check('a thrown string is reported where it was thrown', !r.ok && r.error?.message === 'too thin' && r.error?.line === 2, JSON.stringify(r.error));
 r = rt.run({ 'main.js': 'async function later() { await 0; throw new Error("later"); }\nlater();\nthrow "mine";' });
-check('a thrown string never takes another error\'s line', !r.ok && r.error?.message === 'mine' && r.error?.line !== 1, JSON.stringify(r.error));
+check('a thrown string keeps its line whatever fails after it', !r.ok && r.error?.message === 'mine' && r.error?.file === 'main.js' && r.error?.line === 3, JSON.stringify(r.error));
+
+// 4o3. a rejection nothing handles fails the build, as it ends a Node process: the error would
+// otherwise be lost (an async function called without await, a then() callback that throws)
+r = rt.run({ 'main.js': 'async function build() {\n  await 0;\n  throw new Error("lost");\n}\nbuild();\nreturn box(1);' });
+check('an unawaited async function that throws fails the build', !r.ok && r.error?.message === 'Error: lost' && r.error?.file === 'main.js' && r.error?.line === 3, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'Promise.resolve(1).then(() => {\n  throw new RangeError("in then");\n});\nreturn box(1);' });
+check('a then() callback that throws fails the build', !r.ok && r.error?.message === 'RangeError: in then' && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'async function f() {\n  throw "plain";\n}\nf();\nreturn box(1);' });
+check('an unhandled thrown string is reported where it was thrown', !r.ok && r.error?.message === 'plain' && r.error?.file === 'main.js' && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'async function f() { await 0;\n  assert(1 > 2, "nope"); }\nf();\nreturn box(1);' });
+check('an unhandled assert() reads as any other', !r.ok && r.error?.message === 'Assertion failed: nope' && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'import "./lib.js";\nreturn box(1);', 'lib.js': 'async function g() {\n  throw new TypeError("from lib");\n}\ng();\nexport const a = 1;' });
+check('an unhandled rejection in an import names its file', !r.ok && r.error?.message === 'TypeError: from lib' && r.error?.file === 'lib.js' && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'Promise.reject(new Error("one"));\nPromise.reject(new Error("two"));\nreturn box(1);' });
+check('the oldest unhandled rejection is the one reported', !r.ok && r.error?.message === 'Error: one' && r.error?.line === 1, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'Promise.reject(new Error("other"));\nthrow new Error("own");' });
+check('the script\'s own error comes before an unhandled rejection', !r.ok && r.error?.message === 'Error: own' && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const p = Promise.reject(new Error("x"));\np.catch(() => {});\nreturn box(1);' });
+check('a rejection handled in the same turn is no error', r.ok && r.parts.length === 1, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const p = Promise.reject(new Error("x"));\nconst q = p.catch(() => 2);\nawait null;\nconst all = await Promise.allSettled([Promise.reject(new Error("a")), q]);\nreturn box(all[1].value);' });
+check('rejections handled by catch() and allSettled() are no error', r.ok && Math.abs(r.parts[0].volume - 8) < 1e-9, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'return box(2);' });
+check('the build after an unhandled rejection is clean', r.ok && r.parts.length === 1, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'await new Promise(() => {});\nreturn box(1);' });
+check('a script that waits on nothing says so', !r.ok && /never finished/.test(r.error?.message || ''), JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'Promise.reject(new Error("why"));\nawait new Promise(() => {});' });
+check('a script that waits after an unhandled rejection reports the rejection', !r.ok && r.error?.message === 'Error: why' && r.error?.line === 1, JSON.stringify(r.error));
 r = rt.run({ 'main.js': 'function deep(n) { return n ? deep(n - 1) : box(-1); }\nreturn deep(40);' });
 check('an api error deep in the script points at the call', !r.ok && r.error?.file === 'main.js' && r.error?.line === 1, JSON.stringify(r.error));
 r = rt.run({ 'main.js': 'export function make() {\n  return [1, 2].map((n) =>\n    box(n - 2));\n}\nreturn make();' });

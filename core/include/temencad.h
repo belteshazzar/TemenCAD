@@ -68,6 +68,11 @@ void temen_set_message_fn(TemenCore *core, TemenMessageFn fn, void *ud);
  * Runs the project: evaluates main.js and collects the shapes it returns or
  * show()s. Returns 0 on success, 1 on a script error (see temen_error_*),
  * 2 when the runtime itself failed (out of memory, engine fault).
+ * A script error is what the script threw, or a promise rejected with nothing
+ * handling it once every job has run (an async function called without await):
+ * that fails the build as it ends a Node process, the script's own error first,
+ * then the oldest such rejection. A script still waiting on a promise that
+ * nothing settles is an error too.
  * Parts from the previous run are released when a new run starts.
  */
 int temen_run(TemenCore *core, const TemenFile *files, size_t n_files);

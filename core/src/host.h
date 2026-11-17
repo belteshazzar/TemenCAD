@@ -50,6 +50,7 @@ struct TemenCore {
     JsValue api_begin;     /* prelude's begin(): resets the run's state before main.js evaluates */
     JsValue api_run;       /* prelude's run(result): main.js's returned value -> parts */
     JsValue slot_a, slot_b, slot_c;
+    struct TemenUnhandled *unhandled; /* promises rejected with nothing reacting to them, oldest first */
 
     /* the project of the current run */
     TemenHostFile *files;

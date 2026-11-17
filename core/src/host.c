@@ -312,6 +312,54 @@ static JsValue loader(void *ud, JsContext *ctx, const uint16_t *spec, size_t spe
     return result;
 }
 
+/* ------------------------------------------------- unhandled rejections */
+
+/*
+ * A promise that is rejected with no reaction is an error nothing in the script will ever see:
+ * `build()` called without `await`, a `then` whose callback throws. The engine tells us as each
+ * one is rejected, and again if a reaction arrives later; what is still here once the jobs have
+ * run fails the build, as it ends a Node process.
+ */
+typedef struct TemenUnhandled {
+    JsValue promise;
+    struct TemenUnhandled *next;
+} TemenUnhandled;
+
+/* Runs in the middle of a settlement: it keeps the list and nothing else. */
+static void track_rejection(JsContext *ctx, JsValue promise, bool handled, void *ud) {
+    (void)ctx;
+    TemenCore *core = ud;
+    TemenUnhandled **at = &core->unhandled;
+    if (!handled) {
+        TemenUnhandled *u = malloc(sizeof *u);
+        if (!u) return;
+        u->promise = promise;
+        u->next = NULL;
+        js_gc_protect(core->vm, &u->promise);
+        while (*at) at = &(*at)->next;
+        *at = u;
+        return;
+    }
+    for (; *at; at = &(*at)->next) {
+        if (js_same_value((*at)->promise, promise)) {
+            TemenUnhandled *u = *at;
+            *at = u->next;
+            js_gc_unprotect(core->vm, &u->promise);
+            free(u);
+            return;
+        }
+    }
+}
+
+static void forget_unhandled(TemenCore *core) {
+    while (core->unhandled) {
+        TemenUnhandled *u = core->unhandled;
+        core->unhandled = u->next;
+        js_gc_unprotect(core->vm, &u->promise);
+        free(u);
+    }
+}
+
 /* ----------------------------------------------------------- lifecycle */
 
 static bool load_prelude(TemenCore *core);
@@ -324,11 +372,13 @@ static bool load_prelude(TemenCore *core);
  */
 static bool fresh_context(TemenCore *core) {
     core->cad_ns = core->api_begin = core->api_run = core->slot_a = core->slot_b = core->slot_c = js_undefined();
+    forget_unhandled(core);
     if (core->ctx) js_context_free(core->ctx);
     core->ctx = js_context_new(core->vm);
     core->prelude_loaded = false;
     if (!core->ctx) { set_error(core, "out of memory", NULL, 0); return false; }
     js_context_set_userdata(core->ctx, core);
+    js_set_rejection_tracker(core->ctx, track_rejection, core);
     js_set_module_loader(core->ctx, loader, canonicalize, core);
     js_enable_source_modules(core->ctx);
     if (!temen_install_cad(core)) { set_error(core, "out of memory installing __cad", NULL, 0); return false; }
@@ -385,6 +435,7 @@ void temen_free(TemenCore *core) {
     free(core->scratch_text); free(core->cut_positions); free(core->cut_indices);
     free((void *)core->profile.material);
     free(core->error); free(core->error_file);
+    if (core->vm) forget_unhandled(core);
     if (core->ctx) js_context_free(core->ctx);
     if (core->vm) js_vm_free(core->vm);
     free(core);
@@ -450,6 +501,22 @@ static void report_rejection(TemenCore *core, JsValue reason, JsValue from) {
     free(text);
 }
 
+/*
+ * What a turn of the run left behind once its jobs have run. PROMISE is the one the host waits
+ * on: its own rejection is the error (the module threw, run() failed), and is reported before
+ * any other, as Node reports a module's. Otherwise a rejection nothing reacted to is the error:
+ * the oldest one. And a promise still pending with every job run will never settle: the script
+ * awaits something nothing resolves. Returns whether the run goes on.
+ */
+static bool settled(TemenCore *core, JsValue promise) {
+    int state = settle(core, promise);
+    if (state != 2 && core->unhandled) promise = core->unhandled->promise; /* protected in the list until the run ends */
+    else if (state == 1) return true;
+    else if (state == 0) { set_error(core, "The script never finished: it awaits a promise that nothing settles", NULL, 0); return false; }
+    report_rejection(core, js_promise_result(promise), promise);
+    return false;
+}
+
 static bool load_prelude(TemenCore *core) {
     uint16_t spec[32];
     size_t n = strlen(PRELUDE_SPEC);
@@ -486,6 +553,7 @@ static bool load_prelude(TemenCore *core) {
         if (!js_object_set(core->vm, globals, key, val)) { set_error(core, "out of memory installing the api", NULL, 0); return false; }
     }
     core->slot_a = core->slot_b = core->slot_c = js_undefined();
+    forget_unhandled(core);
     core->prelude_loaded = true;
     return true;
 }
@@ -564,6 +632,7 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
 
     if (!core->ctx) { if (!fresh_context(core)) return 2; }
     else evict_project_modules(core);
+    forget_unhandled(core);
 
     int status = 0;
     JsValue out;
@@ -573,7 +642,7 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
     /* main.js is the entry: its top-level `return` is what the promise fulfills with */
     core->slot_a = js_eval_entry(core->ctx, entry, 7);
     if (js_is_undefined(core->slot_a)) { set_error(core, "out of memory", NULL, 0); status = 2; goto done; }
-    if (settle(core, core->slot_a) != 1) { report_rejection(core, js_promise_result(core->slot_a), core->slot_a); status = 1; goto done; }
+    if (!settled(core, core->slot_a)) { status = 1; goto done; }
     {
         JsValue returned = js_promise_result(core->slot_a);
         core->slot_b = returned;
@@ -581,7 +650,7 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
         if (!js_call(core->ctx, core->api_run, js_undefined(), args, 1, &out)) { core->slot_c = out; report_rejection(core, out, js_undefined()); status = 1; goto done; }
         core->slot_c = out; /* the promise run() returns */
         if (!js_is_promise(out)) { set_error(core, "prelude run() did not return a promise", NULL, 0); status = 2; goto done; }
-        if (settle(core, out) != 1) { report_rejection(core, js_promise_result(out), out); status = 1; goto done; }
+        if (!settled(core, out)) { status = 1; goto done; }
         JsValue res = js_promise_result(out);
         core->slot_a = res;
         JsValue list = js_object_get(core->vm, res, temen_atom(core, "parts"));
@@ -611,6 +680,7 @@ int temen_run(TemenCore *core, const TemenFile *files, size_t n_files) {
     }
 done:
     core->slot_a = core->slot_b = core->slot_c = js_undefined();
+    forget_unhandled(core);
     /* the run's geometry is garbage now except what modules still hold at top level: free it
      * (Manifold objects are released by their finalizers) rather than wait for the next build */
     js_gc_collect(core->vm);
