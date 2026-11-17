@@ -443,6 +443,18 @@ check('an api error deep in the script points at the call', !r.ok && r.error?.fi
 r = rt.run({ 'main.js': 'export function make() {\n  return [1, 2].map((n) =>\n    box(n - 2));\n}\nreturn make();' });
 check('an api error under a builtin\'s callback points at the call', !r.ok && r.error?.file === 'main.js' && r.error?.line === 3, JSON.stringify(r.error));
 
+// 4o4. a reserved word in an import or export clause is a syntax error where it stands, as in V8
+r = rt.run({ 'main.js': 'import { size,\n  if } from "./dims.js";\nreturn box(size);', 'dims.js': 'const size = 2;\nexport { size, size as if };' });
+check('importing a name as a reserved word is a syntax error at the word', !r.ok && r.error?.message === 'SyntaxError: Unexpected reserved word' && r.error?.file === 'main.js' && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'import { size, if as other } from "./dims.js";\nreturn box(size + other);', 'dims.js': 'const size = 2;\nexport { size, size as if };' });
+check('a reserved word names an export when it is bound to another name', r.ok && near(r.parts[0].volume, 64), JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'import { size } from "./dims.js";\nreturn box(size);', 'dims.js': 'const size = 2;\nexport { size,\n  let };' });
+check('exporting a reserved word as a local name names the file and line', !r.ok && r.error?.message === 'SyntaxError: Unexpected reserved word' && r.error?.file === 'dims.js' && r.error?.line === 3, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const size = 2;\nexport size;\nreturn box(size);' });
+check('export of what is no declaration faults the export', !r.ok && r.error?.message === "SyntaxError: Unexpected token 'export'" && r.error?.line === 2, JSON.stringify(r.error));
+r = rt.run({ 'main.js': 'const size = 2;\nexport { size as "the size" };\nreturn box(size);' });
+check('a string is no export name', !r.ok && r.error?.message === 'SyntaxError: Unexpected string' && r.error?.line === 2, JSON.stringify(r.error));
+
 // 4p. parts come out in the order the object lists them (index names first, as in JavaScript)
 r = rt.run({ 'main.js': 'const lid = box(1), body = box(2), base = box(3);\nreturn { lid, body, 2: base, base, 1: box(4) };' });
 check('part order follows the object', r.ok && r.parts.map((p) => p.name).join() === '1,2,lid,body,base', r.error?.message ?? r.parts?.map((p) => p.name).join());
