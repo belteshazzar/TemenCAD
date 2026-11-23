@@ -324,6 +324,11 @@ static bool n_cs_scale(JsContext *ctx, JsValue this_val, const JsValue *args, in
 static bool n_cs_mirror(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
     (void)this_val; ManifoldCrossSection *cs = CS(0); return ret_cs(CORE(), manifold_cross_section_mirror(cs_mem(), cs, NUM(1), NUM(2)), result);
 }
+/* csTransform(h, x1, y1, x2, y2, x3, y3): an affine map, given as the three columns of a 2x3 matrix */
+static bool n_cs_transform(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val; ManifoldCrossSection *cs = CS(0);
+    return ret_cs(CORE(), manifold_cross_section_transform(cs_mem(), cs, NUM(1), NUM(2), NUM(3), NUM(4), NUM(5), NUM(6)), result);
+}
 static bool n_cs_simplify(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
     (void)this_val; ManifoldCrossSection *cs = CS(0); return ret_cs(CORE(), manifold_cross_section_simplify(cs_mem(), cs, NUM(1)), result);
 }
@@ -1023,6 +1028,14 @@ static bool n_mirror(JsContext *ctx, JsValue this_val, const JsValue *args, int 
     return handle_lazy(args[0]) ? ret_lazy(CORE(), out, result) : ret_handle(CORE(), out, result);
 }
 
+/* transform(h, x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4): an affine map, given as the four columns of a 3x4 matrix */
+static bool n_transform(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
+    (void)this_val;
+    ManifoldManifold *m = LAZY_SHAPE(0);
+    ManifoldManifold *out = manifold_transform(mem(), m, NUM(1), NUM(2), NUM(3), NUM(4), NUM(5), NUM(6), NUM(7), NUM(8), NUM(9), NUM(10), NUM(11), NUM(12));
+    return handle_lazy(args[0]) ? ret_lazy(CORE(), out, result) : ret_handle(CORE(), out, result);
+}
+
 /* minGap(a, b, searchLength): smallest distance between two shapes' surfaces (>= searchLength when none found) */
 static bool n_min_gap(JsContext *ctx, JsValue this_val, const JsValue *args, int argc, JsValue *result) {
     (void)this_val;
@@ -1128,7 +1141,7 @@ typedef struct { const char *name; JsNativeFn fn; } Entry;
 static const Entry ENTRIES[] = {
     { "cube", n_cube }, { "cylinder", n_cylinder }, { "sphere", n_sphere },
     { "boolean", n_boolean }, { "batch", n_batch }, { "hull", n_hull }, { "hullPoints", n_hull_points },
-    { "translate", n_translate }, { "rotate", n_rotate }, { "scale", n_scale }, { "mirror", n_mirror },
+    { "translate", n_translate }, { "rotate", n_rotate }, { "scale", n_scale }, { "mirror", n_mirror }, { "transform", n_transform },
     { "minGap", n_min_gap }, { "annotate", n_annotate },
     { "solidFromTriangles", n_solid_from_triangles }, { "heightmapSolid", n_heightmap_solid }, { "minWall", n_min_wall },
     { "imageResize", n_image_resize }, { "imageBlur", n_image_blur },
@@ -1137,7 +1150,7 @@ static const Entry ENTRIES[] = {
     { "log", n_log }, { "warn", n_warn }, { "where", n_where },
     { "csCircle", n_cs_circle }, { "csSquare", n_cs_square }, { "csPolygons", n_cs_polygons },
     { "csBoolean", n_cs_boolean }, { "csBatch", n_cs_batch }, { "csHull", n_cs_hull }, { "csOffset", n_cs_offset },
-    { "csTranslate", n_cs_translate }, { "csRotate", n_cs_rotate }, { "csScale", n_cs_scale }, { "csMirror", n_cs_mirror },
+    { "csTranslate", n_cs_translate }, { "csRotate", n_cs_rotate }, { "csScale", n_cs_scale }, { "csMirror", n_cs_mirror }, { "csTransform", n_cs_transform },
     { "csSimplify", n_cs_simplify }, { "csArea", n_cs_area }, { "csIsEmpty", n_cs_is_empty }, { "csNumContour", n_cs_num_contour },
     { "csBounds", n_cs_bounds }, { "csToPolygons", n_cs_to_polygons },
     { "extrude", n_extrude }, { "revolve", n_revolve }, { "project", n_project }, { "slice", n_slice },

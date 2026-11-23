@@ -66,7 +66,7 @@ place(extrude(bracketProfile, 10).rotate(90, 0, 0).onPlate(), -60, 10, '#8fe3a8'
 // 6. Revolve: a vase profile (sketch x = radius, sketch y = height), and a partial revolve
 const vase = polygon2d([[0, 0], [7, 0], [8, 2], [5, 9], [6, 16], [4.6, 16], [3.8, 9], [6.8, 2], [6.2, 1.2], [0, 1.2]]);
 place(revolve(vase, { segments: 72 }), 15, -5, '#d3a6ff');
-place(revolve(rect(4, 10, { center: false }).translate(4, 0), { angle: 270 }), 40, -5, '#d3a6ff');
+place(revolve(rect(4, 10, { center: false }).translate(4, 0), { angle: 270, start: 45 }), 40, -5, '#d3a6ff');
 
 // 7. Arrays: linear, polar (bolt circle) and grid, merged with union()
 place(union(linearArray(box(3, 6, 3), 5, [5, 0, 0])), -60, 25, '#ffd27f');
@@ -124,8 +124,8 @@ place(bar.subtract(hole(3, 12, { axis: 'z' }).translate(-9, 6, 0))
 show(box(180, 30, 180).onPlate().translate(0, 0, 5), { name: 'print envelope', ghost: true });
 show(sphere(4).translate(0, 4, 75), { name: 'hidden marble', hidden: true, color: '#ff4d4d' });
 
-// 10. Colors, mirror, and log() to the console
-const wing = polygon([[0, 0], [12, 0], [0, 8]], 3).translate(2, 0, 0);
+// 10. Colors, mirror, transform (an affine matrix, OpenSCAD's multmatrix: here a shear), and log() to the console
+const wing = polygon([[0, 0], [12, 0], [0, 8]], 3).transform([[1, 0, -0.3, 2], [0, 1, 0, 0], [0, 0, 1, 0]]);
 place(union(wing, wing.mirror('x')), -70, 50, '#c2e86b');
 
 // 11. 2D corner treatments: fillet and chamfer a sketch before extruding

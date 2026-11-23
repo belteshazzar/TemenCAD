@@ -178,8 +178,8 @@
   {
    "label": "revolve",
    "snippet": "revolve(${sketch})",
-   "detail": "(sketch, { angle, segments })",
-   "info": "Revolve a sketch around Y; sketch x is the radius.",
+   "detail": "(sketch, { angle, start, segments })",
+   "info": "Revolve a sketch around Y; sketch x is the radius; a partial revolve starts at start degrees from +X.",
    "kind": "function"
   },
   {
@@ -649,8 +649,8 @@
   {
    "label": "rotate",
    "snippet": "rotate(${x}, ${y}, ${z})",
-   "detail": "(xDeg, yDeg, zDeg)",
-   "info": "Rotate in degrees; sketches take one angle.",
+   "detail": "(xDeg, yDeg, zDeg) | (deg, [ax, ay, az])",
+   "info": "Rotate in degrees, or about an axis; sketches take one angle.",
    "kind": "method",
    "on": "both"
   },
@@ -665,8 +665,16 @@
   {
    "label": "mirror",
    "snippet": "mirror('${x}')",
-   "detail": "('x' | 'y' | 'z')",
-   "info": "Mirror across an axis plane.",
+   "detail": "('x' | 'y' | 'z' | [nx, ny, nz])",
+   "info": "Mirror across an axis plane, or the plane with that normal.",
+   "kind": "method",
+   "on": "both"
+  },
+  {
+   "label": "transform",
+   "snippet": "transform([${matrix}])",
+   "detail": "(4x4 | 3x4 | 3x3 rows; sketches 3x3 | 2x3 | 2x2)",
+   "info": "Affine map (OpenSCAD's multmatrix).",
    "kind": "method",
    "on": "both"
   },
@@ -1017,7 +1025,7 @@
   {
    "label": "revolve",
    "snippet": "revolve()",
-   "detail": "({ angle, segments })",
+   "detail": "({ angle, start, segments })",
    "info": "Revolve a sketch around Y.",
    "kind": "method",
    "on": "sketch"

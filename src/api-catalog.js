@@ -35,7 +35,7 @@ export const GLOBALS = [
   fn('text', "text('${text}', { size: ${10} })", "(str, { size, font, align, letterSpacing })", "2D text outline, baseline at y = 0. Fonts: 'Inter', 'Inter Bold', 'Nunito Bold', 'Source Serif 4', 'JetBrains Mono'."),
   fn('sketch', 'sketch().moveTo(${0}, ${0}).lineTo(${x}, ${y}).close()', '() | ([[x, y], ...])', 'Draw a profile step by step: moveTo, lineTo, line, horizontal, vertical, quadTo, bezierTo, arcTo, tangentArcTo, fillet, close.'),
   fn('extrude', 'extrude(${sketch}, ${h})', '(sketch, h, { center, twist, scale })', 'Extrude a sketch up along Y; twist in degrees, scale at the top.'),
-  fn('revolve', 'revolve(${sketch})', '(sketch, { angle, segments })', 'Revolve a sketch around Y; sketch x is the radius.'),
+  fn('revolve', 'revolve(${sketch})', '(sketch, { angle, start, segments })', 'Revolve a sketch around Y; sketch x is the radius; a partial revolve starts at start degrees from +X.'),
   fn('roof', 'roof(${sketch})', '(sketch, { angle, segments, tolerance })', 'Solid whose height is the distance to the outline: pyramid from a square, hip roof from a rectangle.'),
   fn('projection', 'projection(${shape})', '(shape, { cut: true | y })', 'Flatten a solid to a 2D sketch: footprint from above, or the slice at height y.'),
   // Paths and sweeps
@@ -118,9 +118,10 @@ export const GLOBALS = [
 /** Methods on 3D shapes ('shape'), 2D sketches ('sketch'), paths ('path') or both shapes and sketches ('both'). */
 export const METHODS = [
   method('translate', 'translate(${x}, ${y}, ${z})', '(x, y, z)', 'Move; sketches take (x, y).', 'both'),
-  method('rotate', 'rotate(${x}, ${y}, ${z})', '(xDeg, yDeg, zDeg)', 'Rotate in degrees; sketches take one angle.', 'both'),
+  method('rotate', 'rotate(${x}, ${y}, ${z})', '(xDeg, yDeg, zDeg) | (deg, [ax, ay, az])', 'Rotate in degrees, or about an axis; sketches take one angle.', 'both'),
   method('scale', 'scale(${f})', '(f | x, y, z)', 'Scale uniformly or per axis.', 'both'),
-  method('mirror', "mirror('${x}')", "('x' | 'y' | 'z')", 'Mirror across an axis plane.', 'both'),
+  method('mirror', "mirror('${x}')", "('x' | 'y' | 'z' | [nx, ny, nz])", 'Mirror across an axis plane, or the plane with that normal.', 'both'),
+  method('transform', 'transform([${matrix}])', '(4x4 | 3x4 | 3x3 rows; sketches 3x3 | 2x3 | 2x2)', "Affine map (OpenSCAD's multmatrix).", 'both'),
   method('resize', 'resize([${w}, ${h}, ${d}])', '([w, h, d], { auto })', 'Scale to a bounding-box size; 0 keeps an axis.', 'both'),
   method('color', "color('${#8fb3ff}')", '(css)', 'Display colour: #hex, a CSS name, rgb() or hsl().', 'shape'),
   method('onPlate', 'onPlate()', '(y = 0)', 'Put the bottom on the build plate.', 'shape'),
@@ -164,7 +165,7 @@ export const METHODS = [
   method('fillet', 'fillet(${r})', "(r, { edges, segments })", "Round every corner of a sketch, or the sharp edges of a solid; edges: 'all' | 'top' | 'bottom' | 'horizontal' | 'vertical' | 'convex' | 'concave'.", 'both'),
   method('chamfer', 'chamfer(${d})', "(d, { edges })", "Cut every corner of a sketch, or bevel the sharp edges of a solid; edges as for fillet.", 'both'),
   method('extrude', 'extrude(${h})', '(h, { center, twist, scale })', 'Extrude a sketch up along Y.', 'sketch'),
-  method('revolve', 'revolve()', '({ angle, segments })', 'Revolve a sketch around Y.', 'sketch'),
+  method('revolve', 'revolve()', '({ angle, start, segments })', 'Revolve a sketch around Y.', 'sketch'),
   method('roof', 'roof()', '({ angle, segments, tolerance })', 'Roof solid from a sketch.', 'sketch'),
   method('toPolygons', 'toPolygons()', '()', 'Outline rings of a sketch as [[x, y], ...][].', 'sketch'),
   method('sweep', 'sweep(${path})', '(path, { frame, up, twist, scale, segments })', 'Sweep a sketch along a path.', 'sketch'),

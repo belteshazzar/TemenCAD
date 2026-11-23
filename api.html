@@ -56,7 +56,7 @@ sk.fillet(r, { segments })                        // round every corner (clamped
 sk.hull(other)                                    // 2D convex hull
 sk.intersect(other)                               // 2D intersection
 sk.isEmpty()                                      // true when the sketch has no area
-sk.mirror('x' | 'y')                              // mirror across an axis
+sk.mirror('x' | 'y' | [nx, ny])                   // mirror across an axis, or the line through the origin with that normal
 sk.offset(delta, { join, segments })              // grow (+) / shrink (−); join 'round' | 'miter' | 'square'
 polygon2d([[x, y], ...], { holes })               // any polygon; holes: [[[x, y], ...], ...]
 rect(w, h, { center })                            // rectangle, centred by default
@@ -67,6 +67,7 @@ roundedRect(w, h, r, { center, segments })        // rectangle with rounded corn
 sk.scale(x, y)                                    // scale; one factor scales both
 slot(length, r, { segments })                     // capsule: semicircles length apart, centre to centre
 teardrop(r, { angle, flat, segments })            // circle with a point at +y: a horizontal hole that prints without sagging
+sk.transform([[a, b, tx], [c, d, ty], [0, 0, 1]]) // affine map (3x3, 2x3 or 2x2 rows): shear, skew, any linear map
 bridgedCircle(r, { angle, segments })             // circle with a flat ceiling above `angle` from vertical, for the slicer to bridge
 square(size)                                      // alias of rect
 sk.subtract(other)                                // 2D difference
@@ -95,7 +96,7 @@ sk.extrude(h, opts)                               // method form of extrude
 projection(s)                                     // 3D → 2D: the solid's footprint seen from above
 projection(s, { cut: true | y })                  // 3D → 2D: the slice where the plane y cuts the solid
 s.projection(opts)                                // method form of projection
-revolve(sk, { angle, segments })                  // around Y; sketch x is the radius (≥ 0), y the height
+revolve(sk, { angle, start, segments })           // around Y; sketch x is the radius (≥ 0), y the height; a partial revolve runs from start (0 = +X) anticlockwise seen from above
 sk.revolve(opts)                                  // method form of revolve
 roof(sk, { angle, segments, tolerance })          // height = distance to the outline: pyramid, hip roof
 sk.roof(opts)                                     // method form of roof
@@ -110,13 +111,15 @@ p.append(other)                                   // continue with another path,
 p.bounds()                                        // { min, max, size, center }
 p.close()                                         // join the ends: the sweep becomes a ring with no caps
 p.length()                                        // length in mm
-p.mirror('x' | 'y' | 'z')                         // mirror across the axis plane through the origin
+p.mirror('x' | 'y' | 'z' | [nx, ny, nz])          // mirror across the axis plane, or the plane through the origin with that normal
 p.pointAt(t) / p.tangentAt(t)                     // point and unit direction at fraction t (0..1) of the length
 p.points                                          // the vertices as [x, y, z][]
 p.reverse()                                       // travel the other way
 p.rotate(xDeg, yDeg, zDeg)                        // rotate in degrees about X, then Y, then Z
+p.rotate(deg, [ax, ay, az])                       // rotate about an axis through the origin (right-hand rule)
 p.scale(f) / p.scale(x, y, z)                     // scale uniformly or per axis
 p.smooth({ segments })                            // replace the corners with a smooth curve through the same points
+p.transform(matrix)                               // affine map, as for s.transform
 p.translate(x, y, z)                              // move
 sweep(sk, p, { frame, up, twist, scale, segments })  // sweep a sketch along a path; closed paths make rings
 sweep((t) => sk, p, opts)                         // the profile may vary: t is the fraction of the length (0..1)
@@ -159,11 +162,13 @@ img.width / img.height                            // size in pixels
 s.center()                                        // centre on the origin
 s.centerXZ()                                      // centre in X and Z, keeping Y
 s.color(css)                                      // '#f80', a CSS name, rgb() or hsl()
-s.mirror('x' | 'y' | 'z')                         // mirror across the axis plane through the origin
+s.mirror('x' | 'y' | 'z' | [nx, ny, nz])          // mirror across the axis plane, or the plane through the origin with that normal
 s.onPlate(y = 0)                                  // put the bottom on the build plate
 s.resize([w, h, d], { auto })                     // to a bounding-box size; 0 keeps an axis, auto keeps proportions
 s.rotate(xDeg, yDeg, zDeg)                        // rotate in degrees about X, then Y, then Z
+s.rotate(deg, [ax, ay, az])                       // rotate about an axis through the origin (right-hand rule)
 s.scale(f) / s.scale(x, y, z)                     // scale uniformly or per axis
+s.transform(matrix)                               // affine map: 4x4 rows (last row [0, 0, 0, 1]), 3x4 or 3x3; OpenSCAD's multmatrix
 s.translate(x, y, z)                              // move; also accepts [x, y, z]</pre>
       <h3>Edges: fillets and chamfers</h3>
       <pre>s.chamfer(d, { edges, minAngle })                 // bevel the sharp edges by d along each face

@@ -84,6 +84,61 @@ function rotationMatrix(x, y, z) {
   const mm = (a, b) => a.map((row) => [0, 1, 2].map((j) => row[0] * b[0][j] + row[1] * b[1][j] + row[2] * b[2][j]));
   return mm(rz, mm(ry, rx));
 }
+/** The rotation by `degrees` about the axis `v` (right-hand rule), as 3x3 rows. */
+function axisAngleMatrix(fn, degrees, v) {
+  checkNumber(fn, 'angle', degrees); checkVec(fn, 'axis', v);
+  const l = Math.hypot(v[0], v[1], v[2]);
+  if (!(l > 0)) throw new RangeError(`${fn}: axis must not be [0, 0, 0]`);
+  const x = v[0] / l, y = v[1] / l, z = v[2] / l, a = (degrees * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a), t = 1 - c;
+  return [[t * x * x + c, t * x * y - s * z, t * x * z + s * y], [t * x * y + s * z, t * y * y + c, t * y * z - s * x], [t * x * z - s * y, t * y * z + s * x, t * z * z + c]];
+}
+/** A unit plane normal from an axis name ('x' | 'y' | 'z', or 'x' | 'y' in 2D) or a vector. */
+function mirrorNormal(fn, axis, n) {
+  const names = n === 3 ? { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] } : { x: [1, 0], y: [0, 1] };
+  if (typeof axis === 'string') {
+    if (!names[axis]) throw new Error(n === 3 ? `${fn}: axis must be 'x', 'y', 'z' or a normal [x, y, z]` : `${fn}: axis must be 'x', 'y' or a normal [x, y]`);
+    return names[axis];
+  }
+  if (!Array.isArray(axis) || axis.length !== n) throw new TypeError(n === 3 ? `${fn}: axis must be 'x', 'y', 'z' or a normal [x, y, z], got ${describe(axis)}` : `${fn}: axis must be 'x', 'y' or a normal [x, y], got ${describe(axis)}`);
+  checkVec(fn, 'normal', axis, n);
+  const l = Math.hypot(...axis);
+  if (!(l > 0)) throw new RangeError(`${fn}: the normal must not be zero`);
+  return axis.map((v) => v / l);
+}
+/** p reflected in the plane through the origin with unit normal u. */
+function reflect(p, u) { let d = 0; for (let k = 0; k < u.length; k++) d += p[k] * u[k]; return p.map((v, k) => v - 2 * d * u[k]); }
+/**
+ * An affine matrix given as rows, n = 3 (3D: 4x4 with last row [0, 0, 0, 1], 3x4, or 3x3) or n = 2 (2D: 3x3 with
+ * last row [0, 0, 1], 2x3, or 2x2). Returns { L: n x n rows, t: n vector, det }; a singular matrix is refused.
+ */
+function affineMatrix(fn, m, n) {
+  const shapes = n === 3 ? '4x4, 3x4 or 3x3' : '3x3, 2x3 or 2x2';
+  if (!Array.isArray(m) || (m.length !== n && m.length !== n + 1)) throw new TypeError(`${fn}: expected a ${shapes} matrix as an array of rows, got ${describe(m)}`);
+  const cols = Array.isArray(m[0]) ? m[0].length : -1;
+  if (cols !== n && cols !== n + 1) throw new TypeError(`${fn}: expected a ${shapes} matrix as an array of rows, got ${describe(m)}`);
+  for (let i = 0; i < m.length; i++) {
+    if (!Array.isArray(m[i]) || m[i].length !== cols) throw new TypeError(`${fn}: every row must have ${cols} numbers, row ${i} is ${describe(m[i])}`);
+    for (let j = 0; j < cols; j++) checkNumber(fn, `matrix[${i}][${j}]`, m[i][j]);
+  }
+  if (m.length === n + 1) {
+    const last = m[n];
+    for (let j = 0; j < cols; j++) if (Math.abs(last[j] - (j === n ? 1 : 0)) > 1e-12) throw new RangeError(`${fn}: the last row must be [${n === 3 ? '0, 0, 0, 1' : '0, 0, 1'}] (a projective matrix cannot be applied), got ${describe(last)}`);
+  }
+  const L = [], t = [];
+  for (let i = 0; i < n; i++) { L.push(m[i].slice(0, n)); t.push(cols === n + 1 ? m[i][n] : 0); }
+  const det = n === 3
+    ? L[0][0] * (L[1][1] * L[2][2] - L[1][2] * L[2][1]) - L[0][1] * (L[1][0] * L[2][2] - L[1][2] * L[2][0]) + L[0][2] * (L[1][0] * L[2][1] - L[1][1] * L[2][0])
+    : L[0][0] * L[1][1] - L[0][1] * L[1][0];
+  let scale = 0;
+  for (const row of L) for (const v of row) scale = Math.max(scale, Math.abs(v));
+  if (!(Math.abs(det) > 1e-12 * Math.pow(scale, n))) throw new RangeError(`${fn}: the matrix is singular (it flattens the shape to nothing)`);
+  return { L, t, det };
+}
+/** The inverse transpose of a 3x3 linear part: the map for surface normals. */
+function normalMatrix(L, det) {
+  const c = (i, j) => { const r = [0, 1, 2].filter((k) => k !== i), q = [0, 1, 2].filter((k) => k !== j); return L[r[0]][q[0]] * L[r[1]][q[1]] - L[r[0]][q[1]] * L[r[1]][q[0]]; };
+  return [0, 1, 2].map((i) => [0, 1, 2].map((j) => (((i + j) % 2 ? -1 : 1) * c(i, j)) / det));
+}
 /** Apply a point transform to every anchor (and, for rotations and mirrors, to their directions too). */
 function mapAnchors(meta, mapPoint, directions) {
   if (!meta.anchors) return meta;
@@ -125,6 +180,7 @@ P.translate = function (x = 0, y = 0, z = 0) {
   return wrap(this, cad.translate(this.h, x, y, z), (p) => [p[0] + x, p[1] + y, p[2] + z]);
 };
 P.rotate = function (x = 0, y = 0, z = 0) {
+  if (typeof x === 'number' && Array.isArray(y)) return this.transform(axisAngleMatrix('rotate', x, y));
   if (Array.isArray(x)) { const v = x; x = v[0]; y = v[1] === undefined ? 0 : v[1]; z = v[2] === undefined ? 0 : v[2]; }
   checkNumber('rotate', 'x', x); checkNumber('rotate', 'y', y); checkNumber('rotate', 'z', z);
   const R = rotationMatrix(x, y, z);
@@ -138,10 +194,24 @@ P.scale = function (x = 1, y, z) {
   return wrap(this, cad.scale(this.h, x, y, z), (p) => [p[0] * x, p[1] * y, p[2] * z]);
 };
 P.mirror = function (axis = 'x') {
-  const n = axis === 'x' ? [1, 0, 0] : axis === 'y' ? [0, 1, 0] : axis === 'z' ? [0, 0, 1] : null;
-  if (!n) throw new Error("mirror: axis must be 'x', 'y' or 'z'");
-  const i = n.indexOf(1);
-  return wrap(this, cad.mirror(this.h, n[0], n[1], n[2]), (p) => p.map((v, k) => (k === i ? -v : v)), true);
+  const u = mirrorNormal('mirror', axis, 3);
+  return wrap(this, cad.mirror(this.h, u[0], u[1], u[2]), (p) => reflect(p, u), true);
+};
+/** An affine map: a 4x4 matrix (last row [0, 0, 0, 1]), 3x4 or 3x3, as rows; OpenSCAD's multmatrix. */
+P.transform = function (m) {
+  const { L, t, det } = affineMatrix('transform', m, 3);
+  const N = normalMatrix(L, det);
+  const apply = (M, p) => M.map((row) => row[0] * p[0] + row[1] * p[1] + row[2] * p[2]);
+  const h = cad.transform(this.h, L[0][0], L[1][0], L[2][0], L[0][1], L[1][1], L[2][1], L[0][2], L[1][2], L[2][2], t[0], t[1], t[2]);
+  if (!this.meta.anchors) return new Shape(h, this.colorValue, this.meta);
+  const anchors = {};
+  for (const k of Object.keys(this.meta.anchors)) {
+    const a = this.meta.anchors[k];
+    let normal = a.normal;
+    if (normal) { const v = apply(N, normal); const l = Math.hypot(v[0], v[1], v[2]) || 1; normal = v.map((c) => c / l); }
+    anchors[k] = { point: apply(L, a.point).map((c, i) => c + t[i]), normal };
+  }
+  return new Shape(h, this.colorValue, Object.assign({}, this.meta, { anchors }));
 };
 /** anchor(name, point, normal?) records a named point that travels with the shape; anchor(name) reads it back. */
 P.anchor = function (name, point, normal) {
@@ -411,9 +481,13 @@ Q.resize = function (x, y = 0, opts = {}) {
   return this.scale(f[0], f[1]);
 };
 Q.mirror = function (axis = 'x') {
-  const n = axis === 'x' ? [1, 0] : axis === 'y' ? [0, 1] : null;
-  if (!n) throw new Error("mirror: axis must be 'x' or 'y'");
-  return new Sketch(cad.csMirror(this.h, n[0], n[1]));
+  const u = mirrorNormal('mirror', axis, 2);
+  return new Sketch(cad.csMirror(this.h, u[0], u[1]));
+};
+/** An affine map: a 3x3 matrix (last row [0, 0, 1]), 2x3 or 2x2, as rows. */
+Q.transform = function (m) {
+  const { L, t } = affineMatrix('transform', m, 2);
+  return new Sketch(cad.csTransform(this.h, L[0][0], L[1][0], L[0][1], L[1][1], t[0], t[1]));
 };
 Q.add = function (...o) { return union2d(this, ...o); };
 Q.union = Q.add;
@@ -647,15 +721,17 @@ function extrude(sk, h = 1, opts = {}) {
   const s = new Shape(cad.extrude(sk.h, h, slices, twist, top[0], top[1]));
   return center ? s.translate(0, -h / 2, 0) : s;
 }
-/** Revolve a sketch around the Y axis; sketch x is the radius (>= 0), sketch y is height. opts: { angle=360, segments=64 } */
+/** Revolve a sketch around the Y axis; sketch x is the radius (>= 0), sketch y is height. opts: { angle=360, start=0, segments=64 } */
 function revolve(sk, opts = {}) {
   const angle = opts.angle === undefined ? 360 : opts.angle;
+  const start = opts.start === undefined ? 0 : opts.start;
   const segments = opts.segments === undefined ? 64 : opts.segments;
   if (!isSketch(sk)) throw new TypeError(`revolve: first argument must be a 2D sketch (circle, rect, …), got ${describe(sk)}`);
-  checkNumber('revolve', 'angle', angle); checkInt('revolve', 'segments', segments, 3);
+  checkNumber('revolve', 'angle', angle); checkNumber('revolve', 'start', start); checkInt('revolve', 'segments', segments, 3);
   if (angle === 0) throw new RangeError('revolve: angle must not be 0');
   if (sk.bounds().min[0] < -1e-9) throw new RangeError('revolve: sketch must lie at x >= 0 (x is the radius)');
-  return new Shape(cad.revolve(sk.h, segments, angle));
+  const s = new Shape(cad.revolve(sk.h, segments, angle));
+  return start ? s.rotate(0, start, 0) : s;
 }
 
 // ---- solids built from sketches (cad.js)
@@ -1371,6 +1447,7 @@ T.translate = function (x = 0, y = 0, z = 0) {
   return this._map((p) => [p[0] + x, p[1] + y, p[2] + z]);
 };
 T.rotate = function (x = 0, y = 0, z = 0) {
+  if (typeof x === 'number' && Array.isArray(y)) { const m = axisAngleMatrix('rotate', x, y); return this._map((p) => m.map((row) => vdot(row, p))); }
   if (Array.isArray(x)) { const v = x; x = v[0]; y = v[1] === undefined ? 0 : v[1]; z = v[2] === undefined ? 0 : v[2]; }
   checkNumber('rotate', 'x', x); checkNumber('rotate', 'y', y); checkNumber('rotate', 'z', z);
   const m = rotationMatrix(x, y, z);
@@ -1384,9 +1461,13 @@ T.scale = function (x = 1, y, z) {
   return this._map((p) => [p[0] * x, p[1] * y, p[2] * z]);
 };
 T.mirror = function (axis = 'x') {
-  const i = axis === 'x' ? 0 : axis === 'y' ? 1 : axis === 'z' ? 2 : undefined;
-  if (i === undefined) throw new Error("mirror: axis must be 'x', 'y' or 'z'");
-  return this._map((p) => { const q = [p[0], p[1], p[2]]; q[i] = -q[i]; return q; });
+  const u = mirrorNormal('mirror', axis, 3);
+  return this._map((p) => reflect(p, u));
+};
+/** An affine map: a 4x4 matrix (last row [0, 0, 0, 1]), 3x4 or 3x3, as rows. */
+T.transform = function (m) {
+  const { L, t } = affineMatrix('transform', m, 3);
+  return this._map((p) => L.map((row, i) => vdot(row, p) + t[i]));
 };
 T.reverse = function () { return new Path(this.points.slice().reverse(), this.closed); };
 T.close = function () { return new Path(this.points, true); };

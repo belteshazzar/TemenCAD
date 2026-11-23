@@ -587,5 +587,34 @@ check('empty part warning', (() => { const x = rt.run({ 'main.js': 'return diffe
   check('the run still works after checks', rt.run({ 'main.js': 'return cube(10);' }).ok);
 }
 
+// 8. affine transforms (OpenSCAD's multmatrix, axis-angle rotate, mirror in any plane) and revolve's start angle
+r = rt.run({ 'main.js': `
+  const b = box(10, 20, 30);
+  const c = (s) => s.bounds().center;
+  echo('rot', c(box(10, 2, 2).translate(5, 0, 0).rotate(120, [1, 1, 1])));
+  echo('mir', c(box(2).translate(5, 0, 0).mirror([1, 1, 0])), c(rect(2, 2).translate(5, 0).mirror([1, 1])));
+  echo('anchor', box(2).anchor('t', [1, 0, 0], [1, 0, 0]).transform([[2, 1, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0]]).anchor('t').normal);
+  echo('sketch', square(10).transform([[1, 1, 5], [0, 1, 0], [0, 0, 1]]).area(), square(10).transform([[2, 0], [0, 3]]).area());
+  echo('path', path([[1, 0, 0], [2, 0, 0]]).rotate(90, [0, 0, 1]).transform([[1, 0, 0, 0], [0, 1, 0, 1], [0, 0, 1, 0]]).points[1]);
+  echo('rev', revolve(rect(2, 2).translate(6, 1), { angle: 90, start: 90 }).bounds().min);
+  let msg = '';
+  try { b.transform([[1, 0, 0], [0, 1, 0], [0, 0, 0]]); } catch (e) { msg = e.message; }
+  echo('singular', msg);
+  return { shear: b.transform([[1, 0.5, 0, 3], [0, 1, 0, 4], [0, 0, 1, 5], [0, 0, 0, 1]]), flip: b.transform([[-2, 0, 0], [0, 1, 0], [0, 0, 1]]) };
+` });
+check('transforms run', r.ok, r.error?.message);
+if (r.ok) {
+  const echoed = (k) => r.messages.find((m) => m.text.includes(`"${k}"`))?.text ?? '';
+  check('shear keeps the volume', near(r.parts[0].volume, 6000), String(r.parts[0].volume));
+  check('a mirroring matrix stays solid, volume scaled by |det|', near(r.parts[1].volume, 12000), String(r.parts[1].volume));
+  check('axis-angle rotate turns +X to +Y about [1, 1, 1]', echoed('rot').endsWith('[0, 5, 0]'), echoed('rot'));
+  check('mirror across a diagonal plane, 3D and 2D', echoed('mir').endsWith('[0, -5, 0], [0, -5]'), echoed('mir'));
+  check('anchor normals use the inverse transpose', echoed('anchor').endsWith('[0.707107, -0.707107, 0]'), echoed('anchor'));
+  check('sketch transforms (3x3 shear, 2x2 scale)', echoed('sketch').endsWith('100, 600'), echoed('sketch'));
+  check('path rotate about an axis and transform', echoed('path').endsWith('[0, 3, 0]'), echoed('path'));
+  check('revolve start continues anticlockwise from above', echoed('rev').endsWith('[-7, 0, -7]'), echoed('rev'));
+  check('a singular matrix is refused', /singular/.test(echoed('singular')), echoed('singular'));
+}
+
 console.log(failed ? `${failed} failed` : 'all passed');
 process.exit(failed ? 1 : 0);
