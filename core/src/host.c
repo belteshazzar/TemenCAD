@@ -216,6 +216,7 @@ static bool is_font(const char *n) { return has_ext(n, ".ttf") || has_ext(n, ".o
 static bool is_mesh(const char *n) { return has_ext(n, ".stl"); }
 static bool is_image(const char *n) { return has_ext(n, ".png") || has_ext(n, ".jpg") || has_ext(n, ".jpeg"); }
 static bool is_svg(const char *n) { return has_ext(n, ".svg"); }
+static bool is_dxf(const char *n) { return has_ext(n, ".dxf"); }
 
 /*
  * Resolve `spec` against `referrer` the way src/project.js resolveImport does:
@@ -303,8 +304,12 @@ static JsValue loader(void *ud, JsContext *ctx, const uint16_t *spec, size_t spe
             /* the prelude's __temenSvg parses the drawing into a Sketch; `markup` is the file's text for svg(markup, opts) */
             snprintf(msg, sizeof msg, "export const markup = __temenText(\"%s\");\nexport default __temenSvg(\"%s\", markup);", name, name);
             result = fulfilled(core, temen_string(core, msg, strlen(msg)));
+        } else if (is_dxf(name)) {
+            /* the prelude's __temenDxf reads the drawing into a Sketch; `source` is the file's text for dxf(), dxfDim() and dxfCross() */
+            snprintf(msg, sizeof msg, "export const source = __temenText(\"%s\");\nexport default __temenDxf(\"%s\", source);", name, name);
+            result = fulfilled(core, temen_string(core, msg, strlen(msg)));
         } else {
-            snprintf(msg, sizeof msg, "'%s' is not a script, font, mesh, image or SVG file", name);
+            snprintf(msg, sizeof msg, "'%s' is not a script, font, mesh, image, SVG or DXF file", name);
             result = rejected(core, msg);
         }
     }

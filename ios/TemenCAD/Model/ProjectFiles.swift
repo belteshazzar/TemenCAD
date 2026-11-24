@@ -60,6 +60,7 @@ extension Project {
         switch ext(name) {
         case "js", "mjs": return "Script"
         case "svg": return "SVG drawing"
+        case "dxf": return "DXF drawing"
         case "json": return "JSON"
         case "ttf", "otf": return "Font"
         case "stl": return "Mesh (STL)"

@@ -616,5 +616,70 @@ if (r.ok) {
   check('a singular matrix is refused', /singular/.test(echoed('singular')), echoed('singular'));
 }
 
+// 9. DXF drawings: the entities OpenSCAD reads and the ones it does not (bulges, POLYLINE, SPLINE, mirrored
+// object coordinates), nested and transformed blocks, layers, origin and scale, dimensions and crossings
+{
+  const g = (...pairs) => pairs.map(String).join('\n');
+  const dxfFile = g(
+    0, 'SECTION', 2, 'HEADER', 9, '$EXTMIN', 10, 999, 20, 999, 0, 'ENDSEC',
+    0, 'SECTION', 2, 'BLOCKS',
+    0, 'BLOCK', 2, 'edge', 10, 0, 20, 0, 0, 'LINE', 8, 0, 10, 0, 20, 0, 11, 2, 21, 0, 0, 'ENDBLK',
+    // a 2 x 2 square around (1, 1) built from four rotated copies of a nested block
+    0, 'BLOCK', 2, 'sq', 10, 1, 20, 1,
+    0, 'INSERT', 2, 'edge', 10, 0, 20, 0, 0, 'INSERT', 2, 'edge', 10, 2, 20, 0, 50, 90,
+    0, 'INSERT', 2, 'edge', 10, 2, 20, 2, 50, 180, 0, 'INSERT', 2, 'edge', 10, 0, 20, 2, 50, 270, 0, 'ENDBLK',
+    0, 'ENDSEC',
+    0, 'SECTION', 2, 'ENTITIES',
+    // 20 x 10 rectangle whose right side is a semicircle (bulge 1)
+    0, 'LWPOLYLINE', 8, 'a', 90, 4, 70, 1, 10, 0, 20, 0, 10, 20, 20, 0, 42, 1, 10, 20, 20, 10, 10, 0, 20, 10,
+    0, 'CIRCLE', 8, 'b', 10, 50, 20, 0, 40, 5,
+    0, 'CIRCLE', 8, 'c', 10, 30, 20, 0, 40, 1, 210, 0, 220, 0, 230, -1,
+    // a clamped quadratic spline (a parabola, height 10 over 20) closed by a line
+    0, 'SPLINE', 8, 'd', 70, 8, 71, 2, 72, 6, 73, 3, 40, 0, 40, 0, 40, 0, 40, 1, 40, 1, 40, 1,
+    10, 0, 20, 0, 30, 0, 10, 10, 20, 20, 30, 0, 10, 20, 20, 0, 30, 0,
+    0, 'LINE', 8, 'd', 10, 20, 20, 0, 11, 0, 21, 0,
+    0, 'POLYLINE', 8, 'e', 66, 1, 70, 1, 0, 'VERTEX', 8, 'e', 10, 0, 20, 0, 0, 'VERTEX', 8, 'e', 10, 4, 20, 0,
+    0, 'VERTEX', 8, 'e', 10, 4, 20, 4, 0, 'VERTEX', 8, 'e', 10, 0, 20, 4, 0, 'SEQEND', 8, 'e',
+    0, 'INSERT', 8, 'f', 2, 'sq', 10, 100, 20, 0, 41, 2, 42, 2, 50, 90,
+    0, 'DIMENSION', 8, 'dim', 1, 'w', 70, 1, 13, 0, 23, 0, 14, 3, 24, 4,
+    0, 'LINE', 8, 'x', 10, 0, 20, 0, 11, 1, 21, 1, 0, 'LINE', 8, 'x', 10, 4, 20, 0, 11, 3, 21, 1,
+    0, 'TEXT', 8, 'a', 1, 'ignored',
+    0, 'ENDSEC', 0, 'EOF', '');
+  r = rt.run({ 'main.js': `
+    import all, { source } from './d.dxf';
+    const area = (layer, o = {}) => dxf(source, Object.assign({ layer }, o)).area();
+    echo('areas', area('a'), area('b'), area('d'), area('e'), area('f'));
+    echo('bounds', dxf(source, { layer: 'c' }).bounds().center, dxf(source, { layer: 'f' }).bounds().min, dxf(source, { layer: 'e', origin: [1, 1], scale: 2 }).bounds().min);
+    echo('scaled', area('e', { origin: [1, 1], scale: 2 }));
+    echo('dim', dxfDim(source, 'w'), dxfDim(source));
+    echo('cross', dxfCross(source, { layer: 'x' }));
+    let msg = '';
+    try { dxf(source, { layer: 'nope' }); } catch (e) { msg = e.message; }
+    echo('nolayer', msg);
+    return all.extrude(1);`, 'd.dxf': dxfFile });
+  check('DXF import runs', r.ok, r.error?.message);
+  if (r.ok) {
+    const echoed = (k) => r.messages.find((m) => m.text.includes(`"${k}"`))?.text ?? '';
+    const nums = (k) => (echoed(k).split(`"${k}", `)[1] ?? '').replace(/[[\]]/g, '').split(', ').map(Number);
+    const half = (n) => 0.5 * n * 25 * Math.sin((2 * Math.PI) / n); // area of an n-gon of radius 5
+    const [a, b, d, e, f] = nums('areas');
+    check('LWPOLYLINE bulge makes a semicircle', near(a, 200 + half(48) / 2), String(a));
+    check('CIRCLE with 48 segments', near(b, half(48)), String(b));
+    check('SPLINE: a parabola closed by a line (8 chords: 2/3 b h (1 - 1/64))', near(d, (400 / 3) * (1 - 1 / 64)), String(d));
+    check('POLYLINE with VERTEXes', near(e, 16), String(e));
+    check('nested, scaled, rotated INSERTs', near(f, 16), String(f));
+    const bb = nums('bounds');
+    check('extrusion -Z mirrors x; block base point; origin and scale', near(bb[0], -30) && near(bb[2], 98) && near(bb[3], -2) && near(bb[4], -2) && near(bb[5], -2), echoed('bounds'));
+    check('scale applies to area', near(nums('scaled')[0], 64), echoed('scaled'));
+    check('dxfDim: aligned dimension by name and the first one', echoed('dim').endsWith('5, 5'), echoed('dim'));
+    check('dxfCross extends the two loose lines', echoed('cross').endsWith('[2, 2]'), echoed('cross'));
+    check('an unknown layer names the ones there are', echoed('nolayer').replace(/\\/g, '').includes('no layer "nope" (it has "a", "b", "c", "d", "e", "f", "dim", "x")'), echoed('nolayer'));
+    check('unsupported entities warn', r.messages.some((m) => /TEXT entities are not imported/.test(m.text)), JSON.stringify(r.messages.map((m) => m.text)));
+    check('the whole drawing imports as one sketch', r.parts.length === 1 && r.parts[0].volume > 0);
+  }
+  r = rt.run({ 'main.js': `import d from './bin.dxf'; return d.extrude(1);`, 'bin.dxf': 'AutoCAD Binary DXF\r\n\x1a\x00' });
+  check('binary DXF is refused', !r.ok && /binary DXF/.test(r.error.message), r.error?.message);
+}
+
 console.log(failed ? `${failed} failed` : 'all passed');
 process.exit(failed ? 1 : 0);

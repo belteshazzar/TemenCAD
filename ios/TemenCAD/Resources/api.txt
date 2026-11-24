@@ -137,6 +137,21 @@ svgPath(d, { segments, evenOdd })                 // SVG path data ('M0 0 h10 v1
 // extrude(logo, 2) makes it a solid; logo.offset(-0.2) shrinks it for an inlay.
 ```
 
+## DXF drawings
+
+```
+import part from './part.dxf'                     // every layer's outlines as a Sketch, drawing units taken as mm
+import { source } from './part.dxf'               // the file's text, for dxf(), dxfDim() and dxfCross()
+dxf(source, { layer, origin, scale, segments })   // one layer; (x, y) becomes ((x, y) - origin) * scale; segments per full circle (48)
+dxfCross(source, { layer, origin, scale })        // [x, y] where the first two loose lines cross, extended if need be (OpenSCAD's dxf_cross)
+dxfDim(source, name, { layer, origin, scale })    // the value of the DIMENSION whose text is name, or the first one (OpenSCAD's dxf_dim)
+// Reads LINE, LWPOLYLINE and POLYLINE (bulge arcs included), CIRCLE, ARC, ELLIPSE, SPLINE and INSERT (nested blocks, scaled,
+//   rotated, mirrored). Pieces join end to end (ends within 0.001 meet), open outlines are closed with a straight line
+//   (with a warning), and the outlines fill even-odd, so an outline inside another is a hole.
+// Skipped with a warning: TEXT and MTEXT (convert to outlines), HATCH fills, 3D entities and anything else. ASCII DXF only.
+// This is OpenSCAD's import() of a DXF, plus bulges, POLYLINE and SPLINE, which OpenSCAD draws straight or leaves out.
+```
+
 ## Images: heightmaps and lithophanes
 
 ```
@@ -378,6 +393,7 @@ import { lid, WALL } from './lid.js'              // another script; lid.js uses
 import logo from './Logo.ttf'                     // a font in the project: text3d('Hi', { font: logo })
 import part from './part.stl'                     // a mesh in the project, as a Shape (Z-up STL becomes Y-up)
 import logo from './logo.svg'                     // a drawing in the project, as a Sketch (see SVG drawings)
+import part from './part.dxf'                     // a DXF drawing in the project, as a Sketch (see DXF drawings)
 import { hinge } from './catalog/parametric-hinge/hinge.js'  // a shape added from the catalogue
 // A project is a .temen zip. main.js is the entry and the only file that may use a top-level return.
 ```

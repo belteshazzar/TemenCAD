@@ -108,7 +108,7 @@ struct FilesView: View {
     private func icon(_ name: String) -> String {
         switch Project.ext(name) {
         case "js", "mjs": return "curlybraces"
-        case "svg": return "scribble"
+        case "svg", "dxf": return "scribble"
         case "ttf", "otf": return "textformat"
         case "stl": return "cube"
         case "png", "jpg", "jpeg": return "photo"

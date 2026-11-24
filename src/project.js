@@ -1,5 +1,5 @@
 /**
- * A project: a set of named files (scripts, fonts, meshes, images, SVG drawings) saved as a .temen zip.
+ * A project: a set of named files (scripts, fonts, meshes, images, SVG and DXF drawings) saved as a .temen zip.
  * Text files are kept as strings, binary files as ArrayBuffers. `main.js` is the entry script.
  * Pure module: used by the app, the worker and the command-line tool.
  */
@@ -9,7 +9,7 @@ export const ENTRY = 'main.js';
 export const PROJECT_EXT = '.temen';
 /** Archive folder for app data that is not part of the model (the assistant conversation): see chat-store.js. */
 export const APP_DATA_DIR = '.assistant/';
-const TEXT_EXT = ['.js', '.mjs', '.json', '.txt', '.md', '.svg'];
+const TEXT_EXT = ['.js', '.mjs', '.json', '.txt', '.md', '.svg', '.dxf'];
 export const FONT_EXT = ['.ttf', '.otf'];
 export const MESH_EXT = ['.stl'];
 export const IMAGE_EXT = ['.png', '.jpg', '.jpeg'];

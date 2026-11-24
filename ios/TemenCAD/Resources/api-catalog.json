@@ -246,6 +246,27 @@
    "kind": "function"
   },
   {
+   "label": "dxf",
+   "snippet": "dxf(${source}, { layer: '${0}' })",
+   "detail": "(source, { layer, origin, scale, segments })",
+   "info": "A DXF drawing's outlines as a Sketch; import { source } from './part.dxf' gives the text. import part from './part.dxf' reads every layer.",
+   "kind": "function"
+  },
+  {
+   "label": "dxfDim",
+   "snippet": "dxfDim(${source}, '${name}')",
+   "detail": "(source, name, { layer, origin, scale })",
+   "info": "The value of a named DIMENSION in a DXF drawing (OpenSCAD's dxf_dim).",
+   "kind": "function"
+  },
+  {
+   "label": "dxfCross",
+   "snippet": "dxfCross(${source})",
+   "detail": "(source, { layer, origin, scale })",
+   "info": "Where the first two loose lines of a DXF drawing cross (OpenSCAD's dxf_cross).",
+   "kind": "function"
+  },
+  {
    "label": "svgPath",
    "snippet": "svgPath('${M0 0 h10 v10 Z}')",
    "detail": "(d, { segments, evenOdd })",

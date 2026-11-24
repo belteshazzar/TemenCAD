@@ -18,7 +18,7 @@ struct Project: Equatable {
     var extras: [String: Data] = [:]
 
     static let entry = "main.js"
-    static let textExtensions = ["js", "mjs", "json", "txt", "md", "svg"]
+    static let textExtensions = ["js", "mjs", "json", "txt", "md", "svg", "dxf"]
     static func isText(_ name: String) -> Bool { textExtensions.contains((name as NSString).pathExtension.lowercased()) }
 
     static let starter = Project(files: [entry: Data("""

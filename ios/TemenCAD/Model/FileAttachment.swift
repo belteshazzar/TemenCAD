@@ -13,7 +13,7 @@ struct FileAttachment: Identifiable, Equatable {
     /// A request may be 32 MB in all, so a PDF may be up to 30 MB (as on the web).
     static let maxPDFBytes = 30 * 1024 * 1024
     /// Files the project takes (src/project.js ACCEPTED_EXT, less the images, which go to the assistant as photos).
-    static let projectExtensions = ["js", "mjs", "json", "txt", "md", "svg", "ttf", "otf", "stl"]
+    static let projectExtensions = ["js", "mjs", "json", "txt", "md", "svg", "dxf", "ttf", "otf", "stl"]
     /// Images the project takes as they are (heightmap, lithophane): what add_files keeps byte for byte.
     static let projectImageExtensions = ["png", "jpg", "jpeg"]
     /// Images the assistant can be shown (anything UIImage reads, the usual ones named for the error message).

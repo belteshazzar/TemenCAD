@@ -2452,6 +2452,321 @@ function __temenSvg(name, markup) {
   try { return svg(markup, { file: name }); } catch (e) { e.message = `${name}: ${e.message}`; throw e; }
 }
 
+// ---- DXF (dxf.js) -------------------------------------------------------------------------------
+//
+// An ASCII DXF drawing as a Sketch, in drawing units taken as mm (the header's $INSUNITS is not read).
+// Reads LINE, LWPOLYLINE and POLYLINE (with bulge arcs), CIRCLE, ARC, ELLIPSE, SPLINE and INSERT of blocks
+// (nested, scaled, rotated, mirrored). The pieces are joined end to end into outlines (ends closer than
+// 0.001 meet), an open outline is closed, and the outlines fill even-odd, as OpenSCAD's import() does.
+// DIMENSION entities are read for dxfDim, single loose lines for dxfCross (OpenSCAD's dxf_dim, dxf_cross).
+
+/** The file as sections of entities: { type, layer, codes: [[code, value], ...] }; POLYLINE holds its VERTEXes. */
+function dxfEntities(source, fn) {
+  if (typeof source !== 'string') throw new TypeError(`${fn}: expected the DXF file's text, got ${describe(source)}`);
+  if (source.startsWith('AutoCAD Binary DXF')) throw new SyntaxError(`${fn}: binary DXF is not supported; save the drawing as ASCII DXF`);
+  const lines = source.split(/\r\n|\r|\n/);
+  const entities = [], blocks = {};
+  let section = '', block = null, current = null, polyline = null;
+  const finish = () => {
+    if (!current) return;
+    const e = current; current = null;
+    if (e.type === 'VERTEX' && polyline) { polyline.vertices.push(e); return; }
+    if (e.type === 'SEQEND') { polyline = null; return; }
+    if (e.type === 'POLYLINE') { e.vertices = []; polyline = e; }
+    else polyline = null;
+    if (section === 'BLOCKS') {
+      if (e.type === 'BLOCK') { block = { name: dxfValue(e, 2, ''), base: [dxfNumber(e, 10, 0), dxfNumber(e, 20, 0)], entities: [] }; blocks[block.name] = block; }
+      else if (e.type === 'ENDBLK') block = null;
+      else if (block) block.entities.push(e);
+    } else if (section === 'ENTITIES') entities.push(e);
+  };
+  for (let i = 0; i + 1 < lines.length; i += 2) {
+    const codeText = lines[i].trim();
+    if (codeText === '') { if (lines.slice(i).every((l) => l.trim() === '')) break; throw new SyntaxError(`${fn}: line ${i + 1} should hold a group code, but it is empty`); }
+    const code = Number(codeText), value = lines[i + 1].trim();
+    if (!Number.isInteger(code)) throw new SyntaxError(`${fn}: line ${i + 1} should hold a group code, got "${codeText.slice(0, 40)}"`);
+    if (code === 0) {
+      finish();
+      if (value === 'SECTION' || value === 'ENDSEC' || value === 'EOF') { if (value !== 'SECTION') section = ''; current = value === 'SECTION' ? { type: 'SECTION', layer: '', codes: [] } : null; continue; }
+      current = { type: value, layer: '', codes: [] };
+    } else if (current) {
+      if (current.type === 'SECTION' && code === 2) { section = value; current = null; continue; }
+      if (code === 8) current.layer = value;
+      current.codes.push([code, value]);
+    }
+  }
+  finish();
+  return { entities, blocks };
+}
+function dxfValue(e, code, dflt) { for (const c of e.codes) if (c[0] === code) return c[1]; return dflt; }
+function dxfNumber(e, code, dflt) { const v = dxfValue(e, code, undefined); return v === undefined ? dflt : Number(v); }
+function dxfNumbers(e, code) { const out = []; for (const c of e.codes) if (c[0] === code) out.push(Number(c[1])); return out; }
+
+/** The 2x3 affine map [a, b, c, d, tx, ty]: (x, y) -> (a x + b y + tx, c x + d y + ty). */
+function dxfApply(m, p) { return [m[0] * p[0] + m[1] * p[1] + m[4], m[2] * p[0] + m[3] * p[1] + m[5]]; }
+function dxfCompose(m, n) { return [m[0] * n[0] + m[1] * n[2], m[0] * n[1] + m[1] * n[3], m[2] * n[0] + m[3] * n[2], m[2] * n[1] + m[3] * n[3], m[0] * n[4] + m[1] * n[5] + m[4], m[2] * n[4] + m[3] * n[5] + m[5]]; }
+
+/** Points along an arc of a circle, angles in degrees (end > start), at least one segment. */
+function dxfArc(cx, cy, r, a0, a1, segments) {
+  const n = Math.max(1, Math.ceil((segments * (a1 - a0)) / 360 - 1e-9)), out = [];
+  for (let i = 0; i <= n; i++) { const a = ((a0 + ((a1 - a0) * i) / n) * Math.PI) / 180; out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); }
+  return out;
+}
+/** A polyline's points with each bulge (tan of a quarter of the arc's angle, + anticlockwise) turned into an arc. */
+function dxfBulged(vs, closed, segments) {
+  const out = [];
+  const count = closed ? vs.length : vs.length - 1;
+  for (let i = 0; i < count; i++) {
+    const p = vs[i], q = vs[(i + 1) % vs.length], b = p[2] || 0;
+    if (i === 0) out.push([p[0], p[1]]);
+    if (Math.abs(b) < 1e-12) { out.push([q[0], q[1]]); continue; }
+    const theta = 4 * Math.atan(b), dx = q[0] - p[0], dy = q[1] - p[1], chord = Math.hypot(dx, dy);
+    if (chord === 0) continue;
+    const r = chord / (2 * Math.sin(Math.abs(theta) / 2));
+    // the centre is off the chord's midpoint, to the left for an anticlockwise arc
+    const h = r * Math.cos(theta / 2) * Math.sign(theta), mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2;
+    const cx = mx - (h * dy) / chord, cy = my + (h * dx) / chord;
+    const a0 = Math.atan2(p[1] - cy, p[0] - cx), n = Math.max(1, Math.ceil((segments * Math.abs(theta)) / (2 * Math.PI) - 1e-9));
+    for (let k = 1; k <= n; k++) { const a = a0 + (theta * k) / n; out.push(k === n ? [q[0], q[1]] : [cx + r * Math.cos(a), cy + r * Math.sin(a)]); }
+  }
+  if (closed && out.length) out.push(out[0]);
+  return out;
+}
+/** A NURBS curve's points: de Boor at `per` samples per non-empty knot span. */
+function dxfSpline(degree, knots, ctrl, weights, per) {
+  const n = ctrl.length, p = degree;
+  if (n < 2 || p < 1 || knots.length !== n + p + 1) return null;
+  const w = weights.length === n ? weights : ctrl.map(() => 1);
+  const point = (t) => {
+    let k = p;
+    while (k < n - 1 && t >= knots[k + 1]) k++;
+    const d = [];
+    for (let j = 0; j <= p; j++) { const c = ctrl[k - p + j], wj = w[k - p + j]; d.push([c[0] * wj, c[1] * wj, wj]); }
+    for (let r = 1; r <= p; r++) for (let j = p; j >= r; j--) {
+      const i = k - p + j, den = knots[i + p - r + 1] - knots[i], a = den === 0 ? 0 : (t - knots[i]) / den;
+      d[j] = [(1 - a) * d[j - 1][0] + a * d[j][0], (1 - a) * d[j - 1][1] + a * d[j][1], (1 - a) * d[j - 1][2] + a * d[j][2]];
+    }
+    return [d[p][0] / d[p][2], d[p][1] / d[p][2]];
+  };
+  const out = [];
+  for (let s = p; s < n; s++) {
+    const t0 = knots[s], t1 = knots[s + 1];
+    if (t1 <= t0) continue;
+    for (let i = out.length ? 1 : 0; i <= per; i++) out.push(point(t0 + ((t1 - t0) * i) / per));
+  }
+  return out;
+}
+
+/**
+ * The drawing's pieces as polylines in drawing coordinates, with origin and scale applied, plus its dimensions.
+ * opts: { layer, origin, scale, segments, file }; dimsOnly reads the dimensions alone (and warns about nothing else).
+ */
+function dxfRead(source, fn, opts, dimsOnly) {
+  const layer = opts.layer, origin = opts.origin === undefined ? [0, 0] : opts.origin, scale = opts.scale === undefined ? 1 : opts.scale;
+  const segments = opts.segments === undefined ? 48 : opts.segments;
+  if (layer !== undefined && typeof layer !== 'string') throw new TypeError(`${fn}: layer must be a string, got ${describe(layer)}`);
+  checkVec(fn, 'origin', origin, 2); checkPositive(fn, 'scale', scale); checkInt(fn, 'segments', segments, 3);
+  const { entities, blocks } = dxfEntities(source, fn);
+  const warned = {};
+  const warn = (key, msg) => { if (!warned[key]) { warned[key] = true; cad.warn(`${opts.file === undefined ? '' : `${opts.file}: `}${fn}: ${msg}`); } };
+  const pieces = [], dims = [];
+  const world = [scale, 0, 0, scale, -origin[0] * scale, -origin[1] * scale];
+  const finite = (pts) => pts.every((q) => Number.isFinite(q[0]) && Number.isFinite(q[1]));
+  const add = (pts, m) => {
+    if (pts.length < 2) return;
+    if (!finite(pts)) { warn('nan', 'a piece with coordinates that are not numbers is skipped'); return; }
+    pieces.push(pts.map((q) => dxfApply(m, q)));
+  };
+  // Entity coordinates are in its object coordinate system; for an extrusion direction of -Z that mirrors x.
+  const ocs = (e) => {
+    const nz = dxfNumber(e, 230, 1), nx = dxfNumber(e, 210, 0), ny = dxfNumber(e, 220, 0);
+    if (Math.abs(nx) > 1e-9 || Math.abs(ny) > 1e-9) { warn('tilt', `a ${e.type} not in the XY plane is skipped`); return null; }
+    return nz < 0 ? [-1, 0, 0, 1, 0, 0] : [1, 0, 0, 1, 0, 0];
+  };
+  const emit = (e, m, depth) => {
+    const t = e.type;
+    if (dimsOnly && t !== 'DIMENSION') return;
+    if (t === 'LINE') { add([[dxfNumber(e, 10, 0), dxfNumber(e, 20, 0)], [dxfNumber(e, 11, 0), dxfNumber(e, 21, 0)]], m); return; }
+    if (t === 'LWPOLYLINE' || t === 'POLYLINE') {
+      const o = ocs(e); if (!o) return;
+      const flags = dxfNumber(e, 70, 0);
+      if (t === 'POLYLINE' && flags & (16 | 64)) { warn('mesh', 'polyface and mesh POLYLINEs are not imported'); return; }
+      let vs = [];
+      if (t === 'LWPOLYLINE') {
+        // each vertex is a 10 and a 20, and the bulge (42) that follows belongs to the vertex before it
+        for (const c of e.codes) {
+          if (c[0] === 10) vs.push([Number(c[1]), 0, 0]);
+          else if (c[0] === 20 && vs.length) vs[vs.length - 1][1] = Number(c[1]);
+          else if (c[0] === 42 && vs.length) vs[vs.length - 1][2] = Number(c[1]);
+        }
+      } else vs = e.vertices.filter((v) => !(dxfNumber(v, 70, 0) & 16)).map((v) => [dxfNumber(v, 10, 0), dxfNumber(v, 20, 0), dxfNumber(v, 42, 0)]);
+      if (vs.length >= 2) add(dxfBulged(vs, !!(flags & 1), segments), dxfCompose(m, o));
+      return;
+    }
+    if (t === 'CIRCLE' || t === 'ARC') {
+      const o = ocs(e); if (!o) return;
+      const r = dxfNumber(e, 40, 0), cx = dxfNumber(e, 10, 0), cy = dxfNumber(e, 20, 0);
+      if (!(r > 0)) return;
+      let a0 = 0, a1 = 360;
+      if (t === 'ARC') { a0 = dxfNumber(e, 50, 0); a1 = dxfNumber(e, 51, 0); while (a1 <= a0) a1 += 360; }
+      add(dxfArc(cx, cy, r, a0, a1, segments), dxfCompose(m, o));
+      return;
+    }
+    if (t === 'ELLIPSE') {
+      const cx = dxfNumber(e, 10, 0), cy = dxfNumber(e, 20, 0), mx = dxfNumber(e, 11, 0), my = dxfNumber(e, 21, 0), ratio = dxfNumber(e, 40, 1);
+      const nz = dxfNumber(e, 230, 1), R = Math.hypot(mx, my);
+      if (!(R > 0)) return;
+      let t0 = dxfNumber(e, 41, 0), t1 = dxfNumber(e, 42, 2 * Math.PI);
+      while (t1 <= t0) t1 += 2 * Math.PI;
+      // the minor axis is the extrusion direction crossed with the major one
+      const s = nz < 0 ? -1 : 1, ux = -my * s * ratio, uy = mx * s * ratio;
+      const n = Math.max(1, Math.ceil((segments * (t1 - t0)) / (2 * Math.PI) - 1e-9)), pts = [];
+      for (let i = 0; i <= n; i++) { const a = t0 + ((t1 - t0) * i) / n; pts.push([cx + mx * Math.cos(a) + ux * Math.sin(a), cy + my * Math.cos(a) + uy * Math.sin(a)]); }
+      add(pts, m);
+      return;
+    }
+    if (t === 'SPLINE') {
+      const o = ocs(e); if (!o) return;
+      const degree = dxfNumber(e, 71, 3), knots = dxfNumbers(e, 40), weights = dxfNumbers(e, 41);
+      const xs = dxfNumbers(e, 10), ys = dxfNumbers(e, 20), fx = dxfNumbers(e, 11), fy = dxfNumbers(e, 21);
+      const ctrl = xs.map((x, i) => [x, ys[i]]);
+      let pts = ctrl.length ? dxfSpline(degree, knots, ctrl, weights, Math.max(4, Math.ceil(segments / 6))) : null;
+      if (!pts && fx.length >= 2) pts = catmullRom(fx.map((x, i) => [x, fy[i], 0]), Math.max(4, Math.ceil(segments / 6)), !!(dxfNumber(e, 70, 0) & 1)).map((q) => [q[0], q[1]]);
+      if (!pts) { warn('spline', 'a SPLINE whose knots do not match its control points is skipped'); return; }
+      add(pts, m);
+      return;
+    }
+    if (t === 'INSERT') {
+      const name = dxfValue(e, 2, ''), b = blocks[name];
+      if (!b) { warn(`block ${name}`, `INSERT of the block "${name}", which the drawing does not define, is skipped`); return; }
+      if (depth > 32) { warn('nest', 'blocks nested more than 32 deep are skipped (a block that inserts itself?)'); return; }
+      if (dxfNumber(e, 70, 1) > 1 || dxfNumber(e, 71, 1) > 1) warn('array', 'INSERT arrays (rows and columns) place only the first copy');
+      const o = ocs(e); if (!o) return;
+      const sx = dxfNumber(e, 41, 1), sy = dxfNumber(e, 42, 1), a = (dxfNumber(e, 50, 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+      const px = dxfNumber(e, 10, 0), py = dxfNumber(e, 20, 0);
+      // insertion point + rotation * scale * (p - block base point), in the INSERT's coordinate system
+      const local = dxfCompose([c, -s, s, c, px, py], [sx, 0, 0, sy, -sx * b.base[0], -sy * b.base[1]]);
+      const mm = dxfCompose(m, dxfCompose(o, local));
+      for (const be of b.entities) emit(be, mm, depth + 1);
+      return;
+    }
+    if (t === 'DIMENSION') {
+      const pt = (k) => [dxfNumber(e, 10 + k, 0), dxfNumber(e, 20 + k, 0)];
+      // codes 11, 12 and 16 are offsets (scaled only); the others are points (moved by origin too)
+      const coords = [0, 1, 2, 3, 4, 5, 6].map((k) => (k === 1 || k === 2 || k === 6 ? pt(k).map((v) => v * scale) : dxfApply(world, pt(k))));
+      dims.push({ name: dxfValue(e, 1, ''), type: dxfNumber(e, 70, 0), angle: dxfNumber(e, 50, 0), coords });
+      return;
+    }
+    if (t === 'POINT' || t === 'ATTDEF' || t === 'ATTRIB' || t === 'VIEWPORT') return;
+    warn(`type ${t}`, `${t} entities are not imported${t === 'TEXT' || t === 'MTEXT' ? ' (convert text to outlines in your drawing program)' : t === 'HATCH' ? ' (the outlines around a hatch are)' : ''}`);
+  };
+  for (const e of entities) if (layer === undefined || e.layer === layer) emit(e, world, 0);
+  if (layer !== undefined && !entities.some((e) => e.layer === layer)) {
+    const layers = Array.from(new Set(entities.map((e) => e.layer))).filter((l) => l !== '');
+    throw new RangeError(`${fn}: the drawing has no layer "${layer}"${layers.length ? ` (it has ${layers.map((l) => `"${l}"`).join(', ')})` : ''}`);
+  }
+  return { pieces, dims };
+}
+
+/** Join pieces end to end (ends closer than 0.001 meet): outlines as point lists, with `closed` when they came round. */
+function dxfJoin(pieces) {
+  const EPS = 1e-3, cells = new Map(), pts = [];
+  const snap = (q) => {
+    const i = Math.floor(q[0] / EPS), j = Math.floor(q[1] / EPS);
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+      const list = cells.get(`${i + di},${j + dj}`);
+      if (list) for (const k of list) if (Math.abs(pts[k][0] - q[0]) <= EPS && Math.abs(pts[k][1] - q[1]) <= EPS) return k;
+    }
+    const k = pts.length;
+    pts.push([q[0], q[1]]);
+    const key = `${i},${j}`;
+    if (!cells.has(key)) cells.set(key, []);
+    cells.get(key).push(k);
+    return k;
+  };
+  // each piece is a chain of points; only its two ends join other pieces
+  const chains = [];
+  for (const piece of pieces) {
+    const ids = [];
+    for (const q of piece) { const k = snap(q); if (ids[ids.length - 1] !== k) ids.push(k); }
+    if (ids.length >= 2) chains.push(ids);
+  }
+  const at = new Map();
+  chains.forEach((c, n) => { for (const end of [c[0], c[c.length - 1]]) { if (!at.has(end)) at.set(end, []); at.get(end).push(n); } });
+  const used = chains.map(() => false), out = [];
+  const walk = (start, from) => {
+    const ring = chains[start][0] === from ? chains[start].slice() : chains[start].slice().reverse();
+    used[start] = true;
+    for (;;) {
+      const end = ring[ring.length - 1];
+      if (end === ring[0] && ring.length > 2) break;
+      const next = (at.get(end) || []).find((n) => !used[n]);
+      if (next === undefined) break;
+      used[next] = true;
+      const c = chains[next][0] === end ? chains[next] : chains[next].slice().reverse();
+      for (let i = 1; i < c.length; i++) ring.push(c[i]);
+    }
+    const closed = ring.length > 2 && ring[ring.length - 1] === ring[0];
+    if (closed) ring.pop();
+    out.push({ points: ring.map((k) => pts[k]), closed });
+  };
+  // open outlines first, from an end that meets nothing else, then whatever is left goes round
+  chains.forEach((c, n) => { if (used[n]) return; for (const end of [c[0], c[c.length - 1]]) if (!used[n] && at.get(end).filter((m) => !used[m]).length === 1) walk(n, end); });
+  chains.forEach((c, n) => { if (!used[n]) walk(n, c[0]); });
+  return out;
+}
+
+/** A DXF drawing as a Sketch. opts: { layer, origin: [x, y], scale, segments (per full circle, 48) } */
+function dxf(source, opts = {}) {
+  const fn = 'dxf';
+  const { pieces } = dxfRead(source, fn, opts);
+  const outlines = dxfJoin(pieces);
+  const prefix = opts.file === undefined ? '' : `${opts.file}: `;
+  const open = outlines.filter((o) => !o.closed && o.points.length >= 3).length;
+  if (open) cad.warn(`${prefix}${fn}: ${open === 1 ? 'an outline was' : `${open} outlines were`} open and ${open === 1 ? 'has' : 'have'} been closed with a straight line`);
+  const rings = outlines.map((o) => o.points).filter((r) => r.length >= 3);
+  if (!rings.length) throw new RangeError(`${fn}: the drawing has no outlines${opts.layer === undefined ? '' : ` on layer "${opts.layer}"`}`);
+  const out = sketchFromRings(rings, FILL.evenOdd);
+  if (out.isEmpty()) throw new RangeError(`${fn}: the drawing's outlines enclose no area`);
+  return out;
+}
+
+/** The value of a dimension in a DXF drawing (OpenSCAD's dxf_dim): the first one, or the one whose text is `name`. opts: { layer, origin, scale } */
+function dxfDim(source, name, opts = {}) {
+  if (name !== null && typeof name === 'object' && !Array.isArray(name)) { opts = name; name = undefined; }
+  if (name !== undefined && typeof name !== 'string') throw new TypeError(`dxfDim: name must be a string, got ${describe(name)}`);
+  const { dims } = dxfRead(source, 'dxfDim', opts, true);
+  const d = dims.find((x) => name === undefined || name === '' || x.name === name);
+  if (!d) {
+    const names = dims.map((x) => x.name).filter((x) => x !== '');
+    throw new RangeError(`dxfDim: ${name ? `no dimension named "${name}"` : 'the drawing has no dimensions'}${opts.layer === undefined ? '' : ` on layer "${opts.layer}"`}${name && names.length ? ` (it has ${names.map((x) => `"${x}"`).join(', ')})` : ''}`);
+  }
+  const c = d.coords, type = d.type & 7, deg = (v) => (v * 180) / Math.PI;
+  if (type === 0) { const a = (d.angle * Math.PI) / 180; return Math.abs((c[4][0] - c[3][0]) * Math.cos(a) + (c[4][1] - c[3][1]) * Math.sin(a)); }
+  if (type === 1) return Math.hypot(c[4][0] - c[3][0], c[4][1] - c[3][1]);
+  if (type === 2) return Math.abs(deg(Math.atan2(c[0][0] - c[5][0], c[0][1] - c[5][1])) - deg(Math.atan2(c[4][0] - c[3][0], c[4][1] - c[3][1])));
+  if (type === 3 || type === 4) return Math.hypot(c[5][0] - c[0][0], c[5][1] - c[0][1]);
+  if (type === 6) return d.type & 64 ? c[3][0] : c[3][1];
+  throw new RangeError(`dxfDim: the dimension${d.name ? ` "${d.name}"` : ''} is a three-point angular dimension, which has no value here`);
+}
+
+/** Where the first two loose single lines of a DXF drawing cross, extended if need be (OpenSCAD's dxf_cross). opts: { layer, origin, scale } */
+function dxfCross(source, opts = {}) {
+  const { pieces } = dxfRead(source, 'dxfCross', opts);
+  const lines = dxfJoin(pieces).filter((o) => !o.closed && o.points.length === 2).slice(0, 2);
+  if (lines.length < 2) throw new RangeError(`dxfCross: the drawing needs two lines that touch nothing else${opts.layer === undefined ? '' : ` on layer "${opts.layer}"`}`);
+  const [p1, p2] = lines[0].points, [p3, p4] = lines[1].points;
+  const den = (p4[1] - p3[1]) * (p2[0] - p1[0]) - (p4[0] - p3[0]) * (p2[1] - p1[1]);
+  if (den === 0) throw new RangeError('dxfCross: the two lines are parallel');
+  const ua = ((p4[0] - p3[0]) * (p1[1] - p3[1]) - (p4[1] - p3[1]) * (p1[0] - p3[0])) / den;
+  return [p1[0] + ua * (p2[0] - p1[0]), p1[1] + ua * (p2[1] - p1[1])];
+}
+
+/** `import part from './part.dxf'` evaluates to this; `import { source } from './part.dxf'` is the file's text. */
+function __temenDxf(name, source) {
+  try { return dxf(source, { file: name }); } catch (e) { e.message = `${name}: ${e.message}`; throw e; }
+}
+
 // ---- printability (print.js) -------------------------------------------------------------------
 //
 // Checks on the mesh a shape exports; y = 0 is the plate, +Y is up.
@@ -3241,7 +3556,7 @@ export const api = {
   SCREWS, screw, screwHole, nutPocket, heatInsert, hole,
   gear, gear2d, gearPair, gearDistance, rack, ringGear, ringAddendum, planetary, thread, split,
   Path, path, line, arc, helix, bezier, sweep, polyhedron, loft, fillet, chamfer, sharpEdges,
-  GrayImage, heightmap, lithophane, __temenImage, __temenMesh, svg, svgPath, __temenText, __temenSvg,
+  GrayImage, heightmap, lithophane, __temenImage, __temenMesh, svg, svgPath, __temenText, __temenSvg, dxf, dxfDim, dxfCross, __temenDxf,
   overhangs, unsupported, minWallThickness, printability,
   minkowski, shell, roof,
   Face, distance, rectPattern, gridPattern, intersects, interference, overlap, clearance, dimension, mark,

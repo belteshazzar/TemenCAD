@@ -47,6 +47,9 @@ export const GLOBALS = [
   fn('sweep', 'sweep(${sketch}, ${path})', '(sketch | (t) => sketch, path, { frame, up, twist, scale, segments })', 'Sweep a 2D profile along a path; closed paths make rings. frame: \'minimal\' (no twist) or \'upright\'.'),
   // Images
   fn('svg', 'svg(${markup}, { width: ${50} })', '(markup, { segments, id, width, height })', 'An SVG drawing as a Sketch: filled paths, rects, circles, polygons, in mm with Y up. import logo from \'./logo.svg\' does the same for a project file.'),
+  fn('dxf', "dxf(${source}, { layer: '${0}' })", '(source, { layer, origin, scale, segments })', "A DXF drawing's outlines as a Sketch; import { source } from './part.dxf' gives the text. import part from './part.dxf' reads every layer."),
+  fn('dxfDim', "dxfDim(${source}, '${name}')", '(source, name, { layer, origin, scale })', "The value of a named DIMENSION in a DXF drawing (OpenSCAD's dxf_dim)."),
+  fn('dxfCross', 'dxfCross(${source})', '(source, { layer, origin, scale })', "Where the first two loose lines of a DXF drawing cross (OpenSCAD's dxf_cross)."),
   fn('svgPath', "svgPath('${M0 0 h10 v10 Z}')", '(d, { segments, evenOdd })', 'SVG path data as a Sketch in its own units, Y flipped.'),
   fn('heightmap', 'heightmap(${image}, { width: ${60}, height: ${4} })', '(image | (x, z) => 0..1, { width, depth, height, base, invert, smooth, gamma, resolution })', 'Relief solid: brightness (or a function of position) becomes height above a base plate.'),
   fn('lithophane', 'lithophane(${image}, { width: ${80}, upright: true })', '(image, { width, depth, minThickness, maxThickness, border, smooth, gamma, resolution, upright })', 'Plate whose thickness follows the image: dark is thick, light is thin. Light it from behind.'),
