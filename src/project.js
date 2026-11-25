@@ -1,5 +1,5 @@
 /**
- * A project: a set of named files (scripts, fonts, meshes, images) saved as a .temen zip.
+ * A project: a set of named files (scripts, fonts, meshes, images, SVG and DXF drawings) saved as a .temen zip.
  * Text files are kept as strings, binary files as ArrayBuffers. `main.js` is the entry script.
  * Pure module: used by the app, the worker and the command-line tool.
  */
@@ -7,7 +7,9 @@ import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 
 export const ENTRY = 'main.js';
 export const PROJECT_EXT = '.temen';
-const TEXT_EXT = ['.js', '.mjs', '.json', '.txt', '.md'];
+/** Archive folder for app data that is not part of the model (the assistant conversation): see chat-store.js. */
+export const APP_DATA_DIR = '.assistant/';
+const TEXT_EXT = ['.js', '.mjs', '.json', '.txt', '.md', '.svg', '.dxf'];
 export const FONT_EXT = ['.ttf', '.otf'];
 export const MESH_EXT = ['.stl'];
 export const IMAGE_EXT = ['.png', '.jpg', '.jpeg'];
@@ -19,6 +21,7 @@ export const isScript = (name) => ['.js', '.mjs'].includes(extOf(name));
 export const isFontFile = (name) => FONT_EXT.includes(extOf(name));
 export const isMeshFile = (name) => MESH_EXT.includes(extOf(name));
 export const isImageFile = (name) => IMAGE_EXT.includes(extOf(name));
+export const isSvgFile = (name) => extOf(name) === '.svg';
 
 /** Normalise a project-relative path: forward slashes, no leading './' or '/', no '..' escaping the root. */
 export function normalizePath(path) {
@@ -95,9 +98,9 @@ export class Project {
   toFiles() { return Object.fromEntries(this.files); }
   static fromFiles(files) { const p = new Project(); for (const [k, v] of Object.entries(files)) p.set(k, v); return p; }
 
-  /** .temen archive bytes (a plain zip). */
-  toZip() {
-    const entries = {};
+  /** .temen archive bytes (a plain zip). extras: more entries, e.g. the conversation under .assistant/. */
+  toZip(extras = null) {
+    const entries = { ...(extras ?? {}) };
     for (const [name, content] of this.files) entries[name] = typeof content === 'string' ? strToU8(content) : new Uint8Array(content);
     return zipSync(entries, { level: 6 });
   }
@@ -105,6 +108,8 @@ export class Project {
     const p = new Project();
     const entries = unzipSync(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
     for (const [name, data] of Object.entries(entries)) {
+      // the app's own data (the assistant conversation) is kept beside the project, never as a project file
+      if (name.startsWith(APP_DATA_DIR)) { (p.extras ??= {})[name] = data; continue; }
       if (name.endsWith('/') || name.startsWith('__MACOSX/') || /(^|\/)\.[^/]*$/.test(name)) continue; // folders, Finder junk, dotfiles
       const n = normalizePath(name);
       if (!n) continue;

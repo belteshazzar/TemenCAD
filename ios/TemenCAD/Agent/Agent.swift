@@ -1,0 +1,328 @@
+import Foundation
+
+/// What the agent needs from the app: the project, builds and the preview.
+@MainActor
+protocol AgentHost: AnyObject {
+    var project: Project { get set }
+    /// Build the current project, show it in the preview, and return the report the model reads.
+    func buildForAgent() async -> JSONValue
+    /// The preview as PNG, optionally from a preset direction; also shown in the chat.
+    func screenshotForAgent(view: String?) -> Data?
+    /// The last build report, for the context sent with each message.
+    var lastReport: JSONValue? { get }
+    /// What the user attached (attachment n, from 1): a photo full size as JPEG (pdf false) or a PDF; nil when there is none.
+    func attachment(_ n: Int) -> (data: Data, pdf: Bool)?
+    var attachmentCount: Int { get }
+    /// The app as tools: the render sheet, export, the view, the plate, the parts' display.
+    func renderViews(views: [String], section: (axis: String, value: Double)?, save: Bool) async throws -> Data
+    func exportModel(format: String, parts: [String]?, filename: String?) throws -> JSONValue
+    func setView(_ view: String?, wireframe: Bool?) -> JSONValue
+    func setPlate(_ id: String, size: [Double]?) throws -> JSONValue
+    func setPartDisplay(names: [String]?, visible: Bool?, ghost: Bool?, solo: Bool, reset: Bool) throws -> JSONValue
+    /// The app's state for each message: the plate, wireframe, each part's display.
+    var appState: JSONValue { get }
+    /// add_files: asks the user to add files to the project (a card in the chat with `reason`), waits for them.
+    func requestFiles(reason: String) async -> JSONValue
+    /// new_project, open_project, save_project: projects as .temen files on the device, several open at once.
+    func newProjectForAgent(script: String?) async -> JSONValue
+    func openProjectForAgent() async -> JSONValue
+    func saveProjectForAgent(asNew: Bool) async -> JSONValue
+}
+
+/// The modelling assistant: the same job as the web app's (src/agent.js), with the tools a phone needs.
+/// A manual tool loop over the Messages API; the conversation is kept as raw JSON so it goes back unchanged.
+@MainActor
+final class Agent {
+    static let models: [(id: String, label: String)] = [
+        ("claude-opus-5-5", "Claude Opus 5.5 (default)"),
+        ("claude-sonnet-5-5", "Claude Sonnet 5.5 (faster, cheaper)"),
+    ]
+    static let defaultModel = "claude-opus-5-5"
+    static let views = ["iso", "top", "bottom", "front", "back", "left", "right"]
+
+    weak var host: AgentHost?
+    var client: AnthropicClient
+    var model = Agent.defaultModel
+    private(set) var messages: [JSONValue] = []
+    /// Things the user did in the app (undo, put back), told to the model with the next message.
+    private(set) var notes: [String] = []
+
+    init(client: AnthropicClient) { self.client = client }
+
+    func reset() { messages = []; notes = [] }
+    func restore(_ saved: [JSONValue], notes: [String] = []) { messages = saved; self.notes = notes }
+    func note(_ text: String) { notes.append(text) }
+
+    // MARK: - Prompt
+
+    static let system: String = {
+        let resource = { (name: String) in
+            (Bundle.main.url(forResource: name, withExtension: "txt")).flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
+        }
+        let rules = resource("assistant-rules").split(separator: "\n").filter { $0.hasPrefix("- ") }.joined(separator: "\n")
+        return """
+        You are the modelling assistant inside TemenCAD for iPhone and iPad, where a JavaScript script describes a 3D model for 3D printing. The user types plain English in a chat beside a live 3D preview; you change the script so the model matches, then build it and check the result. The user does not see the script unless they open it, so the chat and the preview are how they follow your work.
+
+        How to work:
+        - The project's files and the last build report are included with every user message. Read them before deciding what to change. main.js is the entry script; other .js files are ES modules it imports (`import { lid } from './lid.js'`).
+        - Make the smallest edit that does the job with edit_script (exact-match replacement; pass `file` for anything other than main.js). Use write_script only for new models, new files or large rewrites; remove_file deletes a script file.
+        - After every change call run_model and read the report. Fix any error or warning it reports (they include line numbers) before replying. run_model also shows the result in the user's preview.
+        - The user can attach photos and PDFs to a message (labelled Attachment 1, 2, … in order across the conversation), photos often taken with the phone's camera. Use them as references: a broken part next to a ruler, a hand sketch with dimensions, a drawing or datasheet. Read dimensions from a drawing's labels first; when you scale from a photo, say which reference you used (a ruler, a coin, a known part) and how sure you are, and ask for the one or two measurements that matter most (hole spacing, mating diameters) rather than guessing them. To use a photo in the model itself (lithophane, heightmap), save_attachment puts it in the project as a .jpg to import from main.js (`import photo from './photo.jpg'`); PDFs cannot be saved.
+        - Projects are .temen files on the user's device (iCloud Drive, On My iPhone, other providers). Several can be open at once (the project menu at the top of the chat switches between them, each with its own conversation); <app> says which is showing, its file and whether it has unsaved changes. new_project and open_project keep the current project open, so nothing is lost, and this conversation carries on with the new one. Opening a project and saving to a new file need the user's tap: open_project and save_project (for a project never saved, or as_new_file) put a card in the chat and wait. Say in a few words what it is for; if they cancel, accept it and carry on. Save only when the user asks.
+        - Fonts, meshes (.stl) and SVG drawings can only be added by the user: they can attach them to a message (the message's <app_events> lists what was added), or you can ask with add_files.
+        - The user can point at surfaces in the 3D view ("make this thicker"): such a message carries Reference n blocks (part name, which way the face points and where its plane is, its extent and area; or a hole / boss / fillet with its diameter or radius and axis) and a snapshot of their view with each reference highlighted in its colour. Work out which line of the script made that surface (the part name, the face's plane and extent against the shapes' sizes and positions) before editing, and say which feature you took it to be; if two features could match, ask. They can also measure between two points (distances, and the gap between parallel faces); trust those numbers, they come from the built mesh.
+        - Use render_views when the shape of the result matters and the build report can't confirm it (first version of a new model, visual arrangement, fit against a ghost reference, anything you are unsure of): it returns labelled views (part names, sizes, scale bar, axes) with ghosts translucent, and can cut the model open with a section. take_screenshot gives the live 3D view instead. Both images also appear in the chat as thumbnails the user can open, so you can refer to them.
+        - set_view, set_plate and set_part_display change what the user sees (the view direction and wireframe, a printer's build plate with a fit check, which parts show or are ghosts); export_model puts an STL or 3MF in the chat with a Share button.
+        \(rules)
+        - Each of your replies that changed the project gets an Undo button (and STL / 3MF share buttons when the build succeeded), so you don't need to offer those. When the user undoes a reply (or puts an undo back), an <app_events> note says so at the top of their next message; the <project> block is then the restored state.
+        - Reply briefly in plain prose, short enough to read on a phone: what you changed and anything the user should decide. No code in the reply unless asked. Never claim a build succeeded unless run_model said so.
+
+        The complete API reference follows. Only these functions exist; do not invent others.
+
+        \(resource("api"))
+        """
+    }()
+
+    // MARK: - Tools
+
+    private static func tool(_ name: String, _ description: String, _ properties: [String: JSONValue], required: [String] = []) -> JSONValue {
+        ["name": .string(name), "description": .string(description), "eager_input_streaming": true,
+         "input_schema": ["type": "object", "properties": .object(properties), "required": .array(required.map(JSONValue.string)),
+                          "additionalProperties": false]]
+    }
+    static let tools: [JSONValue] = [
+        tool("read_script", "Read a script file (default main.js).", ["file": ["type": "string"]]),
+        tool("edit_script", "Replace exactly one occurrence of old_text with new_text in a script file (default main.js). old_text must match the file exactly, including whitespace, and be unique.",
+             ["old_text": ["type": "string"], "new_text": ["type": "string"], "file": ["type": "string"]], required: ["old_text", "new_text"]),
+        tool("write_script", "Write a whole script file (default main.js), creating it if needed. Use for new models, new modules and large rewrites.",
+             ["script": ["type": "string"], "file": ["type": "string"]], required: ["script"]),
+        tool("remove_file", "Delete a script file from the project (not main.js).", ["file": ["type": "string"]], required: ["file"]),
+        tool("run_model", "Build the project and return the report: parts with names, sizes, volumes and triangle counts, warnings with lines, logs, or the error with its file and line. Also shows the result in the user's preview.", [:]),
+        tool("take_screenshot", "Frame the model from a view and return a picture of the preview. Y is up; +Z is the front. Build with run_model first.",
+             ["view": ["type": "string", "enum": .array(views.map(JSONValue.string))]]),
+        tool("rename_file", "Rename a script file in the project (e.g. to move it into a folder). main.js, fonts and meshes cannot be renamed. Update any imports of it afterwards.",
+             ["file": ["type": "string"], "new_name": ["type": "string"]], required: ["file", "new_name"]),
+        tool("render_views", "Render the last build as a sheet of labelled views (part names, sizes in each view, scale bar, axes; ghost parts translucent). views: a list from iso, top, bottom, front, back, left, right (default iso, top, front, right). section: { axis, value } cuts the model open at that plane (y keeps what is below; x and z keep the negative side) and paints cut faces red. save: true also puts the PNG at full size in the chat, where the user can share it. Build with run_model first.",
+             ["views": ["type": "array", "items": ["type": "string", "enum": .array(views.map(JSONValue.string))]],
+              "section": ["type": "object", "properties": ["axis": ["type": "string", "enum": ["x", "y", "z"]], "value": ["type": "number"]],
+                          "required": ["axis", "value"], "additionalProperties": false],
+              "save": ["type": "boolean", "description": "Also give the user the PNG at full size in the chat"]]),
+        tool("export_model", "Export the visible, non-ghost parts for printing; the file goes in the chat with a Share button (AirDrop to a Mac, Files, a slicer app). format: stl (one mesh) or 3mf (named, coloured objects, what Prusa, Bambu, Orca and Cura prefer). parts: export only these part names (each must be visible and not a ghost). Build first.",
+             ["format": ["type": "string", "enum": ["stl", "3mf"]],
+              "parts": ["type": "array", "items": ["type": "string"], "description": "Only these part names (default: every visible, non-ghost part)"],
+              "filename": ["type": "string", "description": "File name without extension (default: the project name, or the part name)"]], required: ["format"]),
+        tool("set_view", "Point the user's 3D view: view is one of iso, top, bottom, front, back, left, right, or reset to frame the model. wireframe turns wireframe display on or off.",
+             ["view": ["type": "string", "enum": .array((views + ["reset"]).map(JSONValue.string))], "wireframe": ["type": "boolean"]]),
+        tool("set_plate", "Show a printer build plate in the view and check the parts fit it. plate: a preset id, custom (with size [width, depth, height] in mm) or none. Returns whether the visible parts fit.",
+             ["plate": ["type": "string", "enum": .array(Plate.presets.map { JSONValue.string($0.id) }),
+                        "description": .string(Plate.presets.map { "\($0.id): \($0.label)" }.joined(separator: "; "))],
+              "size": ["type": "array", "items": ["type": "number"], "minItems": 3, "maxItems": 3, "description": "[width, depth, height] in mm, for plate: custom"]],
+             required: ["plate"]),
+        tool("set_part_display", "Show, hide, ghost or solo parts in the view. parts: part names (default all). visible / ghost set those flags; solo: true shows only the named parts; reset: true goes back to what the script says. Display only: it does not edit the script, and hidden or ghost parts are left out of exports.",
+             ["parts": ["type": "array", "items": ["type": "string"], "description": "Part names (default: every part)"],
+              "visible": ["type": "boolean"], "ghost": ["type": "boolean"], "solo": ["type": "boolean"], "reset": ["type": "boolean"]]),
+        tool("save_attachment", "Add a photo the user attached to a message (Attachment n) to the project as a .jpg file, e.g. for lithophane() or heightmap(); then import it from main.js. PDFs cannot be saved.",
+             ["attachment": ["type": "integer", "description": "The attachment number from the message"],
+              "name": ["type": "string", "description": "File name in the project (default photo-n.jpg); .jpg is added if missing"],
+              "replace": ["type": "boolean", "description": "Replace a project file of the same name"]], required: ["attachment"]),
+        tool("new_project", "Start a new untitled project beside the open ones (the current project stays open in the project list; nothing is discarded): one main.js holding `script` (default: the starter block). This conversation carries on with the new project. Builds it and returns the report.",
+             ["script": ["type": "string", "description": "main.js for the new project (default: the starter)"]]),
+        tool("open_project", "Open a .temen project from the user's device. Puts an \"Open…\" card in the chat for the user to tap and pick the file, then returns the opened files and the build report. The current project stays open in the project list; this conversation carries on with the opened one (or switches to it if it is open already).", [:]),
+        tool("save_project", "Save the project as a .temen file on the user's device. Writes the file it was opened from or last saved to, in place; for a project never saved, or with as_new_file, puts a \"Save as…\" card in the chat for the user to pick a name and place.",
+             ["as_new_file": ["type": "boolean", "description": "Save As: pick a new file name and place"]]),
+        tool("add_files", "Ask the user to add files from their phone (images for heightmap/lithophane, fonts for text, STL meshes, SVG drawings, scripts). Puts an \"Add files\" card in the chat with your reason, waits for the user and returns the names added; import them from main.js.",
+             ["reason": ["type": "string", "description": "Shown on the card: what to add and why, e.g. \"Add the photo for the lithophane (.png or .jpg)\""]], required: ["reason"]),
+    ]
+
+    /// Context appended to every user message so the model always sees the live project.
+    private func turnContext() -> String {
+        guard let host else { return "" }
+        let files = host.project.names.map { name in
+            host.project.text(name).map { "<file name=\"\(name)\">\n\($0)\n</file>" } ?? "<file name=\"\(name)\" binary=\"true\" />"
+        }.joined(separator: "\n")
+        let report = host.lastReport.map { $0.text(pretty: true) } ?? "not built yet"
+        return "\n\n<project>\n\(files)\n</project>\n\n<app>\n\(host.appState.text(pretty: true))\n</app>\n\n<last_build>\n\(report)\n</last_build>"
+    }
+
+    private func run(_ name: String, _ input: JSONValue) async -> JSONValue {
+        guard let host else { return "Error: the app is not ready." }
+        let file = input["file"]?.string ?? Project.entry
+        switch name {
+        case "read_script":
+            return host.project.text(file).map(JSONValue.string) ?? .string("Error: no script file named \(file). Files: \(host.project.names.joined(separator: ", "))")
+        case "edit_script":
+            guard let old = input["old_text"]?.string, let new = input["new_text"]?.string else { return "Error: old_text and new_text are required." }
+            guard let src = host.project.text(file) else { return .string("Error: no script file named \(file). Files: \(host.project.names.joined(separator: ", "))") }
+            let count = src.components(separatedBy: old).count - 1
+            if old.isEmpty || count == 0 { return .string("Error: old_text was not found in \(file). Read the file and copy the text exactly.") }
+            if count > 1 { return .string("Error: old_text occurs \(count) times in \(file); include more surrounding text so it is unique.") }
+            host.project.files[file] = Data(src.replacingOccurrences(of: old, with: new).utf8)
+            return .string("Edited \(file). Call run_model to build and check.")
+        case "write_script":
+            guard let script = input["script"]?.string else { return "Error: script is required." }
+            guard Project.isText(file), !file.contains("..") else { return .string("Error: \(file) is not a script file name.") }
+            host.project.files[file] = Data(script.utf8)
+            return .string("Wrote \(file). Call run_model to build and check.")
+        case "remove_file":
+            if file == Project.entry { return "Error: main.js is the entry script and cannot be removed." }
+            guard host.project.files.removeValue(forKey: file) != nil else { return .string("Error: no file named \(file).") }
+            return .string("Removed \(file). Files: \(host.project.names.joined(separator: ", "))")
+        case "run_model":
+            return .string(await host.buildForAgent().text(pretty: true))
+        case "take_screenshot":
+            let view = input["view"]?.string
+            guard let png = host.screenshotForAgent(view: view) else { return "Error: the preview could not be captured." }
+            return [["type": "image", "source": ["type": "base64", "media_type": "image/png", "data": .string(png.base64EncodedString())]],
+                    ["type": "text", "text": .string("Screenshot from the \(view ?? "current") view. Y is up; +Z is the front.")]]
+        case "rename_file":
+            guard let new = input["new_name"]?.string else { return "Error: file and new_name are required." }
+            let isScript = { (n: String) in ["js", "mjs"].contains((n as NSString).pathExtension.lowercased()) }
+            guard isScript(file), isScript(new) else { return "Error: only script files can be renamed, and the new name must end in .js." }
+            if file == Project.entry { return "Error: main.js is the entry script and cannot be renamed." }
+            guard let data = host.project.files[file] else { return .string("Error: no file named \(file). Files: \(host.project.names.joined(separator: ", "))") }
+            let parts = new.replacingOccurrences(of: "\\", with: "/").split(separator: "/").filter { $0 != "." }
+            guard !parts.isEmpty, !parts.contains("..") else { return .string("Error: \(new) is not a file name in the project.") }
+            let name = parts.joined(separator: "/")
+            if host.project.files[name] != nil { return .string("Error: \(name) already exists.") }
+            host.project.files.removeValue(forKey: file)
+            host.project.files[name] = data
+            return .string("Renamed \(file) to \(name). Update imports that referred to it. Files: \(host.project.names.joined(separator: ", "))")
+        case "render_views":
+            let list = (input["views"]?.array?.compactMap(\.string)).flatMap { $0.isEmpty ? nil : $0 } ?? ["iso", "top", "front", "right"]
+            var section: (axis: String, value: Double)?
+            if let s = input["section"]?.object, let axis = s["axis"]?.string, let value = s["value"]?.number { section = (axis, value) }
+            let save = input["save"]?.bool == true
+            do {
+                let png = try await host.renderViews(views: list, section: section, save: save)
+                let cut = section.map { ", cut at \($0.axis) = \(BuildReport.number($0.value))" } ?? ""
+                return [["type": "image", "source": ["type": "base64", "media_type": "image/png", "data": .string(png.base64EncodedString())]],
+                        ["type": "text", "text": .string("Views: \(list.joined(separator: ", "))\(cut). Each view is titled with its axes and the model size; ghosts are translucent reference parts.\(save ? " The full-size PNG is in the chat for the user to share." : "")")]]
+            } catch { return .string("Error: \(error)") }
+        case "export_model":
+            do {
+                return .string(try host.exportModel(format: input["format"]?.string ?? "", parts: input["parts"]?.array?.compactMap(\.string),
+                                                    filename: input["filename"]?.string).text(pretty: true))
+            } catch { return .string("Error: \(error)") }
+        case "set_view":
+            return .string(host.setView(input["view"]?.string, wireframe: input["wireframe"]?.bool).text(pretty: true))
+        case "set_plate":
+            do { return .string(try host.setPlate(input["plate"]?.string ?? "", size: input["size"]?.array?.compactMap(\.number)).text(pretty: true)) }
+            catch { return .string("Error: \(error)") }
+        case "set_part_display":
+            do {
+                return .string(try host.setPartDisplay(names: input["parts"]?.array?.compactMap(\.string), visible: input["visible"]?.bool,
+                                                       ghost: input["ghost"]?.bool, solo: input["solo"]?.bool == true, reset: input["reset"]?.bool == true).text(pretty: true))
+            } catch { return .string("Error: \(error)") }
+        case "save_attachment":
+            guard let n = input["attachment"]?.number.map({ Int($0) }) else { return "Error: attachment (a number) is required." }
+            guard let att = host.attachment(n) else {
+                let count = host.attachmentCount
+                return .string("Error: no attachment \(n); there \(count == 1 ? "is 1" : "are \(count)").")
+            }
+            if att.pdf { return .string("Error: attachment \(n) is a PDF; only photos can be saved to the project.") }
+            let jpeg = att.data
+            var name = (input["name"]?.string ?? "photo-\(n)").trimmingCharacters(in: .whitespaces)
+            let ext = (name as NSString).pathExtension.lowercased()
+            if ext != "jpg" && ext != "jpeg" { name = (ext.isEmpty ? name : (name as NSString).deletingPathExtension) + ".jpg" }
+            guard !name.contains(".."), !name.hasPrefix("/"), name != ".jpg" else { return .string("Error: \(name) is not a file name.") }
+            if host.project.files[name] != nil && input["replace"]?.bool != true {
+                return .string("Error: the project already has \(name); pass replace: true or choose another name.")
+            }
+            host.project.files[name] = jpeg
+            return .string("Saved attachment \(n) as \(name) (JPEG). Import it from main.js: import photo from './\(name)';")
+        case "new_project":
+            return .string(await host.newProjectForAgent(script: input["script"]?.string).text(pretty: true))
+        case "open_project":
+            return .string(await host.openProjectForAgent().text(pretty: true))
+        case "save_project":
+            return .string(await host.saveProjectForAgent(asNew: input["as_new_file"]?.bool == true).text(pretty: true))
+        case "add_files":
+            return .string(await host.requestFiles(reason: input["reason"]?.string ?? "").text(pretty: true))
+        default:
+            return .string("Error: unknown tool \(name).")
+        }
+    }
+
+    // MARK: - The loop
+
+    enum Event { case text(String), tool(String), done, refusal }
+
+    /// Send a user message (text plus optional extra content blocks) and run the tool loop until the model is done.
+    /// On failure the half-finished turn is dropped, so the next message starts clean.
+    func send(_ text: String, extra: [JSONValue] = [], onEvent: @escaping @MainActor (Event) -> Void) async throws {
+        let before = messages, pendingNotes = notes
+        notes = []
+        let events = pendingNotes.isEmpty ? "" : "<app_events>\n\(pendingNotes.joined(separator: "\n"))\n</app_events>\n\n"
+        messages.append(["role": "user", "content": .array(extra + [["type": "text", "text": .string(events + text + turnContext())]])])
+        do {
+            for _ in 0..<24 {
+                let body: JSONValue = [
+                    "model": .string(model),
+                    "max_tokens": 64000,
+                    "stream": true,
+                    "system": [["type": "text", "text": .string(Self.system), "cache_control": ["type": "ephemeral"]]],
+                    "thinking": ["type": "adaptive"],
+                    "output_config": ["effort": "medium"],
+                    "fallbacks": "default",
+                    "tools": .array(Self.tools),
+                    "messages": .array(messages),
+                ]
+                let message = try await streamWithRetry(body, onEvent: onEvent)
+                var blocks = message["content"]?.array ?? []
+                // keep our parse note out of what goes back to the API
+                var invalid: [String: String] = [:]
+                blocks = blocks.map { b in
+                    var b = b
+                    if let raw = b["_invalid_input"]?.string, let id = b["id"]?.string { invalid[id] = raw; b = .object((b.object ?? [:]).filter { $0.key != "_invalid_input" }) }
+                    return b
+                }
+                messages.append(["role": "assistant", "content": .array(blocks)])
+                let stop = message["stop_reason"]?.string
+                if stop == "refusal" { onEvent(.refusal); return }
+                let uses = blocks.filter { $0["type"]?.string == "tool_use" }
+                if stop == "max_tokens" && !uses.isEmpty { throw AgentError.cutOff }
+                guard stop == "tool_use", !uses.isEmpty else { onEvent(.done); return }
+                var results: [JSONValue] = []
+                for use in uses {
+                    let id = use["id"]?.string ?? "", name = use["name"]?.string ?? ""
+                    if let raw = invalid[id] {
+                        results.append(["type": "tool_result", "tool_use_id": .string(id), "is_error": true,
+                                        "content": .string((["INVALID_JSON": .string(raw)] as JSONValue).text())])
+                        continue
+                    }
+                    let out = await run(name, use["input"] ?? [:])
+                    let isError = out.string?.hasPrefix("Error") == true
+                    results.append(["type": "tool_result", "tool_use_id": .string(id), "content": out, "is_error": .bool(isError)])
+                }
+                messages.append(["role": "user", "content": .array(results)])
+            }
+            onEvent(.done)
+        } catch {
+            messages = before
+            notes = pendingNotes + notes // the message was dropped: tell the model with the next one
+            throw error
+        }
+    }
+
+    private func streamWithRetry(_ body: JSONValue, onEvent: @escaping @MainActor (Event) -> Void) async throws -> JSONValue {
+        var attempt = 0
+        while true {
+            do {
+                return try await client.stream(body: body) { event in
+                    switch event {
+                    case .text(let t): onEvent(.text(t))
+                    case .toolStarted(let n): onEvent(.tool(n))
+                    }
+                }
+            } catch let e as AnthropicClient.APIError where e.retryable && attempt < 2 {
+                attempt += 1
+                try await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000)
+            }
+        }
+    }
+
+    enum AgentError: LocalizedError {
+        case cutOff
+        var errorDescription: String? { "The reply was cut off while writing a tool call." }
+    }
+}

@@ -7,15 +7,16 @@ import { indentWithTab } from '@codemirror/commands';
 import { apiCompletions } from './completions.js';
 import { lintGutter } from '@codemirror/lint';
 import { Viewer } from './viewer.js';
-import { exportSTL, export3MF } from './export.js';
+import { exportSTL, export3MF, exportFile, downloadBlob } from './export.js';
 import { FileManager } from './files.js';
 import { PLATES, fitProblems } from './plate.js';
 import { Builder } from './build.js';
 import { PartsPanel } from './parts-panel.js';
 import { initMenus } from './menu.js';
 import { initChat } from './chat.js';
+import { Pointer } from './pointer.js';
 import { DEFAULT_SCRIPT } from './default-script.js';
-import { Project, ENTRY } from './project.js';
+import { Project, ENTRY, ACCEPTED_EXT, normalizePath, extOf } from './project.js';
 import { Tabs } from './tabs.js';
 import { whereText } from './trace.js';
 import { initCatalog } from './catalog.js';
@@ -66,7 +67,8 @@ function projectFromHash() {
   if (!m) return null;
   try { history.replaceState(null, '', location.pathname + location.search); return Project.fromScript(decodeURIComponent(m[1])); } catch { return null; }
 }
-let project = projectFromHash() ?? loadProject();
+const hashProject = projectFromHash(); // a link opened a new project: the kept conversation belongs to another one
+let project = hashProject ?? loadProject();
 const persist = () => store.set(STORAGE_KEY, JSON.stringify(project.toJSON()));
 
 /** Every text file gets its own editor state so undo history and diagnostics stay per file. */
@@ -106,17 +108,27 @@ const tabs = new Tabs(document.getElementById('tabs'), {
   panels: [{ id: 'assistant', label: 'Assistant', el: chatEl, onShow: () => chat?.focus() }],
   onCatalog: () => catalog.openBrowser(),
 });
-function projectChanged() {
+/** The project changed: store it, update the unsaved marker and (unless told not to) schedule an auto-run. */
+function projectChanged({ run = true } = {}) {
   persist();
   files?.markChanged();
-  scheduleRun();
+  if (run) scheduleRun();
 }
 
+let pointer = null; // pointing and measuring in the 3D view (pointer.js), made once the chat exists
+let chat = null; // the assistant panel, made below (the file manager asks it for the conversation to save)
 const files = new FileManager({
   getProject: () => project,
-  setProject: (p) => { project = p; tabs.setProject(p); persist(); clearTimeout(timer); run(); },
+  // an opened or new project brings its own conversation (or none); if the assistant opened it, its chat carries on
+  setProject: (p) => {
+    project = p; tabs.setProject(p); persist(); clearTimeout(timer);
+    chat?.loadArchive(p.extras).then((had) => { if (had) tabs.select('assistant'); });
+    run();
+  },
   fileInput: document.getElementById('file-input'),
   onChange: (f) => { document.title = `${f.dirty ? '• ' : ''}${f.name} — TemenCAD`; },
+  extras: () => chat?.archive() ?? null,
+  extrasToken: () => chat?.token() ?? '',
 });
 window.addEventListener('beforeunload', (e) => { if (files.dirty) e.preventDefault(); });
 
@@ -311,39 +323,221 @@ viewMenu.addEventListener('click', (e) => {
   if (!action) return;
   if (action === 'run') run();
   if (action === 'reset-view') viewer.resetView();
-  if (action === 'wireframe') {
-    wireframe = !wireframe;
-    viewer.setWireframe(wireframe);
-    viewMenu.querySelector('[data-action="wireframe"] .check').textContent = wireframe ? '✓' : '';
-  }
-  if (action === 'autorun') {
-    autorun = !autorun;
-    store.set('temencad.autorun', autorun ? '1' : '0');
-    reflectAutorun();
-    if (autorun) scheduleRun(0);
-  }
+  if (action === 'wireframe') toggleWireframe();
+  if (action === 'autorun') toggleAutorun();
   menus.closeMenus();
 });
+function toggleWireframe() {
+  wireframe = !wireframe;
+  viewer.setWireframe(wireframe);
+  viewMenu.querySelector('[data-action="wireframe"] .check').textContent = wireframe ? '✓' : '';
+}
+function toggleAutorun() {
+  autorun = !autorun;
+  store.set('temencad.autorun', autorun ? '1' : '0');
+  reflectAutorun();
+  if (autorun) scheduleRun(0);
+}
 
 // ---- Assistant (first tab of the editor pane) ----
-const chat = initChat({
+chat = initChat({
   root: chatEl,
+  onChange: () => files.markChanged(),
   host: {
     listFiles: () => project.names(),
     getScript: (file = ENTRY) => tabs.text(file),
-    setScript: (file, text) => { tabs.setText(file, text); clearTimeout(timer); }, // the assistant builds explicitly via run_model, so no auto-run
-    removeFile: (file) => { tabs.removeFile(file); projectChanged(); clearTimeout(timer); },
-    renameFile: (file, to) => { const n = tabs.renameFile(file, to); projectChanged(); clearTimeout(timer); return n; },
+    // the assistant builds explicitly via run_model, so its edits store the project without an auto-run
+    setScript: (file, text) => { tabs.setText(file, text); clearTimeout(timer); projectChanged({ run: false }); },
+    removeFile: (file) => { tabs.removeFile(file); clearTimeout(timer); projectChanged({ run: false }); },
+    renameFile: (file, to) => { const n = tabs.renameFile(file, to); clearTimeout(timer); projectChanged({ run: false }); return n; },
     runAndWait: () => builder.runAndWait(),
+    // the conversation in the project file, packed and read by the core in the worker (core/CONVERSATION.md)
+    packConversation: (json, blobs) => builder.conversation('pack', { json, blobs }),
+    unpackConversation: (entries) => builder.conversation('unpack', { entries }),
     lastReport: () => lastReport,
     renderViews: (opts) => renderSheet(opts),
     screenshot: async (view) => {
-      if (view && view !== 'iso') viewer.setView(view); else viewer.resetView();
+      viewer.frameModel(view || 'iso');
       await new Promise((r) => requestAnimationFrame(r));
       return viewer.snapshot(1024);
     },
+    ...appActions(),
   },
 });
+pointer = new Pointer(viewer, {
+  root: document.getElementById('viewer-pane'),
+  onReference: (ref) => { chat.addReference(ref); tabs.select('assistant'); },
+});
+
+// The conversation kept in this browser comes back after a reload; a project opened from a link starts a new one.
+if (hashProject) chat.forgetLocal();
+else chat.restoreLocal().then(() => files.rebase());
+
+/**
+ * The menus' actions for the assistant (agent.js appTools). Each returns a plain object for the
+ * model to read. Actions that need a click (file pickers) put a button card in the chat and wait;
+ * anything that would switch the editor to a file tab switches back to the chat afterwards.
+ */
+function appActions() {
+  const stayInChat = () => tabs.select('assistant');
+  const baseName = () => files.name.replace(/\.[^.]*$/, '');
+  const projectInfo = () => ({ file: files.name, unsaved: files.dirty, files: project.names() });
+  /** Unsaved changes: ask in the chat. Resolves true to go ahead. */
+  async function okToDiscard() {
+    if (!files.dirty) return true;
+    const r = await chat.ask(`${files.name} has unsaved changes. Discard them?`, [
+      { label: 'Discard changes', value: 'discard', primary: true },
+      { label: 'Keep working', value: 'keep' },
+    ]);
+    return r.value === 'discard';
+  }
+  /** Export the shown model (or the parts at indices only) and download it. */
+  function exportNow(format, name, only) {
+    const stem = name.replace(/\.(stl|3mf)$/i, '').replace(/[^\w.-]+/g, '_');
+    const f = exportFile(viewer.modelGroup, format, `${stem}.${format}`, { only });
+    downloadBlob(f.blob, f.filename);
+    logLine(`Exported ${format === 'stl' ? `${f.count} triangles` : `${f.count} part${f.count === 1 ? '' : 's'}`} to ${f.filename}`);
+    return f;
+  }
+  return {
+    // ---- for the chat's reply actions (not tools) ----
+    /** The project as it stands, cheap to take: file contents are immutable strings and buffers. */
+    snapshot: () => ({ generation: files.generation, files: project.toFiles() }),
+    sameProject: (a, b) => {
+      const ka = Object.keys(a.files), kb = Object.keys(b.files);
+      return a.generation === b.generation && ka.length === kb.length && ka.every((k) => a.files[k] === b.files[k]);
+    },
+    /** Put the project back to a snapshot (same file, so it shows as unsaved) and rebuild. */
+    restore: (snap) => {
+      project = Project.fromFiles(snap.files);
+      tabs.setProject(project);
+      stayInChat();
+      clearTimeout(timer);
+      projectChanged({ run: false });
+      return builder.runAndWait();
+    },
+    /** Files dropped or attached in the chat: added like Add files (asks before replacing), staying in the chat. */
+    addChatFiles: async (list) => {
+      const added = await tabs.addFiles(list);
+      stayInChat();
+      clearTimeout(timer); // the assistant builds when it is ready
+      projectChanged({ run: false });
+      return added;
+    },
+    /** A file the assistant saves (an attached image): no prompt, so replacing must be asked for. */
+    putFile: (name, content, { replace = false } = {}) => {
+      const n = normalizePath(name);
+      if (!n || !ACCEPTED_EXT.includes(extOf(n))) throw new Error(`"${name}" is not a valid project file name (${ACCEPTED_EXT.join(', ')})`);
+      if (project.has(n) && !replace) throw new Error(`${n} is already in the project; pass replace: true to overwrite it, or pick another name`);
+      project.set(n, content);
+      tabs.filesChanged([n]);
+      clearTimeout(timer);
+      projectChanged({ run: false });
+      return { done: true, file: n, bytes: content.byteLength, import_line: `import ${n.replace(/\.[^.]*$/, '').replace(/\W+(\w)?/g, (_, c) => (c ? c.toUpperCase() : '')).replace(/^\d/, '_$&') || 'image'} from './${n}';`, files: project.names() };
+    },
+    canExport: () => !!(lastReport?.ok && lastMeshes?.length),
+    referenceSnapshot: () => pointer?.snapshot(),
+    clearReferences: () => pointer?.clearRefs(),
+    removeReference: (id) => pointer?.removeRef(id),
+    download: (format) => exportNow(format, baseName()),
+    appState: () => ({
+      ...projectInfo(), files: undefined,
+      plate: plate ? { id: plate.id, size: [plate.w, plate.d, plate.h] } : null,
+      autorun, wireframe,
+      parts: parts.describe(),
+    }),
+    newProject: async (script) => {
+      if (!(await okToDiscard())) return { done: false, reason: 'the user kept the unsaved changes' };
+      files.newProject(typeof script === 'string' ? script : DEFAULT_SCRIPT, { force: true });
+      stayInChat();
+      return { done: true, ...projectInfo(), build: await builder.runAndWait() };
+    },
+    openProject: async () => {
+      if (!(await okToDiscard())) return { done: false, reason: 'the user kept the unsaved changes' };
+      const r = await chat.ask('Choose a TemenCAD project (.temen) or a script (.js) to open.', [
+        { label: 'Open…', value: 'open', primary: true, run: () => files.open({ force: true }) }, // unsaved changes were asked about above
+        { label: 'Cancel', value: 'cancel' },
+      ]);
+      if (r.error) return { done: false, error: r.error };
+      if (r.value !== 'open' || !r.result) return { done: false, reason: 'cancelled' };
+      stayInChat();
+      return { done: true, ...projectInfo(), build: await builder.runAndWait() };
+    },
+    saveProject: async (asNew) => {
+      if (!asNew && files.canSaveInPlace) {
+        await files.save();
+        return { done: true, saved_in_place: true, ...projectInfo() };
+      }
+      const r = await chat.ask(asNew || files.name.startsWith('untitled') ? 'Choose where to save the project.' : `Save ${files.name}: choose where to save it.`, [
+        { label: 'Save as…', value: 'save', primary: true, run: () => files.saveAs() },
+        { label: 'Cancel', value: 'cancel' },
+      ]);
+      if (r.error) return { done: false, error: r.error };
+      if (r.value !== 'save' || !r.result) return { done: false, reason: 'cancelled' };
+      return { done: true, ...projectInfo() };
+    },
+    exportModel: async ({ format, parts: names, filename }) => {
+      if (!lastMeshes?.length) throw new Error('Nothing built yet; call run_model first');
+      let only;
+      if (names?.length) {
+        const all = lastMeshes.map((m) => m.name);
+        const missing = names.filter((n) => !all.includes(n));
+        if (missing.length) throw new Error(`no part named ${missing.map((n) => `"${n}"`).join(', ')}; parts are ${all.map((n) => `"${n}"`).join(', ')}`);
+        only = names.map((n) => all.indexOf(n));
+      }
+      const f = exportNow(format, filename || (names?.length === 1 ? names[0] : baseName()), only);
+      chat.offerDownload(f.blob, f.filename);
+      return { done: true, file: f.filename, bytes: f.blob.size, [format === 'stl' ? 'triangles' : 'parts']: f.count, downloaded: true, link_in_chat: true };
+    },
+    saveRender: async ({ views, section }) => {
+      const png = await renderSheet({ views, section, width: 1280, height: 960, labels: true });
+      const name = `${baseName()}-views.png`;
+      chat.offerDownload(new Blob([png], { type: 'image/png' }), name);
+      return name;
+    },
+    shareProject: (prefill) => {
+      catalog.openShare(prefill);
+      return { done: true, note: 'The Share form is open with your values; the user reviews it and presses Share (or Cancel).' };
+    },
+    setView: ({ view, wireframe: wf }) => {
+      if (view === 'reset') viewer.resetView();
+      else if (view) viewer.setView(view);
+      if (typeof wf === 'boolean' && wf !== wireframe) toggleWireframe();
+      return { view: view ?? 'unchanged', wireframe };
+    },
+    setPlate: async (id, size) => {
+      if (id === 'custom') {
+        if (!Array.isArray(size) || size.length !== 3 || !size.every((n) => Number.isFinite(n) && n > 0)) throw new Error('plate custom needs size: [width, depth, height] in mm');
+        store.set('temencad.plate.custom', JSON.stringify(size));
+      }
+      if (!PLATES.some((p) => p[0] === id)) throw new Error(`unknown plate "${id}"`);
+      await applyPlate(id);
+      const fit = checkFit();
+      return { plate: plate ? { id: plate.id, size: [plate.w, plate.d, plate.h] } : null, fits: fit.fits, problems: fit.problems };
+    },
+    setPartDisplay: (opts) => ({ parts: parts.apply(opts), fits_plate: plate ? checkFit().fits : undefined }),
+    setAutorun: (on) => { if (!!on !== autorun) toggleAutorun(); return { autorun }; },
+    searchCatalog: async (query) => {
+      const found = await catalog.search(query);
+      return { count: found.length, packages: found.slice(0, 30) };
+    },
+    addFromCatalog: async (name) => {
+      const m = await catalog.add(name);
+      stayInChat();
+      return { done: true, name: m.name, version: m.version, import_line: m.importLine, exports: m.exports, note: 'The import line was added to main.js; use the exports there, then run_model.' };
+    },
+    addFiles: async (reason) => {
+      const r = await chat.ask(reason || 'Add files to the project.', [
+        { label: 'Add files…', value: 'add', primary: true, run: () => tabs.pickFiles() },
+        { label: 'Cancel', value: 'cancel' },
+      ]);
+      stayInChat();
+      if (r.error) return { done: false, error: r.error };
+      if (r.value !== 'add' || !r.result?.length) return { done: false, reason: 'cancelled or no files chosen' };
+      return { done: true, added: r.result, files: project.names() };
+    },
+  };
+}
 document.querySelector('#menu-root > .menu-items').addEventListener('click', (e) => {
   const action = e.target.closest('button')?.dataset.action;
   if (action === 'assistant-settings') { chat.openSettings(); menus.closeMenus(); }
@@ -440,6 +634,15 @@ function makeDivider(el, onMove) {
     el.addEventListener('pointerup', up);
   });
 }
+// ---- Phones: ⤢ shows the 3D view on its own (the button only appears in the phone layouts) ----
+const expandBtn = document.getElementById('view-expand');
+expandBtn.addEventListener('click', () => {
+  let on;
+  viewer.keepFraming(() => { on = document.body.classList.toggle('view-expanded'); });
+  expandBtn.textContent = on ? '⤡' : '⤢';
+  expandBtn.title = on ? 'Back to the chat' : 'Show the 3D view on its own';
+});
+
 const editorPane = document.getElementById('editor-pane');
 makeDivider(document.getElementById('divider'), (x) => { editorPane.style.width = `${Math.max(200, window.innerWidth - x)}px`; });
 

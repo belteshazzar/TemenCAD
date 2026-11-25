@@ -8,6 +8,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaTool } from '@anthropic-ai/sdk/helpers/beta/json-schema';
 import apiHtml from '../api.html?raw';
+import rulesText from './assistant-rules.txt?raw';
+
+/** The modelling rules both assistants follow (the iOS app bundles the same file). */
+const MODELLING_RULES = rulesText.split('\n').filter((l) => l.startsWith('- ')).join('\n');
 
 export const MODELS = [
   ['claude-opus-5-5', 'Claude Opus 5.5 (default)'],
@@ -16,6 +20,10 @@ export const MODELS = [
 export const DEFAULT_MODEL = 'claude-opus-5-5';
 
 import { referenceFromHtml } from './api-text.js';
+import { PLATES } from './plate.js';
+
+const PLATE_IDS = PLATES.map((p) => p[0]);
+const VIEWS = ['iso', 'top', 'bottom', 'front', 'back', 'left', 'right'];
 
 const referenceText = () => referenceFromHtml(apiHtml);
 
@@ -23,14 +31,16 @@ const SYSTEM = `You are the modelling assistant inside TemenCAD, a browser app w
 
 How to work:
 - The project's files and the last build report are included with every user message. Read them before deciding what to change. main.js is the entry script; other .js files are ES modules it imports (\`import { lid } from './lid.js'\`, \`export const lid = ...\`). Fonts (.ttf/.otf), meshes (.stl) and images (.png/.jpg) in the project are imported the same way: \`import logo from './Logo.ttf'\` gives a font name for text(), \`import part from './part.stl'\` gives a Shape, \`import photo from './photo.png'\` gives an image for heightmap() and lithophane().
-- Make the smallest edit that does the job with edit_script (exact-match replacement; pass \`file\` for anything other than main.js). Use write_script only for new models, new files or large rewrites. To split a model into modules, write_script a new .js file name (it is created) and import it from main.js; remove_file and rename_file manage script files. Fonts, meshes and images can only be added by the user.
+- Make the smallest edit that does the job with edit_script (exact-match replacement; pass \`file\` for anything other than main.js). Use write_script only for new models, new files or large rewrites. To split a model into modules, write_script a new .js file name (it is created) and import it from main.js; remove_file and rename_file manage script files. Fonts, meshes and images can only be added by the user: they can attach or drop them into the chat (the message's <app_events> lists what was added), or you can ask with add_files.
+- The user can point at surfaces in the 3D view ("make this thicker"): such a message carries Reference n blocks (part name, which way the face points and where its plane is, its extent and area; or a hole / boss / fillet with its diameter or radius and axis) and a snapshot of their view with each reference highlighted in its colour. Work out which line of the script made that surface (the part name, the face's plane and extent against the shapes' sizes and positions) before editing, and say which feature you took it to be; if two features could match, ask. They can also measure between two points (distances, and the gap between parallel faces); trust those numbers, they come from the built mesh.
+- The user can attach photos, sketches and PDFs to a message (labelled Attachment 1, 2, … in order across the conversation). Use them as references: a broken part next to a ruler, a hand sketch with dimensions, a drawing. Read dimensions from the drawing's labels first; when you scale from a photo, say which reference you used (a ruler, a coin, a known part) and how sure you are, and ask for the one or two measurements that matter most (hole spacing, mating diameters) rather than guessing them. To use an attached image in the model itself (lithophane, heightmap), save_attachment puts it in the project.
 - After every change call run_model and read the report. Fix any error or warning it reports (they include line numbers) before replying. If the report says the model does not fit the plate, tell the user rather than silently shrinking their design.
-- Use render_views when the shape of the result matters and the build report can't confirm it (first version of a new model, visual arrangement, fit against a ghost reference, anything you are unsure of): it returns labelled views (part names, sizes, scale bar, axes) with ghosts translucent, and can cut the model open with a section. take_screenshot gives the live 3D view instead.
-- Keep designs parametric: declare dimensions as named constants at the top of the script. Return parts as an object so they are named: \`return { body, lid }\`.
-- Units are millimetres, Y is up, the build plate is y = 0, +Z is the front. Put parts on the plate with .onPlate(). Screw cutters have their top at y = 0; translate them to the top face of the part before subtracting.
-- Design for printing. Horizontal holes should be hole() cutters (teardrop by default) rather than plain cylinders; use { flat } when the hole is close to a surface. Counterbored or countersunk holes printed head-down can take { bridge: 0.2 }. Where a boss or wall meets a plate, a concave fillet (s.fillet(r, { edges: 'concave' })) adds strength; top-edge fillets or chamfers (edges: 'top') soften parts; bottom chamfers avoid elephant's foot. Use sweep() along a path for handles, hooks, channels and springs rather than many unions; heightmap() and lithophane() for pictures the user adds as .png/.jpg files.
-- Work in the style of the existing script. Don't rename or restructure things the user didn't ask about.
-- Write scripts in the strict JavaScript subset the TemenCAD engine runs, so they work in every host (browser, CLI and phone). Use: \`let\`/\`const\`, functions and arrow functions with default and rest parameters, closures, object and array literals, destructuring and spread, template literals, \`if\`/\`for\`/\`for...of\`/\`while\`/\`switch\`, \`try\`/\`catch\`, regular expressions, \`async\`/\`await\` and ES module \`import\`/\`export\`. Never use: \`class\`, \`var\`, \`for...in\`, generators (\`function*\`/\`yield\`), \`eval\` or the \`Function\` constructor, \`Proxy\`, \`Reflect\`, \`Symbol\`, typed arrays or \`ArrayBuffer\`, \`Intl\`, \`with\`, labels, \`__proto__\`, \`instanceof\` (a syntax error), \`flatMap\`, or \`Array.from({ length: n })\` (build arrays with a counted \`for\` loop and \`push\`, or map an existing array). Group related helpers as plain functions or object literals rather than classes. Do not rewrite existing code that already follows these rules.
+- Use render_views when the shape of the result matters and the build report can't confirm it (first version of a new model, visual arrangement, fit against a ghost reference, anything you are unsure of): it returns labelled views (part names, sizes, scale bar, axes) with ghosts translucent, and can cut the model open with a section. take_screenshot gives the live 3D view instead. Both images also appear in the chat as thumbnails the user can open, so you can refer to them.
+- Each of your replies that changed the project gets an Undo button, and Download STL / 3MF buttons when the build succeeded, so you don't need to offer those. When the user undoes a reply (or puts an undo back), an <app_events> note says so at the top of their next message; the <project> block is then the restored state. The conversation is kept with the project, so a user may come back to it after reloading or reopening the file.
+${MODELLING_RULES}
+- The user can stay in this chat for everything; never send them to a menu for something a tool does. You can start a new project, open and save projects, export STL or 3MF (all visible parts or named ones), give them the rendered views as a PNG, set the build plate, show/hide/ghost/solo parts, point the 3D view, turn auto-run and wireframe on or off, search and add shapes from the shared catalogue, and add files from their computer. The app state (project file name, unsaved changes, plate, auto-run, part display) comes with every message.
+- Opening a project, saving to a new file and adding files from disk need the user's click: those tools put a button in the chat and wait for it. Say in a few words what the button is for; if they cancel, accept it and carry on. Ask before replacing their work: new_project and open_project check for unsaved changes themselves, so call them directly when the user asks.
+- Exports and saved renders download straight away and leave a link in the chat. Hidden and ghost parts are never exported; to export one part, name it. Sharing to the catalogue opens a form you can prefill (the shape must live in a module next to main.js); the user reviews it and presses Share.
 - Reply briefly in plain prose: what you changed and anything the user should decide. No code in the reply unless asked; the script is already visible in the editor. Never claim a build succeeded unless run_model said so.
 
 The complete API reference follows. Only these functions exist; do not invent others.
@@ -45,7 +55,20 @@ const TOOL_DESCRIPTIONS = {
   remove_file: 'Delete a script file from the project. main.js, fonts and meshes cannot be removed. Update any imports of it first.',
   rename_file: 'Rename a script file in the project (e.g. to move it into a folder). main.js, fonts and meshes cannot be renamed. Update any imports of it afterwards.',
   take_screenshot: 'Render the current 3D view and return it as an image, with the camera framing the model. Optional view: iso, top, front, right, left, back.',
-  render_views: 'Render the last build as a sheet of labelled views (part names, sizes in each view, scale bar, axes; ghost parts translucent). views: a list from iso, top, bottom, front, back, left, right (default iso, top, front, right). section: { axis, value } cuts the model open at that plane (y keeps what is below; x and z keep the negative side) and paints cut faces red. Build with run_model first.',
+  render_views: 'Render the last build as a sheet of labelled views (part names, sizes in each view, scale bar, axes; ghost parts translucent). views: a list from iso, top, bottom, front, back, left, right (default iso, top, front, right). section: { axis, value } cuts the model open at that plane (y keeps what is below; x and z keep the negative side) and paints cut faces red. save: true also gives the user the PNG as a download. Build with run_model first.',
+  new_project: 'Start a new project (File > New): one main.js holding `script` (default: the demo script), a new untitled file. If the open project has unsaved changes the user is asked in the chat whether to discard them. Builds the new project.',
+  open_project: 'Open a .temen project or a .js script from the user\'s computer (File > Open). Puts a button in the chat for the user to click (browsers only open a file picker from a click), then returns the opened files. Unsaved changes are asked about first.',
+  save_project: 'Save the project as a .temen file (File > Save / Save As). Writes the opened file in place when it can; otherwise, or with as_new_file, puts a "Save as" button in the chat for the user to click and pick a name.',
+  export_model: 'Export the visible, non-ghost parts for printing (File > Export STL / 3MF, or one part from the Parts list) and download it; a link to the file stays in the chat. format: stl (one mesh) or 3mf (named, coloured objects, what Prusa, Bambu, Orca and Cura prefer). parts: export only these part names (each must be visible and not a ghost). Build first.',
+  share_project: 'Open the Share form (File > Share) to submit a shape to the shared catalogue, prefilled with what you pass. The shape must be a module next to main.js that exports its functions (module); main.js stays the demo. The user reviews the form and presses Share.',
+  set_view: 'Point the user\'s 3D view (View menu): view is one of iso, top, bottom, front, back, left, right, or reset to frame the model (or plate). wireframe turns wireframe display on or off.',
+  set_plate: 'Show a printer build plate in the view and check the parts fit it (View > Plate). plate: a preset id, custom (with size [width, depth, height] in mm) or none. Returns whether the visible parts fit.',
+  set_part_display: 'Show, hide, ghost or solo parts in the view (the Parts list). parts: part names (default all). visible / ghost set those flags; solo: true shows only the named parts; reset: true goes back to what the script says. Display only: it does not edit the script, and hidden or ghost parts are left out of exports.',
+  set_autorun: 'Turn auto-run (rebuild as the user types) on or off (View > Auto-run).',
+  search_catalog: 'Search the shared catalogue of parametric shapes (hinges, clips, knobs, boxes…). query: words that must all match (empty lists everything). Returns name, title, description, exports and parts of each.',
+  add_from_catalog: 'Add a catalogue shape to the project by name: its files are copied into catalog/<name>/ and an import line is added to main.js. Then use its exports in main.js and run_model.',
+  save_attachment: 'Add an image the user attached to a message (Attachment n) to the project as a file, e.g. a photo for lithophane() or heightmap(); then import it from main.js. .png and .jpg keep their bytes; other types are converted to .png. PDFs cannot be saved.',
+  add_files: 'Ask the user to add files from their computer (images for heightmap/lithophane, fonts for text, STL meshes, SVG drawings, scripts). Puts an "Add files" button in the chat with your reason, waits for the click and returns the names added; import them from main.js.',
 };
 
 export class Agent {
@@ -54,10 +77,15 @@ export class Agent {
    *   listFiles(), getScript(file), setScript(file, text), removeFile(file), renameFile(file, to) -> name,
    *   runAndWait() -> report object, screenshot(view) -> { dataUrl, mediaType, data }, renderViews(opts) -> Uint8Array (PNG),
    *   lastReport() -> report object | null
+   *   and the menus' actions (main.js appActions): appState(), newProject(script), openProject(), saveProject(asNew),
+   *   exportModel({ format, parts, filename }), saveRender({ views, section }), shareProject(prefill), setView({ view, wireframe }),
+   *   setPlate(id, size), setPartDisplay(opts), setAutorun(on), searchCatalog(query), addFromCatalog(name), addFiles(reason)
    */
   constructor(host) {
     this.host = host;
     this.messages = [];
+    this.notes = []; // things the user did in the app (undo, redo) to tell the model with the next message
+    this.attachments = []; // files the user showed the model (attachment n is attachments[n - 1]), for save_attachment
     this.client = null;
     this.abort = null;
   }
@@ -68,7 +96,11 @@ export class Agent {
     this.client = apiKey ? new Anthropic({ apiKey, dangerouslyAllowBrowser: true }) : null;
   }
 
-  reset() { this.messages = []; }
+  reset() { this.messages = []; this.notes = []; this.attachments = []; }
+  /** Remember a file shown to the model; returns its attachment number. */
+  addAttachment(file) { this.attachments.push(file); return this.attachments.length; }
+  /** Tell the model about something the user did, with their next message. */
+  note(text) { this.notes.push(text); }
 
   get busy() { return !!this.abort; }
 
@@ -146,6 +178,7 @@ export class Agent {
         inputSchema: { type: 'object', properties: { view: { type: 'string', enum: ['iso', 'top', 'front', 'right', 'left', 'back'] } }, additionalProperties: false },
         run: async ({ view }) => {
           const shot = await host.screenshot(view || 'iso');
+          host.showImage?.(shot.data, shot.mediaType, `Screenshot, ${view || 'iso'} view`);
           return [
             { type: 'image', source: { type: 'base64', media_type: shot.mediaType, data: shot.data } },
             { type: 'text', text: `Screenshot from the ${view || 'iso'} view. Y is up; the blue plate edge is the front.` },
@@ -157,17 +190,76 @@ export class Agent {
         inputSchema: { type: 'object', properties: {
           views: { type: 'array', items: { type: 'string', enum: ['iso', 'top', 'bottom', 'front', 'back', 'left', 'right'] } },
           section: { type: 'object', properties: { axis: { type: 'string', enum: ['x', 'y', 'z'] }, value: { type: 'number' } }, required: ['axis', 'value'], additionalProperties: false },
+          save: { type: 'boolean', description: 'Also give the user the PNG (at a larger size) as a download' },
         }, additionalProperties: false },
-        run: async ({ views, section }) => {
+        run: async ({ views, section, save }) => {
           const list = views?.length ? views : ['iso', 'top', 'front', 'right'];
           const png = await host.renderViews({ views: list, section: section ?? null, width: 640, height: 480, labels: true });
+          if (save) await host.saveRender({ views: list, section: section ?? null });
+          host.showImage?.(png, 'image/png', `${list.join(', ')}${section ? `, cut at ${section.axis} = ${section.value}` : ''}`);
           let bin = ''; for (let i = 0; i < png.length; i += 0x8000) bin += String.fromCharCode.apply(null, png.subarray(i, i + 0x8000));
           return [
             { type: 'image', source: { type: 'base64', media_type: 'image/png', data: btoa(bin) } },
-            { type: 'text', text: `Views: ${list.join(', ')}${section ? `, cut at ${section.axis} = ${section.value}` : ''}. Each view is titled with its axes and the model size; ghosts are translucent reference parts.` },
+            { type: 'text', text: `Views: ${list.join(', ')}${section ? `, cut at ${section.axis} = ${section.value}` : ''}. Each view is titled with its axes and the model size; ghosts are translucent reference parts.${save ? ' The PNG is in the chat as a download.' : ''}` },
           ];
         },
       }),
+      ...this.appTools(),
+    ];
+  }
+
+  /** The app's menus as tools: files, export, sharing, view, plate, parts, catalogue. */
+  appTools() {
+    const host = this.host;
+    const tool = (name, properties, run, required = []) => betaTool({
+      name, description: TOOL_DESCRIPTIONS[name],
+      inputSchema: { type: 'object', properties, required, additionalProperties: false },
+      run: async (input) => { try { return await run(input ?? {}); } catch (e) { return `Error: ${e?.message ?? e}`; } },
+    });
+    const json = (v) => JSON.stringify(v, null, 1);
+    const strs = { type: 'array', items: { type: 'string' } };
+    return [
+      tool('new_project', { script: { type: 'string', description: 'main.js for the new project (default: the demo script)' } },
+        async ({ script }) => json(await host.newProject(script))),
+      tool('open_project', {}, async () => json(await host.openProject())),
+      tool('save_project', { as_new_file: { type: 'boolean', description: 'Save As: pick a new file name' } },
+        async ({ as_new_file }) => json(await host.saveProject(!!as_new_file))),
+      tool('export_model', {
+        format: { type: 'string', enum: ['stl', '3mf'] },
+        parts: { ...strs, description: 'Only these part names (default: every visible, non-ghost part)' },
+        filename: { type: 'string', description: 'File name without extension (default: the project name, or the part name)' },
+      }, async ({ format, parts, filename }) => json(await host.exportModel({ format, parts, filename })), ['format']),
+      tool('share_project', {
+        title: { type: 'string' }, name: { type: 'string', description: 'Package name: lowercase letters, digits and dashes (default: from the title)' },
+        description: { type: 'string' }, tags: strs, module: { type: 'string', description: 'The module file that exports the shape, e.g. hinge.js' },
+        exports: { ...strs, description: 'Exported function names (default: found in the module)' },
+        author: { type: 'string' }, license: { type: 'string', description: 'SPDX id, e.g. CC-BY-4.0, MIT' }, version: { type: 'string' },
+      }, async (prefill) => json(host.shareProject(prefill))),
+      tool('set_view', { view: { type: 'string', enum: [...VIEWS, 'reset'] }, wireframe: { type: 'boolean' } },
+        async ({ view, wireframe }) => json(host.setView({ view, wireframe }))),
+      tool('set_plate', {
+        plate: { type: 'string', enum: PLATE_IDS, description: PLATES.map(([id, label]) => `${id}: ${label}`).join('; ') },
+        size: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description: '[width, depth, height] in mm, for plate: custom' },
+      }, async ({ plate, size }) => json(await host.setPlate(plate, size)), ['plate']),
+      tool('set_part_display', {
+        parts: { ...strs, description: 'Part names (default: every part)' }, visible: { type: 'boolean' }, ghost: { type: 'boolean' },
+        solo: { type: 'boolean' }, reset: { type: 'boolean' },
+      }, async (o) => json(host.setPartDisplay({ names: o.parts, visible: o.visible, ghost: o.ghost, solo: o.solo, reset: o.reset }))),
+      tool('set_autorun', { on: { type: 'boolean' } }, async ({ on }) => json(host.setAutorun(on)), ['on']),
+      tool('search_catalog', { query: { type: 'string' } }, async ({ query }) => json(await host.searchCatalog(query ?? ''))),
+      tool('add_from_catalog', { name: { type: 'string', description: 'Package name from search_catalog' } },
+        async ({ name }) => json(await host.addFromCatalog(name)), ['name']),
+      tool('save_attachment', {
+        attachment: { type: 'integer', description: 'The attachment number from the message' },
+        name: { type: 'string', description: 'File name in the project (default: the attachment\'s name); the extension follows the image type' },
+        replace: { type: 'boolean', description: 'Replace a project file of the same name' },
+      }, async ({ attachment, name, replace }) => {
+        const file = this.attachments[attachment - 1];
+        if (!file) throw new Error(`no attachment ${attachment}; there ${this.attachments.length === 1 ? 'is 1' : `are ${this.attachments.length}`}`);
+        return json(await host.saveAttachment(file, name, !!replace));
+      }, ['attachment']),
+      tool('add_files', { reason: { type: 'string', description: 'Shown on the button card: what to add and why, e.g. "Add the photo for the lithophane (.png or .jpg)"' } },
+        async ({ reason }) => json(await host.addFiles(reason)), ['reason']),
     ];
   }
 
@@ -178,19 +270,24 @@ export class Agent {
       const text = this.host.getScript(name);
       return typeof text === 'string' ? `<file name="${name}">\n${text}\n</file>` : `<file name="${name}" binary="true" />`;
     }).join('\n');
-    return `\n\n<project>\n${files}\n</project>\n\n<last_build>\n${report ? JSON.stringify(report, null, 1) : 'not built yet'}\n</last_build>`;
+    const app = this.host.appState?.();
+    return `\n\n<project>\n${files}\n</project>${app ? `\n\n<app>\n${JSON.stringify(app, null, 1)}\n</app>` : ''}\n\n<last_build>\n${report ? JSON.stringify(report, null, 1) : 'not built yet'}\n</last_build>`;
   }
 
   /**
    * Send a user message and stream the reply.
    * events: onText(delta), onTool(name), onDone(finalMessage), onError(err)
+   * extra: { blocks: image / document content blocks to show with the message, notes: lines for <app_events> }
    */
-  async send(text, events) {
+  async send(text, events, extra = {}) {
     if (!this.client) throw new Error('No API key set. Open Assistant settings and paste your Anthropic API key.');
     if (this.busy) throw new Error('The assistant is still working.');
     this.abort = new AbortController();
     const before = [...this.messages];
-    this.messages.push({ role: 'user', content: text + this.turnContext() });
+    const notes = this.notes.splice(0);
+    const appEvents = [...notes, ...(extra.notes ?? [])];
+    const body = (appEvents.length ? `<app_events>\n${appEvents.join('\n')}\n</app_events>\n\n` : '') + text + this.turnContext();
+    this.messages.push({ role: 'user', content: extra.blocks?.length ? [...extra.blocks, { type: 'text', text: body }] : body });
 
     const params = {
       model: this.model,
@@ -235,6 +332,7 @@ export class Agent {
     } catch (err) {
       // Drop the half-finished turn so the next message starts clean.
       this.messages = before;
+      this.notes.unshift(...notes);
       events.onError?.(err);
       throw err;
     } finally {

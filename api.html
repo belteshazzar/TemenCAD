@@ -29,6 +29,8 @@
       <p class="lead">Your script is JavaScript (a strict subset; see <em>Script language</em> at the end). Return a shape (or an array of shapes), or call <code>show(shape)</code>. Units are millimetres, Y is up, the build plate is y&nbsp;=&nbsp;0. Every operation returns a new shape; nothing is mutated.</p>
       <h3>3D primitives</h3>
       <pre>box(w, h, d)                                      // box centred on the origin; box(10) is a cube
+box([x, y, z]) / box({ x, y, z })                 // the size as an array or an object (vectors you already have)
+box({ x, y, z, center: false })                   // corner on the origin; also box([x, y, z], { center }), box({ size, center })
 cone(r, h)                                        // cone along Y with base radius r
 cube(size)                                        // alias of box
 cylinder(r, h, { segments, center })              // along Y, centred; center: false puts the base on y = 0
@@ -38,6 +40,7 @@ polygon([[x, y], ...], h)                         // 2D point list extruded up a
 polyhedron(points, faces)                         // raw vertices and faces, like OpenSCAD; winding is fixed
 prism(sides, r, h, { center })                    // regular n-sided prism with circumradius r
 roundedBox(w, h, d, r, { edges, segments })       // edges: 'all' | 'vertical' (vertical edges only, prints flat)
+roundedBox([x, y, z], r, { edges })               // size as an array; or roundedBox({ x, y, z, r, edges })
 sphere(r, { segments })                           // sphere centred on the origin
 text3d(str, { size, height, font, align })        // extruded text, baseline on the plate
 torus(r, tube, { segments, tubeSegments })        // ring in the XZ plane, ring radius r, tube radius tube</pre>
@@ -53,7 +56,7 @@ sk.fillet(r, { segments })                        // round every corner (clamped
 sk.hull(other)                                    // 2D convex hull
 sk.intersect(other)                               // 2D intersection
 sk.isEmpty()                                      // true when the sketch has no area
-sk.mirror('x' | 'y')                              // mirror across an axis
+sk.mirror('x' | 'y' | [nx, ny])                   // mirror across an axis, or the line through the origin with that normal
 sk.offset(delta, { join, segments })              // grow (+) / shrink (−); join 'round' | 'miter' | 'square'
 polygon2d([[x, y], ...], { holes })               // any polygon; holes: [[[x, y], ...], ...]
 rect(w, h, { center })                            // rectangle, centred by default
@@ -64,6 +67,7 @@ roundedRect(w, h, r, { center, segments })        // rectangle with rounded corn
 sk.scale(x, y)                                    // scale; one factor scales both
 slot(length, r, { segments })                     // capsule: semicircles length apart, centre to centre
 teardrop(r, { angle, flat, segments })            // circle with a point at +y: a horizontal hole that prints without sagging
+sk.transform([[a, b, tx], [c, d, ty], [0, 0, 1]]) // affine map (3x3, 2x3 or 2x2 rows): shear, skew, any linear map
 bridgedCircle(r, { angle, segments })             // circle with a flat ceiling above `angle` from vertical, for the slicer to bridge
 square(size)                                      // alias of rect
 sk.subtract(other)                                // 2D difference
@@ -82,6 +86,8 @@ b.lineTo(x, y)                                    // segment to a point
 b.moveTo(x, y)                                    // where the outline starts
 b.points()                                        // the points so far, for inspection
 b.tangentArcTo(x, y, { segments })                // arc tangent to the previous segment, ending at (x, y)
+b.quadTo(cx, cy, x, y, { segments })              // quadratic Bézier to (x, y), pulled toward the control point (cx, cy)
+b.bezierTo(c1x, c1y, c2x, c2y, x, y, { segments })  // cubic Bézier to (x, y) with two control points (16 segments by default)
 // sketch().moveTo(0, 0).lineTo(30, 0).arcTo(30, 10, { r: 5 }).lineTo(0, 10).fillet(2).close().extrude(3)
 // revolve(sketch().moveTo(0, 0).lineTo(12, 0).lineTo(14, 20).fillet(3).lineTo(10, 40).lineTo(0, 40).close())</pre>
       <h3>2D → 3D and back</h3>
@@ -90,7 +96,7 @@ sk.extrude(h, opts)                               // method form of extrude
 projection(s)                                     // 3D → 2D: the solid's footprint seen from above
 projection(s, { cut: true | y })                  // 3D → 2D: the slice where the plane y cuts the solid
 s.projection(opts)                                // method form of projection
-revolve(sk, { angle, segments })                  // around Y; sketch x is the radius (≥ 0), y the height
+revolve(sk, { angle, start, segments })           // around Y; sketch x is the radius (≥ 0), y the height; a partial revolve runs from start (0 = +X) anticlockwise seen from above
 sk.revolve(opts)                                  // method form of revolve
 roof(sk, { angle, segments, tolerance })          // height = distance to the outline: pyramid, hip roof
 sk.roof(opts)                                     // method form of roof
@@ -105,13 +111,15 @@ p.append(other)                                   // continue with another path,
 p.bounds()                                        // { min, max, size, center }
 p.close()                                         // join the ends: the sweep becomes a ring with no caps
 p.length()                                        // length in mm
-p.mirror('x' | 'y' | 'z')                         // mirror across the axis plane through the origin
+p.mirror('x' | 'y' | 'z' | [nx, ny, nz])          // mirror across the axis plane, or the plane through the origin with that normal
 p.pointAt(t) / p.tangentAt(t)                     // point and unit direction at fraction t (0..1) of the length
 p.points                                          // the vertices as [x, y, z][]
 p.reverse()                                       // travel the other way
 p.rotate(xDeg, yDeg, zDeg)                        // rotate in degrees about X, then Y, then Z
+p.rotate(deg, [ax, ay, az])                       // rotate about an axis through the origin (right-hand rule)
 p.scale(f) / p.scale(x, y, z)                     // scale uniformly or per axis
 p.smooth({ segments })                            // replace the corners with a smooth curve through the same points
+p.transform(matrix)                               // affine map, as for s.transform
 p.translate(x, y, z)                              // move
 sweep(sk, p, { frame, up, twist, scale, segments })  // sweep a sketch along a path; closed paths make rings
 sweep((t) => sk, p, opts)                         // the profile may vary: t is the fraction of the length (0..1)
@@ -120,6 +128,28 @@ sk.sweep(p, opts)                                 // method form of sweep
 // frame 'minimal' (default) never twists the profile; 'upright' keeps sketch y pointing to `up` (default +Y).
 // twist in degrees over the whole path; scale a factor or [sx, sy] reached at the end.
 // Corners are mitred; a bend tighter than the profile is wide warns, because the surface folds into itself.</pre>
+      <h3>SVG drawings</h3>
+      <pre>import logo from './logo.svg'                     // the drawing's filled shapes as a Sketch, in mm, Y up, viewBox bottom-left at the origin
+import { markup } from './logo.svg'               // the file's text, for svg(markup, opts)
+svg(markup, { segments, id, width, height })      // SVG markup as a Sketch; id: only that element and its children;
+                                                  //   width or height: scale uniformly to that size in mm; segments per curve (16)
+svgPath(d, { segments, evenOdd })                 // SVG path data ('M0 0 h10 v10 Z') as a Sketch in its own units, Y flipped
+// Reads path (every command, arcs included), rect, circle, ellipse, polygon and polyline, through group transforms,
+//   with fill and fill-rule from attributes, style="" and simple &lt;style&gt; rules (tag, .class, #id); all filled shapes are unioned.
+// Size: width/height in mm, cm, in, pt, pc or px scale the viewBox; without units one user unit is 1 mm.
+// Skipped with a warning: strokes (outline them: stroke to path), &lt;text&gt; (convert to paths), &lt;use&gt; and &lt;image&gt;.
+// extrude(logo, 2) makes it a solid; logo.offset(-0.2) shrinks it for an inlay.</pre>
+      <h3>DXF drawings</h3>
+      <pre>import part from './part.dxf'                     // every layer's outlines as a Sketch, drawing units taken as mm
+import { source } from './part.dxf'               // the file's text, for dxf(), dxfDim() and dxfCross()
+dxf(source, { layer, origin, scale, segments })   // one layer; (x, y) becomes ((x, y) - origin) * scale; segments per full circle (48)
+dxfCross(source, { layer, origin, scale })        // [x, y] where the first two loose lines cross, extended if need be (OpenSCAD's dxf_cross)
+dxfDim(source, name, { layer, origin, scale })    // the value of the DIMENSION whose text is name, or the first one (OpenSCAD's dxf_dim)
+// Reads LINE, LWPOLYLINE and POLYLINE (bulge arcs included), CIRCLE, ARC, ELLIPSE, SPLINE and INSERT (nested blocks, scaled,
+//   rotated, mirrored). Pieces join end to end (ends within 0.001 meet), open outlines are closed with a straight line
+//   (with a warning), and the outlines fill even-odd, so an outline inside another is a hole.
+// Skipped with a warning: TEXT and MTEXT (convert to outlines), HATCH fills, 3D entities and anything else. ASCII DXF only.
+// This is OpenSCAD's import() of a DXF, plus bulges, POLYLINE and SPLINE, which OpenSCAD draws straight or leaves out.</pre>
       <h3>Images: heightmaps and lithophanes</h3>
       <pre>heightmap(img, { width, depth, height, base, invert, smooth, gamma, resolution })  // relief: brightness becomes height
 heightmap((x, z) => 0..1, opts)                   // the same from a function of position in mm
@@ -143,11 +173,13 @@ img.width / img.height                            // size in pixels
 s.center()                                        // centre on the origin
 s.centerXZ()                                      // centre in X and Z, keeping Y
 s.color(css)                                      // '#f80', a CSS name, rgb() or hsl()
-s.mirror('x' | 'y' | 'z')                         // mirror across the axis plane through the origin
+s.mirror('x' | 'y' | 'z' | [nx, ny, nz])          // mirror across the axis plane, or the plane through the origin with that normal
 s.onPlate(y = 0)                                  // put the bottom on the build plate
 s.resize([w, h, d], { auto })                     // to a bounding-box size; 0 keeps an axis, auto keeps proportions
 s.rotate(xDeg, yDeg, zDeg)                        // rotate in degrees about X, then Y, then Z
+s.rotate(deg, [ax, ay, az])                       // rotate about an axis through the origin (right-hand rule)
 s.scale(f) / s.scale(x, y, z)                     // scale uniformly or per axis
+s.transform(matrix)                               // affine map: 4x4 rows (last row [0, 0, 0, 1]), 3x4 or 3x3; OpenSCAD's multmatrix
 s.translate(x, y, z)                              // move; also accepts [x, y, z]</pre>
       <h3>Edges: fillets and chamfers</h3>
       <pre>s.chamfer(d, { edges, minAngle })                 // bevel the sharp edges by d along each face
@@ -202,6 +234,31 @@ union(a, b, ...)                                  // merge; arrays of shapes are
       <pre>grid(s, [nx, nz], [dx, dz], { center })           // nx × nz copies on the ground plane
 linearArray(s, count, [dx, dy, dz])               // count copies stepped by a vector (a number = X step)
 polarArray(s, count, { radius, axis, start, sweep }) // count copies around an axis; sweep in degrees</pre>
+      <h3>Gears</h3>
+      <pre>gear({ module, teeth, pressureAngle, thickness, helix, backlash, bore })  // involute spur gear (helix: angle in degrees, sign is the hand);
+                                                  //   axis Y, base on y = 0, tooth 0 along +X. Defaults: module 1, 20 teeth, 20°, 5 mm thick
+gear2d({ module, teeth, pressureAngle, backlash, bore, addendum, dedendum })  // its outline as a 2D sketch;
+                                                  //   addendum / dedendum: tooth height above / below the pitch circle in modules (1, 1.25)
+gearDistance(module, teeth1, teeth2)              // centre distance of a meshing pair: module × (teeth1 + teeth2) / 2
+gearPair({ module, teeth: [t1, t2], ... })        // [first, second]: second along +X at gearDistance, turned to mesh; helical pairs get opposite hands
+rack({ module, teeth, pressureAngle, thickness, height, backlash })  // straight rack: pitch line along X at z = 0, teeth toward -Z
+ringGear({ module, teeth, thickness, rim, backlash, helix, addendum })  // internal gear: teeth inside a rim, centred, a tooth space along +X;
+                                                  //   an external gear meshes inside it at module × (ring - gear teeth) / 2
+ringAddendum(ringTeeth, pinionTeeth, pressureAngle)  // the ring tooth height (≤ 1 module) that keeps that pinion clear of the ring's tips;
+                                                  //   pinions under about 15 teeth need it: ringGear({ ..., addendum: ringAddendum(36, 12) })
+planetary({ module, sun, planet, planets, thickness, backlash, helix, rim, sunBore, planetBore })  // { sun, planets: [...], ring },
+                                                  //   assembled and phased; ring teeth = sun + 2 × planet; (sun + ring) must divide by planets;
+                                                  //   the ring's tips are shortened with ringAddendum() when the planets are small
+// Give printed pairs backlash: 0.1–0.2 mm (gearPair splits it between the two). Cut gears under 17 teeth (at 20°) are undercut at the root;
+// these profiles are not, so a very small pinion may want a little more backlash.</pre>
+      <h3>Threads</h3>
+      <pre>thread({ size, length, internal, pitch, profile, starts, left, tolerance, chamfer, segments })  // along Y from y = 0 to length, centred;
+                                                  //   external: a threaded rod; internal: true: the cutter for a threaded hole (subtract it)
+// size: 'M8' (ISO coarse pitch, M2–M24), 'M8x1' (fine pitch), 'Tr8x8(P2)' (trapezoidal lead screw: diameter, lead, pitch), or a diameter with pitch
+// profile: 'iso' (60°, default) | 'trapezoid' (30°) | 'square'; starts: multi-start threads; left: true for a left-hand thread
+// tolerance: mm on the diameter (the rod shrinks, the hole grows); a hole defaults to printer()'s holeCompensation. Printed pairs want ~0.3–0.4.
+// chamfer (default true): a 45° lead-in on rods, flared entries on holes, at both ends; give a hole cutter the hole's exact length
+// segments: samples per turn (32); an M8 × 20 rod is about 40k triangles</pre>
       <h3>Holes and screw helpers (cutters to subtract)</h3>
       <pre>hole(r, length, { axis, shape, angle, flat, tolerance })  // centred on the origin along axis 'x' | 'y' | 'z'; horizontal holes get shape
                                                   //   'teardrop' (default: a 45° point on top) | 'bridge' (flat ceiling) | 'round'
@@ -213,6 +270,13 @@ screwHole(size, length, { type, tolerance, bridge })  // type 'clearance' | 'tap
 SCREWS                                            // the table those come from
 // sizes 'M2' 'M2.5' 'M3' 'M4' 'M5' 'M6' 'M8'. Translate a cutter to the part's top face, then subtract it.
 // Horizontal round holes sag when printed; use hole() with its teardrop, or clip the point with flat when the hole is near a surface.</pre>
+      <h3>Splitting for printing</h3>
+      <pre>split(s, { y: 40 })                               // cut across one axis: [part 1, part 2] in order along the axis
+split(s, { x: [-30, 30] }, { dowels, dowelDiameter, dowelLength, tolerance, wall, layout, gap })  // several cuts: three pieces
+s.split({ z: 0 }, { dowels: 2, layout: true })    // method form
+// dowels: per cut, holes in both faces placed as far apart as the cut face allows (wall: least material around them);
+//   the dowels come after the pieces in the result, to print separately. tolerance: added to the hole diameter (0.2).
+// layout: true turns every piece onto a cut face and lines them up on the plate, ready to print without supports.</pre>
       <h3>Printer profile and fits</h3>
       <pre>printer({ nozzle, layer, holeCompensation, material })  // declare the printer once at the top (defaults 0.4, 0.2, 0.2); returns the profile
 printProfile()                                    // the profile in force
@@ -260,6 +324,8 @@ unsupported(s, { angle }) / s.unsupported(opts)   // the overhangs with nothing 
       <pre>import { lid, WALL } from './lid.js'              // another script; lid.js uses export const / function
 import logo from './Logo.ttf'                     // a font in the project: text3d('Hi', { font: logo })
 import part from './part.stl'                     // a mesh in the project, as a Shape (Z-up STL becomes Y-up)
+import logo from './logo.svg'                     // a drawing in the project, as a Sketch (see SVG drawings)
+import part from './part.dxf'                     // a DXF drawing in the project, as a Sketch (see DXF drawings)
 import { hinge } from './catalog/parametric-hinge/hinge.js'  // a shape added from the catalogue
 // A project is a .temen zip. main.js is the entry and the only file that may use a top-level return.</pre>
       <h3>Helpers</h3>
@@ -272,14 +338,16 @@ rad(degrees)                                      // degrees to radians</pre>
       <h3>Script language</h3>
       <p>Scripts are strict-mode ES modules in a JavaScript subset that every TemenCAD host runs (browser, command line, phone). Stay within it:</p>
       <pre>// Use: let / const, functions and arrows (default and rest parameters), closures,
-//      object and array literals, destructuring, spread, template literals,
+//      object and array literals, destructuring (with ...rest), spread, template literals,
 //      if / for / for...of / while / do / switch, try / catch / finally, regular expressions,
 //      async / await (top-level await too), import / export, Math, JSON, Array, String, Object, Map, Set.
 // Not available: class, var, for...in, generators (function* / yield), eval and new Function,
-//      Proxy, Reflect, Symbol, typed arrays and ArrayBuffer, Intl, with, labels, __proto__,
-//      instanceof (a syntax error), flatMap, Array.from({ length: n }) and holes (Array(n)).
-// Build arrays with a counted for loop and push(), or map an existing array.
-// Group helpers as plain functions or object literals instead of classes.</pre>
+//      Proxy, Reflect, Symbol, typed arrays and ArrayBuffer, Intl, with,
+//      getters/setters in object literals, and holes (Array(n)).
+// Build arrays with a counted for loop and push(), Array.from({ length: n }, (_, i) => ...), or map an existing array.
+// Group helpers as plain functions or object literals instead of classes.
+// An error nothing catches stops the build, also inside an async function called without await
+//      (a promise rejected with no handler): await what you call, or catch() what may fail.</pre>
       <p class="muted">Geometry kernel: <a href="https://github.com/elalish/manifold" target="_blank" rel="noopener">Manifold</a> (C++ via WebAssembly). All output is watertight.</p>
       <p class="muted">Units are millimetres, Y is up, the build plate is y = 0. Every operation returns a new shape; nothing is mutated.</p>
     </main>

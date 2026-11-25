@@ -106,18 +106,6 @@ ${items.join('\n')}
 
 // ---- Browser side: collect parts from the viewer's Three.js group and trigger a download ----
 
-function download(data, filename, type) {
-  const blob = new Blob([data], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 /** Visible, non-ghost meshes in `group` (optionally restricted to `only` part indices) as parts in world space. */
 function partsFromGroup(group, only) {
   const parts = [];
@@ -140,16 +128,43 @@ function partsFromGroup(group, only) {
   return parts;
 }
 
+/**
+ * The visible, non-ghost parts of `group` (or only the part indices in `only`) as a file:
+ * format 'stl' (one binary STL) or '3mf' (named, coloured objects), both Z-up in millimetres.
+ * Returns { blob, filename, count } where count is triangles for STL and parts for 3MF.
+ */
+export function exportFile(group, format, filename, { only } = {}) {
+  const parts = partsFromGroup(group, only);
+  if (format === 'stl') {
+    const { data, triangles } = buildSTL(parts);
+    return { blob: new Blob([data], { type: 'model/stl' }), filename, count: triangles };
+  }
+  if (format === '3mf') return { blob: new Blob([build3MF(parts)], { type: 'model/3mf' }), filename, count: parts.length };
+  throw new Error(`unknown export format "${format}"`);
+}
+
+/** Save a Blob as a download. */
+export function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /** Download the group as one binary STL (Z-up). Returns the number of triangles written. */
 export function exportSTL(group, filename = 'model.stl', { only } = {}) {
-  const { data, triangles } = buildSTL(partsFromGroup(group, only));
-  download(data, filename, 'model/stl');
-  return triangles;
+  const f = exportFile(group, 'stl', filename, { only });
+  downloadBlob(f.blob, filename);
+  return f.count;
 }
 
 /** Download visible, non-ghost parts as one 3MF with named, colored objects. Returns the part count. */
 export function export3MF(group, filename = 'model.3mf', { only } = {}) {
-  const parts = partsFromGroup(group, only);
-  download(build3MF(parts), filename, 'model/3mf');
-  return parts.length;
+  const f = exportFile(group, '3mf', filename, { only });
+  downloadBlob(f.blob, filename);
+  return f.count;
 }

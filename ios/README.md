@@ -1,0 +1,141 @@
+# TemenCAD for iPhone and iPad
+
+The chat-first TemenCAD app: describe a part in the chat, the assistant writes the model script, the
+TemenCAD core builds it on the device, and a live 3D preview shows the result. On a phone in portrait
+the preview sits above the chat; in landscape and on iPad it sits beside it. ⤢ shows the preview on its
+own. The scripts stay visible and editable (the `</>` button), so the user can always see and change
+what runs.
+
+## Build and run
+
+```sh
+core/swift/build-xcframework.sh          # once (and after core changes): TemenCore.xcframework with the iOS slices
+open ios/TemenCAD.xcodeproj              # scheme TemenCADApp; pick a simulator or your device
+```
+
+The project uses Xcode 16 synchronized folders: every file under `ios/TemenCAD/` is part of the app,
+so adding a Swift file needs no project edit. The core comes in as the local Swift package
+`core/swift` (product `TemenCAD`). For a device, set your team under Signing & Capabilities and change
+the bundle identifier (`com.temencad.app`) to one you own.
+
+On first launch the app asks for an Anthropic API key (kept in the Keychain on this device; requests go
+straight from the device to api.anthropic.com, billed to the key's account).
+
+## What is in the app
+
+- `App/MainApp.swift` the app entry; `Model/AppModel.swift` the state: the project, builds, the preview
+  and the conversation, kept on disk in Application Support: a workspace per open project
+  (`Workspaces/<id>/files/`, `chat.json`, …) and `Workspaces/index.json` (the open projects, the one
+  showing, Open Recent). The single `Current/` folder of earlier builds becomes the first workspace.
+- Projects are `.temen` files on the device (iCloud Drive, On My iPhone, any Files provider), several open
+  at once. The project name at the top of the chat (with a dot for unsaved changes and a count of open
+  projects) is the project menu: switch between the open projects (each has its own conversation and
+  undo), New Project, Open…, Open Recent, Save, Save As…, Close. A project keeps a bookmark to its file,
+  so Save writes it in place (coordinated, not atomic, since the app may only have access to the file);
+  if the file changed elsewhere since it was opened (another app or device), Save asks to replace it or
+  save a copy. Closing asks to save unsaved changes, deletes the workspace and puts the file on Open
+  Recent; an untouched untitled project is replaced by the next one opened. Opening a .temen from Files,
+  AirDrop or another app opens it in place (`LSSupportsOpeningDocumentsInPlace`; Info.plist declares the
+  `com.temencad.project` type). The assistant has `new_project`, `open_project` and `save_project`
+  (open and save-as put a card in the chat); its conversation carries on into the project it opens,
+  and replies from the earlier project lose their Undo there. Reading and writing is the core's
+  (`TemenArchive` in the Swift package, miniz underneath), with the web app's rules. The
+  conversation is saved in the file too (format 2, `core/CONVERSATION.md`, packed by the core through
+  `TemenConversation`): opening a file brings back its conversation (from this app or the web app),
+  with its undo points and attachments, and Save writes this one. Settings can turn that off.
+- Files: the code button opens the project's files, as the web app's file tabs offer them: a script opens
+  in the code editor, a font, mesh or image shows its kind, size and the import line
+  to paste (with a preview for images); + makes a new script or adds files (asking before replacing one);
+  swipe or long-press to rename (the web app's rules: main.js stays, a rename keeps its kind of extension
+  and cannot take an existing name), share or remove. Rules in `Model/ProjectFiles.swift`.
+- The code editor is the `TemenEditor` package in `editor/` (iOS and macOS, no TemenCAD code in it):
+  highlighting of the JavaScript lamassu runs, line numbers, completion of the API with Tab through the
+  arguments (the web app's list: `public/api-catalog.json` from `src/api-catalog.js`), the last build's
+  errors and warnings marked at their line (tap the marker for the message), syntax errors marked as
+  you type (the core compiles the script without running it, on its own core so a long build never
+  delays it), bracket pairs, indentation,
+  ⌘/ to comment, the system find bar, and a row of code symbols, undo and redo over the keyboard. Each
+  file keeps its own undo history and unbuilt edits while the project is open; a change the assistant
+  makes replaces the text as one undoable step. Build puts the edits in the project and builds; on an
+  error the editor stays at its line. `Model/Editing.swift` connects it.
+- Photos: the photo button beside the message field attaches up to five photos from the library
+  (PhotosPicker, no permission needed) or the camera. Each goes to the assistant as "Attachment n",
+  downscaled to 1568 px on the long edge as in the web app, and is kept full size in
+  `Current/attachments/n.jpg` so the assistant can put it in the project with `save_attachment` (for a
+  lithophane or heightmap). A new chat starts the numbering again.
+- Files: the paperclip's Choose Files… (or a drop on the chat, on iPad) attaches PDFs, which go to the
+  assistant as document blocks numbered with the photos (kept in `Current/attachments/n.pdf`, up to 30 MB
+  per message), and project files (.stl, .svg, .ttf, .otf, scripts), which are added to the project with
+  the message, so the reply's Undo takes them out; a chip says when one replaces a file. Images picked
+  there go as photos. The assistant can ask for files with `add_files`: a card above the message field
+  opens Files and returns the names added.
+- Undo per reply: a reply that changed the project gets Undo and Changes buttons and a summary
+  (`main.js +4 −3`). Undo first keeps the current state, so the event line it adds can Put back (and then
+  Undo again); the assistant is told with the next message (`<app_events>`, as in the web app). Changes
+  opens the reply's diff (`Model/Diff.swift`, a port of `src/diff.js` with the same output). Checkpoints
+  are file-name → SHA-256 maps kept with the conversation; each file's bytes are stored once in
+  `Current/blobs`. A new chat clears them.
+- Point and Measure: the two buttons at the top left of the 3D view. Point: tap a face, hole, boss or
+  fillet to refer to it ("make this thicker"); it is highlighted in a colour with its number and goes in
+  the composer as a chip; tap it again (or remove the chip) to drop it. Measure: tap two points (corners
+  within 12 pt snap); the panel shows the distance, |Δx| |Δy| |Δz|, the gap between parallel faces, and
+  Add to message. The surface finding and every word sent are the core's (`TemenPicker`), the same as the
+  web app's; the message carries a snapshot of the view with the picks highlighted, as on the web.
+- Plate, Parts and console: the cube menu has Reset view (the plate filling the view when one is shown, else
+  the model, as on the web), the views, Wireframe, Render views… (the web dialog: views, a section, the size of
+  each view and labels; the core draws the PNG, which can be shared) and Plate (the web presets or a custom
+  size; a red note under the view says what does not fit). The layers button opens the Parts list: show
+  or hide each part, make it a ghost, solo it (also a double tap), share it alone as STL, show all, hide
+  all, or go back to what the script says; the choices survive rebuilds and decide what is exported, as on
+  the web. Tapping the build status (with its warning count) opens the console: the error, warnings with
+  their lines, log lines, and Copy. The assistant gets the same state with each message in an `<app>`
+  block (the plate and whether the model fits, wireframe, each part's display), as the web assistant does.
+- STL and 3MF: the share button on the 3D view, Share STL… / Share 3MF… in the ⋯ menu, and STL / 3MF
+  buttons under the latest reply. The core writes the files (`TemenExport`, the same bytes as the web
+  app) from the visible, non-ghost parts, and the system share sheet sends them on: a slicer app,
+  AirDrop to a Mac, Save to Files.
+- `Model/ModelBuilder.swift` builds on the native core (`TemenCore` in an actor: it is single-threaded) and
+  makes the build report the assistant reads, in the same shape as the web app's.
+- `Agent/AnthropicClient.swift` the Messages API over HTTP with server-sent events (there is no official
+  Swift SDK). The message is rebuilt from the stream with every block kept as JSON, so thinking blocks and
+  their signatures go back to the API unchanged, as it requires.
+- `Agent/Agent.swift` the assistant: system prompt, tools (read / edit / write / remove / rename a script,
+  build, screenshot, render_views, save_attachment, export_model, set_view, set_plate, set_part_display)
+  and the tool loop. The tools behave as the web assistant's: render_views draws the same sheet (the
+  core's renderer); export_model puts the file in the chat with a Share button; set_plate shows a
+  printer's plate (red when the model does not fit, `Model/Plate.swift`); set_part_display keeps the web
+  Parts list's overrides, which decide what shows and what is exported. Opus 5.5 by default, adaptive thinking at medium effort, the system
+  prompt cached, refusal fallbacks on, eager input streaming on the tools.
+- `Views/` SwiftUI: the adaptive layout, the chat, settings and the code sheet; `ModelPreview.swift` is the
+  SceneKit preview (flat-shaded parts, ghosts, grid, orbit, snapshots for the assistant).
+- `Resources/api.txt`, `Resources/api-catalog.json` and `Resources/assistant-rules.txt` are copies of what
+  the web app uses: the API reference (generated from `api.html`), the editor's completion entries
+  (generated from `src/api-catalog.js`) and the modelling rules (`src/assistant-rules.txt`).
+  Run `ios/scripts/sync-resources.sh` after changing any of them and commit the copies.
+
+## Developing without spending tokens
+
+Debug builds read three launch arguments, so the app can be driven against a stand-in API on the Mac
+(the simulator shares its network; Info.plist allows local networking only):
+
+```sh
+xcrun simctl launch booted com.temencad.app \
+  -TemenAPIBase http://127.0.0.1:8787 -TemenAPIKey sk-test -TemenAutoPrompt "make a plate with a hole"
+```
+
+`-TemenAPIBase` points the client at another server, `-TemenAPIKey` supplies a key, and
+`-TemenAutoPrompt` sends a message at launch; `-TemenOpen /path/a.temen` opens a project and
+`-TemenSaveTo /path/b.temen` saves it, without the system file sheets (the simulator can read and write
+the Mac's paths); `-TemenShare stl` (or `3mf`) exports and opens the share sheet; `-TemenAttach "/a/photo.jpg|/b/drawing.pdf|/c/bolt.stl"` attaches
+those files to the next message as if picked in the chat; `-TemenAddFiles "/a/font.ttf"` answers the assistant's add_files with those files (`none` cancels); `-TemenRequestURL /path/c.temen` answers open_project (opens it) or save_project's Save as (writes there); `-TemenThen "undo,putback,undoagain,changes"` runs those steps once the turn is over (also `point`, `measure`, `tap:0.5:0.6` at fractions of the view,
+`addmeasure`, `send`, and for projects `new`, `save`, `saveforce`, `close`, `switch:n`, `open:/path`, `edit:<main.js>`,
+`touch:/path` to date a file as changed elsewhere; for files `files`, `fileopen:name`, `newscript:name`,
+`renamefile:a.js>b.js`, `removefile:name`, `addfile:/path`; in the open editor `cursor:text` puts the
+cursor after that text, `type:text` types it through the keyboard path, ⏎ for Return, ⇥ for Tab and ‚ for
+a comma, `editbuild` presses Build, `wait:seconds`). None of them exist in release builds.
+
+## Not yet
+
+The catalogue and a Mac or visionOS build (the editor package already runs on macOS). SceneKit is the preview for now: Apple has stopped adding features
+to it in favour of RealityKit, and everything SceneKit touches is in `Views/ModelPreview.swift`, so moving
+is contained.

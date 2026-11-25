@@ -19,17 +19,20 @@ The build prints `ECHO` lines from `echo()`, warnings with file and line, and er
 
 ## Repository map
 
-- `src/cad.js`, `src/sketch.js`, `src/shape.js`: the modelling API (3D, 2D, Shape class). `src/path.js` paths and `sweep()`; `src/fillet.js` edge fillets and chamfers; `src/image.js` images, `heightmap()` and `lithophane()`; `src/mesh.js` mesh-to-Manifold helpers.
-- `src/runner.js` runs a project (fonts, meshes and images are decoded first); `src/modules.js` turns project files into ES modules; `src/headless.js` is the Node entry used by the CLI and the catalogue build; `src/worker.js` the browser worker.
+- The modelling API lives in the core: `core/src/prelude.js` (JavaScript in the lamassu subset: Shape, sketches, paths, fillets, placement, text, images, printability) over the natives in `core/src/natives.c`, `core/src/text.c` and `core/src/image.c`, with Manifold through its C binding.
+- `src/core-runner.js` builds a project on the core (`core/wasm`): the only runtime in the worker (`src/worker.js`) and on the command line; `src/headless.js` is the Node entry used by the CLI and the catalogue build; `src/render.js` draws the view sheet (labels and section cuts through the core); `src/mesh-check.js` is the CLI's printability over built meshes.
 - `src/main.js` wires the app; `src/tabs.js` file tabs; `src/chat.js` and `src/agent.js` the in-app assistant (its system prompt embeds the API reference); `src/completions.js` autocomplete.
 - `api.html` the reference; `README.md` the user guide; `src/default-script.js` the demo script that shows every feature.
+- `core/` the runtime as one C library (branch `lamassu-runtime`): lamassu-js runs the script, Manifold's C binding does the geometry, `core/src/prelude.js` defines the API on top of the `__cad` natives. `core/src/archive.c` reads and writes `.temen` zips (vendored miniz) with the same rules as `src/project.js`; `core/src/export.c` writes STL and 3MF byte for byte as `src/export.js` does (`npm run core:export` checks it); `core/src/pick.c` is `src/pick-geometry.js` for Swift and native, word for word (`npm run core:pick`); `core/src/render.c` is `src/render.js`, pixel for pixel (`npm run core:render`); `core/src/conversation.c` packs and reads the assistant conversation inside a `.temen` (format 2, `core/CONVERSATION.md`) for every app: the web app through its worker, iOS through the Swift package. `core/README.md` has the build, what works and the lamassu changes still needed; `core/swift/` is the Swift package (XCFramework built by `build-xcframework.sh`). `third_party/lamassu-js` and `third_party/manifold` are git submodules (`git submodule update --init --recursive`).
+- `editor/` the `TemenEditor` Swift package: the code editor for iOS and macOS (TextKit 1 views over a shared engine in `Sources/TemenEditor/Core`: the JavaScript-subset tokenizer, editing rules, completion and snippets, diagnostics). It holds nothing TemenCAD-specific so it can move to its own repository; `editor/README.md` has the API and how to test it (`xcodebuild test -scheme TemenEditor-Package -destination 'platform=macOS'`, and `swift run TemenEditorDemo <dir>` drives the macOS editor offscreen and saves pictures).
+- `ios/` the iPhone and iPad app (SwiftUI chat with a SceneKit preview, the core through the Swift package, the assistant ported to Swift); `ios/README.md` has the build. Its assistant shares `src/assistant-rules.txt` and `public/api.txt` with the web one, and its editor the completion list as `public/api-catalog.json` (`ios/scripts/sync-resources.sh` copies them).
 - Related repositories: `TemenCAD-catalog` (shared shapes, static site, publish worker) and `TemenCAD-web` (product site), both depend on this one via `github:belteshazzar/TemenCAD`.
 
 ## When adding an API function
 
-1. Implement it and export it through `api` in `src/cad.js` (or the relevant `*Api` object).
+1. Implement it in `core/src/prelude.js` (and a native in `core/src/natives.c` only where geometry crosses into Manifold), and add it to the `api` object at the end of the prelude.
 2. Document it in `api.html` (one operation per line with a comment, alphabetical within its section).
-3. Add it to `src/api-catalog.js` for autocomplete.
+3. Add it to `src/api-catalog.js` for autocomplete (the web editor's, and through `public/api-catalog.json` the iOS one: run `ios/scripts/sync-resources.sh`).
 4. Show it in `src/default-script.js` if it is user-facing, and mention it in `README.md`.
-5. Test it headlessly with a script and `node bin/temencad.mjs script.js --png out.png`; check exact volumes where a closed form exists.
-6. `npm run build` must pass (it regenerates `public/api.txt`).
+5. Test it headlessly with a script and `node bin/temencad.mjs script.js --png out.png`; check exact volumes where a closed form exists; add a check to `core/test/smoke.mjs`.
+6. `npm run core:wasm`, `npm run core:test`, `npm run core:diff` and `npm run build` must pass (the last regenerates `public/api.txt`).

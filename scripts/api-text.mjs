@@ -1,8 +1,11 @@
 // Write public/api.txt (the plain-text API reference) and public/llms.txt before a build, so agents can fetch them.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { referenceFromHtml } from '../src/api-text.js';
+import { GLOBALS, METHODS } from '../src/api-catalog.js';
 mkdirSync('public', { recursive: true });
 writeFileSync('public/api.txt', referenceFromHtml(readFileSync('api.html', 'utf8')) + '\n');
+// The editor completion entries for apps that are not the web one (the iOS and macOS editors read this).
+writeFileSync('public/api-catalog.json', JSON.stringify({ globals: GLOBALS, methods: METHODS }, null, 1) + '\n');
 writeFileSync('public/llms.txt', `# TemenCAD
 
 > Free, browser-based, code-driven CAD for 3D printing: a short JavaScript script is the model, built on the Manifold kernel. Exports watertight STL and 3MF.
@@ -23,4 +26,4 @@ writeFileSync('public/llms.txt', `# TemenCAD
 - Scripts are plain JavaScript: units are millimetres, Y is up, the build plate is y = 0, +Z is the front. Return a shape, an array, or an object of named parts.
 - The repository's AGENTS.md and .claude/skills/temencad/SKILL.md describe the conventions and the build-check loop.
 `);
-console.log('wrote public/api.txt and public/llms.txt');
+console.log('wrote public/api.txt, public/api-catalog.json and public/llms.txt');

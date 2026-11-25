@@ -9,9 +9,9 @@ const method = (label, snippet, detail, info, on) => ({ label, snippet, detail, 
 
 export const GLOBALS = [
   // 3D primitives
-  fn('box', 'box(${w}, ${h}, ${d})', '(w, h, d)', 'Box centred on the origin; one size makes a cube.'),
+  fn('box', 'box(${w}, ${h}, ${d})', '(w, h, d) | ([x, y, z]) | ({ x, y, z, center })', 'Box centred on the origin; one size makes a cube; the size may also be [x, y, z] or { x, y, z }.'),
   fn('cube', 'cube(${size})', '(size)', 'Alias of box().'),
-  fn('roundedBox', "roundedBox(${w}, ${h}, ${d}, ${r}, { edges: '${vertical}' })", '(w, h, d, r, { edges })', "Box with rounded edges; edges: 'all' or 'vertical' (only the four vertical edges, prints flat)."),
+  fn('roundedBox', "roundedBox(${w}, ${h}, ${d}, ${r}, { edges: '${vertical}' })", '(w, h, d, r, { edges }) | ([x, y, z], r, { edges })', "Box with rounded edges; edges: 'all' or 'vertical' (only the four vertical edges, prints flat). The size may also be [x, y, z] or { x, y, z, r }."),
   fn('sphere', 'sphere(${r})', '(r, { segments })', 'Sphere centred on the origin.'),
   fn('cylinder', 'cylinder(${r}, ${h})', '(r, h) | ({ r1, r2, h })', 'Cylinder along Y, centred; r1/r2 give a tapered cylinder.'),
   fn('cone', 'cone(${r}, ${h})', '(r, h)', 'Cone along Y with its base radius r.'),
@@ -33,9 +33,9 @@ export const GLOBALS = [
   fn('regularPolygon', 'regularPolygon(${sides}, ${r})', '(sides, r)', 'Regular polygon with circumradius r.'),
   fn('polygon2d', 'polygon2d([${points}])', '(points, { holes })', 'Arbitrary 2D polygon from [[x, y], ...]; pass { holes: [[...]] } for holes.'),
   fn('text', "text('${text}', { size: ${10} })", "(str, { size, font, align, letterSpacing })", "2D text outline, baseline at y = 0. Fonts: 'Inter', 'Inter Bold', 'Nunito Bold', 'Source Serif 4', 'JetBrains Mono'."),
-  fn('sketch', 'sketch().moveTo(${0}, ${0}).lineTo(${x}, ${y}).close()', '() | ([[x, y], ...])', 'Draw a profile step by step: moveTo, lineTo, line, horizontal, vertical, arcTo, tangentArcTo, fillet, close.'),
+  fn('sketch', 'sketch().moveTo(${0}, ${0}).lineTo(${x}, ${y}).close()', '() | ([[x, y], ...])', 'Draw a profile step by step: moveTo, lineTo, line, horizontal, vertical, quadTo, bezierTo, arcTo, tangentArcTo, fillet, close.'),
   fn('extrude', 'extrude(${sketch}, ${h})', '(sketch, h, { center, twist, scale })', 'Extrude a sketch up along Y; twist in degrees, scale at the top.'),
-  fn('revolve', 'revolve(${sketch})', '(sketch, { angle, segments })', 'Revolve a sketch around Y; sketch x is the radius.'),
+  fn('revolve', 'revolve(${sketch})', '(sketch, { angle, start, segments })', 'Revolve a sketch around Y; sketch x is the radius; a partial revolve starts at start degrees from +X.'),
   fn('roof', 'roof(${sketch})', '(sketch, { angle, segments, tolerance })', 'Solid whose height is the distance to the outline: pyramid from a square, hip roof from a rectangle.'),
   fn('projection', 'projection(${shape})', '(shape, { cut: true | y })', 'Flatten a solid to a 2D sketch: footprint from above, or the slice at height y.'),
   // Paths and sweeps
@@ -46,6 +46,11 @@ export const GLOBALS = [
   fn('bezier', 'bezier([${p0}], [${p1}], [${p2}], [${p3}])', '(p0, p1, p2, p3, { segments })', 'Cubic Bézier curve as a path.'),
   fn('sweep', 'sweep(${sketch}, ${path})', '(sketch | (t) => sketch, path, { frame, up, twist, scale, segments })', 'Sweep a 2D profile along a path; closed paths make rings. frame: \'minimal\' (no twist) or \'upright\'.'),
   // Images
+  fn('svg', 'svg(${markup}, { width: ${50} })', '(markup, { segments, id, width, height })', 'An SVG drawing as a Sketch: filled paths, rects, circles, polygons, in mm with Y up. import logo from \'./logo.svg\' does the same for a project file.'),
+  fn('dxf', "dxf(${source}, { layer: '${0}' })", '(source, { layer, origin, scale, segments })', "A DXF drawing's outlines as a Sketch; import { source } from './part.dxf' gives the text. import part from './part.dxf' reads every layer."),
+  fn('dxfDim', "dxfDim(${source}, '${name}')", '(source, name, { layer, origin, scale })', "The value of a named DIMENSION in a DXF drawing (OpenSCAD's dxf_dim)."),
+  fn('dxfCross', 'dxfCross(${source})', '(source, { layer, origin, scale })', "Where the first two loose lines of a DXF drawing cross (OpenSCAD's dxf_cross)."),
+  fn('svgPath', "svgPath('${M0 0 h10 v10 Z}')", '(d, { segments, evenOdd })', 'SVG path data as a Sketch in its own units, Y flipped.'),
   fn('heightmap', 'heightmap(${image}, { width: ${60}, height: ${4} })', '(image | (x, z) => 0..1, { width, depth, height, base, invert, smooth, gamma, resolution })', 'Relief solid: brightness (or a function of position) becomes height above a base plate.'),
   fn('lithophane', 'lithophane(${image}, { width: ${80}, upright: true })', '(image, { width, depth, minThickness, maxThickness, border, smooth, gamma, resolution, upright })', 'Plate whose thickness follows the image: dark is thick, light is thin. Light it from behind.'),
   // Placement
@@ -88,6 +93,16 @@ export const GLOBALS = [
   fn('polarArray', 'polarArray(${shape}, ${count}, { radius: ${r} })', '(shape, count, { radius, axis, start, sweep })', 'count copies around an axis (returns an array).'),
   fn('grid', 'grid(${shape}, [${nx}, ${nz}], [${dx}, ${dz}])', '(shape, [nx, nz], [dx, dz])', 'nx × nz grid on the ground plane (returns an array).'),
   // Screws
+  fn('gear', 'gear({ module: ${1}, teeth: ${20}, thickness: ${5} })', '({ module, teeth, pressureAngle, thickness, helix, backlash, bore })', 'Involute spur or helical gear: axis Y, base on y = 0, tooth 0 along +X.'),
+  fn('gear2d', 'gear2d({ module: ${1}, teeth: ${20} })', '({ module, teeth, pressureAngle, backlash, bore })', 'The outline of an involute gear as a 2D sketch.'),
+  fn('gearPair', 'gearPair({ module: ${1}, teeth: [${20}, ${10}], backlash: ${0.2} })', '({ module, teeth: [t1, t2], ... })', 'Two meshing gears: [first, second], the second along +X at the right distance and turned to mesh.'),
+  fn('gearDistance', 'gearDistance(${module}, ${teeth1}, ${teeth2})', '(module, teeth1, teeth2)', 'Centre distance of two meshing gears: module × (teeth1 + teeth2) / 2.'),
+  fn('rack', 'rack({ module: ${1}, teeth: ${10} })', '({ module, teeth, pressureAngle, thickness, height, backlash })', 'Straight gear rack: pitch line along X at z = 0, teeth toward -Z.'),
+  fn('ringGear', 'ringGear({ module: ${1}, teeth: ${36}, thickness: ${5} })', '({ module, teeth, thickness, rim, backlash, helix })', 'Internal (ring) gear: teeth inside a rim, centred on the origin, axis Y.'),
+  fn('ringAddendum', 'ringAddendum(${ringTeeth}, ${pinionTeeth})', '(ringTeeth, pinionTeeth, pressureAngle)', "The ring tooth height in modules (at most 1) that keeps a small pinion clear of the ring's tips."),
+  fn('planetary', 'planetary({ module: ${1}, sun: ${12}, planet: ${12}, planets: ${3}, backlash: ${0.2} })', '({ module, sun, planet, planets, thickness, backlash, helix, rim, sunBore, planetBore })', 'A planetary set { sun, planets, ring }, assembled and phased; ring teeth = sun + 2 x planet.'),
+  fn('thread', "thread({ size: '${M8}', length: ${20} })", "({ size: 'M8' | 'M8x1' | 'Tr8x8(P2)', length, internal, pitch, profile, starts, left, tolerance, chamfer })", 'Screw thread along Y from y = 0: a threaded rod, or with internal: true the cutter for a threaded hole.'),
+  fn('split', 'split(${shape}, { ${y}: ${40} }, { dowels: ${2}, layout: true })', '(shape, { x | y | z: at | [at, ...] }, { dowels, dowelDiameter, dowelLength, tolerance, wall, layout, gap })', 'Cut a shape into pieces across one axis, optionally with dowel holes and laid out cut-face-down for printing.'),
   fn('hole', "hole(${r}, ${length}, { axis: '${z}' })", "(r, length, { axis: 'x' | 'y' | 'z', shape: 'teardrop' | 'bridge' | 'round', angle, flat, tolerance })", 'Printable hole cutter centred on the origin; horizontal holes get a teardrop top by default.'),
   fn('screwHole', "screwHole('${M3}', ${length})", "(size, length, { type: 'clearance' | 'tap' | 'countersunk' | 'counterbore', tolerance, bridge })", 'Cutter for a screw hole: axis Y, top surface at y = 0. Sizes M2 M2.5 M3 M4 M5 M6 M8.'),
   fn('nutPocket', "nutPocket('${M3}')", '(size, { depth, tolerance })', 'Hexagonal nut pocket cutter: axis Y, top at y = 0.'),
@@ -106,9 +121,10 @@ export const GLOBALS = [
 /** Methods on 3D shapes ('shape'), 2D sketches ('sketch'), paths ('path') or both shapes and sketches ('both'). */
 export const METHODS = [
   method('translate', 'translate(${x}, ${y}, ${z})', '(x, y, z)', 'Move; sketches take (x, y).', 'both'),
-  method('rotate', 'rotate(${x}, ${y}, ${z})', '(xDeg, yDeg, zDeg)', 'Rotate in degrees; sketches take one angle.', 'both'),
+  method('rotate', 'rotate(${x}, ${y}, ${z})', '(xDeg, yDeg, zDeg) | (deg, [ax, ay, az])', 'Rotate in degrees, or about an axis; sketches take one angle.', 'both'),
   method('scale', 'scale(${f})', '(f | x, y, z)', 'Scale uniformly or per axis.', 'both'),
-  method('mirror', "mirror('${x}')", "('x' | 'y' | 'z')", 'Mirror across an axis plane.', 'both'),
+  method('mirror', "mirror('${x}')", "('x' | 'y' | 'z' | [nx, ny, nz])", 'Mirror across an axis plane, or the plane with that normal.', 'both'),
+  method('transform', 'transform([${matrix}])', '(4x4 | 3x4 | 3x3 rows; sketches 3x3 | 2x3 | 2x2)', "Affine map (OpenSCAD's multmatrix).", 'both'),
   method('resize', 'resize([${w}, ${h}, ${d}])', '([w, h, d], { auto })', 'Scale to a bounding-box size; 0 keeps an axis.', 'both'),
   method('color', "color('${#8fb3ff}')", '(css)', 'Display colour: #hex, a CSS name, rgb() or hsl().', 'shape'),
   method('onPlate', 'onPlate()', '(y = 0)', 'Put the bottom on the build plate.', 'shape'),
@@ -152,7 +168,7 @@ export const METHODS = [
   method('fillet', 'fillet(${r})', "(r, { edges, segments })", "Round every corner of a sketch, or the sharp edges of a solid; edges: 'all' | 'top' | 'bottom' | 'horizontal' | 'vertical' | 'convex' | 'concave'.", 'both'),
   method('chamfer', 'chamfer(${d})', "(d, { edges })", "Cut every corner of a sketch, or bevel the sharp edges of a solid; edges as for fillet.", 'both'),
   method('extrude', 'extrude(${h})', '(h, { center, twist, scale })', 'Extrude a sketch up along Y.', 'sketch'),
-  method('revolve', 'revolve()', '({ angle, segments })', 'Revolve a sketch around Y.', 'sketch'),
+  method('revolve', 'revolve()', '({ angle, start, segments })', 'Revolve a sketch around Y.', 'sketch'),
   method('roof', 'roof()', '({ angle, segments, tolerance })', 'Roof solid from a sketch.', 'sketch'),
   method('toPolygons', 'toPolygons()', '()', 'Outline rings of a sketch as [[x, y], ...][].', 'sketch'),
   method('sweep', 'sweep(${path})', '(path, { frame, up, twist, scale, segments })', 'Sweep a sketch along a path.', 'sketch'),
@@ -171,6 +187,8 @@ export const METHODS = [
   method('vertical', 'vertical(${dy})', '(dy)', 'Vertical relative segment.', 'builder'),
   method('arcTo', 'arcTo(${x}, ${y}, { r: ${r} })', "(x, y, { r, side: 'left' | 'right', large, segments })", 'Circular arc of radius r to a point.', 'builder'),
   method('tangentArcTo', 'tangentArcTo(${x}, ${y})', '(x, y, { segments })', 'Arc tangent to the previous segment, ending at a point.', 'builder'),
+  method('quadTo', 'quadTo(${cx}, ${cy}, ${x}, ${y})', '(cx, cy, x, y, { segments })', 'Quadratic Bézier curve to a point, pulled toward one control point.', 'builder'),
+  method('bezierTo', 'bezierTo(${c1x}, ${c1y}, ${c2x}, ${c2y}, ${x}, ${y})', '(c1x, c1y, c2x, c2y, x, y, { segments })', 'Cubic Bézier curve to a point with two control points.', 'builder'),
   method('close', 'close()', "({ mirror: 'x' | 'y', segments })", 'Finish the outline as a Sketch; mirror appends the mirror image.', 'builder'),
   // Paths
   method('append', 'append(${path})', '(path)', 'Continue with another path, moved to start where this one ends.', 'path'),

@@ -66,7 +66,7 @@ place(extrude(bracketProfile, 10).rotate(90, 0, 0).onPlate(), -60, 10, '#8fe3a8'
 // 6. Revolve: a vase profile (sketch x = radius, sketch y = height), and a partial revolve
 const vase = polygon2d([[0, 0], [7, 0], [8, 2], [5, 9], [6, 16], [4.6, 16], [3.8, 9], [6.8, 2], [6.2, 1.2], [0, 1.2]]);
 place(revolve(vase, { segments: 72 }), 15, -5, '#d3a6ff');
-place(revolve(rect(4, 10, { center: false }).translate(4, 0), { angle: 270 }), 40, -5, '#d3a6ff');
+place(revolve(rect(4, 10, { center: false }).translate(4, 0), { angle: 270, start: 45 }), 40, -5, '#d3a6ff');
 
 // 7. Arrays: linear, polar (bolt circle) and grid, merged with union()
 place(union(linearArray(box(3, 6, 3), 5, [5, 0, 0])), -60, 25, '#ffd27f');
@@ -124,8 +124,8 @@ place(bar.subtract(hole(3, 12, { axis: 'z' }).translate(-9, 6, 0))
 show(box(180, 30, 180).onPlate().translate(0, 0, 5), { name: 'print envelope', ghost: true });
 show(sphere(4).translate(0, 4, 75), { name: 'hidden marble', hidden: true, color: '#ff4d4d' });
 
-// 10. Colors, mirror, and log() to the console
-const wing = polygon([[0, 0], [12, 0], [0, 8]], 3).translate(2, 0, 0);
+// 10. Colors, mirror, transform (an affine matrix, OpenSCAD's multmatrix: here a shear), and log() to the console
+const wing = polygon([[0, 0], [12, 0], [0, 8]], 3).transform([[1, 0, -0.3, 2], [0, 1, 0, 0], [0, 0, 1, 0]]);
 place(union(wing, wing.mirror('x')), -70, 50, '#c2e86b');
 
 // 11. 2D corner treatments: fillet and chamfer a sketch before extruding
@@ -143,6 +143,29 @@ if (SHOW_TEXT) {
 // 12b. Lettering on any face: emboss raises, engrave cuts; text reads correctly from outside
 const tagBlock = box(18, 8, 12).onPlate();
 place(tagBlock.emboss('TEMEN', tagBlock.face('front'), { depth: 0.8, size: 4 }).engrave('v2', tagBlock.face('top'), { depth: 0.5, size: 5 }), 65, 50, '#ffd27f', 'lettered');
+
+// 12c. Gears: a meshing pair with print clearance, and a rack
+const [bigGear, smallGear] = gearPair({ module: 1.5, teeth: [18, 10], thickness: 5, backlash: 0.2, bore: 5 });
+place(union(bigGear, smallGear), -40, 115, '#9fd3c7', 'gear pair');
+place(rack({ module: 1.5, teeth: 8, thickness: 5 }), 25, 115, '#9fd3c7', 'rack');
+const set = planetary({ module: 1, sun: 10, planet: 8, planets: 3, thickness: 5, backlash: 0.2 }); // ring gets 26 teeth
+place(union(set.sun, set.planets, set.ring), 80, 115, '#9fd3c7', 'planetary');
+// 12d. Threads: an M8 bolt (hex head and a threaded shank) and a nut with 0.4 mm of print clearance
+const head = prism(6, 7.5, 5, { center: false });
+place(union(head, thread({ size: 'M8', length: 12, segments: 24 }).translate(0, 5, 0)), 115, 115, '#c8c8d0', 'bolt');
+place(prism(6, 7.5, 6.5, { center: false }).subtract(thread({ size: 'M8', length: 6.5, internal: true, tolerance: 0.4, segments: 24 })), 135, 115, '#c8c8d0', 'nut');
+
+// 12e. Too long for the plate? split() cuts it, drills dowel holes in both faces and lays the pieces cut-face-down
+const longBar = roundedBox(40, 8, 12, 2, { edges: 'vertical' }).onPlate();
+place(union(split(longBar, { x: 0 }, { dowels: 1, dowelDiameter: 3, dowelLength: 8, layout: true })), -40, 145, '#ffb366', 'split bar');
+
+// 12f. Free curves in the pen: a vase profile with a cubic Bézier waist, revolved
+const vaseProfile = sketch().moveTo(0, 0).lineTo(8, 0).bezierTo(14, 6, 3, 14, 7, 22).lineTo(5.5, 22).quadTo(1.5, 14, 0, 2).close();
+place(revolve(vaseProfile, { segments: 48 }), 35, 145, '#d3a6ff', 'vase');
+
+// 12g. SVG: path data as a sketch (import logo from './logo.svg' turns a drawing in the project into one)
+const heart = svgPath('M10 30 A10 10 0 0 1 30 30 A10 10 0 0 1 50 30 Q50 45 30 60 Q10 45 10 30 Z').center().scale(0.5);
+place(extrude(heart, 3), 65, 145, '#ff8fa3', 'heart');
 
 // 13. Loft between profiles, and a shelled cup (hollow with an open top)
 place(loft([circle(6), rect(8, 8).fillet(2), regularPolygon(6, 4)], [0, 8, 16]), 60, 50, '#d3a6ff');

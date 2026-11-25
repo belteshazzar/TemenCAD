@@ -24,8 +24,7 @@ import { buildProject, loadProject } from '../src/headless.js';
 import { readPackage, vendorPackage, addImportLine } from '../src/package.js';
 import { CATALOG_URL } from '../src/config.js';
 import { renderViews, sectionMeshes, VIEW_NAMES } from '../src/render.js';
-import { meshStats, printability } from '../src/print.js';
-import { polyhedronFromMesh } from '../src/cad.js';
+import { meshStats, printabilityOfMesh } from '../src/mesh-check.js';
 import { colorHex } from '../src/export.js';
 import { referenceFromHtml } from '../src/api-text.js';
 import { fileURLToPath } from 'node:url';
@@ -165,7 +164,7 @@ async function testCommand(opts, log) {
       const project = loadProject(file);
       const result = await buildProject(project, { onWarn: (m) => warnings.push(`${m.text}${m.line ? ` (line ${m.line})` : ''}`) });
       r.parts = result.meshes.filter((m) => !m.ghost && !m.hidden).length; r.ms = +result.ms.toFixed(0);
-      if (opts.check) for (const m of result.meshes) { if (m.ghost || m.hidden) continue; const p = printability(polyhedronFromMesh(m.name, m.positions, m.indices)); for (const pr of p.problems) r.problems.push(`${m.name}: ${pr}`); }
+      if (opts.check) for (const m of result.meshes) { if (m.ghost || m.hidden) continue; const p = printabilityOfMesh(m.positions, m.indices); for (const pr of p.problems) r.problems.push(`${m.name}: ${pr}`); }
       if (!r.parts) r.problems.push('no visible parts');
       if ((opts.strict && warnings.length) || r.problems.length) r.ok = false;
     } catch (err) { r.ok = false; r.error = `${err.message}${err.line ? ` (${err.file ?? ENTRY}:${err.line})` : ''}`; }
@@ -247,7 +246,7 @@ async function main() {
   if (opts.check) {
     report.check = [];
     for (const p of parts) {
-      const r = printability(polyhedronFromMesh(p.name, p.positions, p.indices));
+      const r = printabilityOfMesh(p.positions, p.indices);
       report.check.push({ name: p.name, ok: r.ok, problems: r.problems, overhangArea: +r.overhangs.area.toFixed(2), unsupportedArea: +r.unsupported.area.toFixed(2), minWall: Number.isFinite(r.minWall.thickness) ? +r.minWall.thickness.toFixed(3) : null });
       for (const pr of r.problems) { console.error(`Check: ${p.name}: ${pr}`); checkFailed = true; }
       if (r.ok) log(`  ${p.name}: prints without supports (walls ≥ ${Number.isFinite(r.minWall.thickness) ? r.minWall.thickness.toFixed(2) : '∞'} mm)`);

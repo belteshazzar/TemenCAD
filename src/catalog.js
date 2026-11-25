@@ -85,7 +85,7 @@ export function initCatalog(o) {
     o.onChange();
     o.log(`Added ${manifest.name}@${manifest.version} from the catalogue: ${importLine}`, 'info');
     o.tabs.select(ENTRY);
-    return manifest;
+    return { ...manifest, importLine };
   }
   async function addPackage(p, button) {
     button.disabled = true; button.textContent = 'Adding…';
@@ -96,6 +96,21 @@ export function initCatalog(o) {
       status.textContent = `Could not add ${p.name}: ${err.message}`;
       button.disabled = false; button.textContent = 'Add to project';
     }
+  }
+  /** Search the catalogue (the assistant's search_catalog): packages matching every word of the query. */
+  async function searchPackages(query = '') {
+    const index = await loadIndex();
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    return index.packages.filter((p) => p.apiVersion === API_VERSION)
+      .filter((p) => words.every((w) => `${p.name} ${p.title} ${p.description} ${p.tags.join(' ')} ${p.author}`.toLowerCase().includes(w)))
+      .map((p) => ({ name: p.name, title: p.title, description: p.description, tags: p.tags, exports: p.exports, module: p.module, parts: p.parts, author: p.author, license: p.license, version: p.version }));
+  }
+  /** Add a package by name (the assistant's add_from_catalog); throws on failure. Returns the manifest and import line. */
+  async function add(name) {
+    const index = await loadIndex();
+    const p = index.packages.find((q) => q.name === name && q.apiVersion === API_VERSION);
+    if (!p) throw new Error(`the catalogue has no shape named "${name}"`);
+    return vendorFromCatalog(p.package);
   }
   /** `#add=<name>` links from the catalogue site: add that package to the current project. */
   async function addByName(name) {
@@ -128,7 +143,8 @@ export function initCatalog(o) {
   const setBusy = (text) => { shareBusy.hidden = !text; if (text) shareBusy.querySelector('.dialog-busy-text').textContent = text; };
   for (const [id, label] of LICENSES) shareForm.elements.license.appendChild(Object.assign(document.createElement('option'), { value: id, textContent: label }));
 
-  function openShare() {
+  /** prefill (from the assistant): { title, name, description, tags, module, exports, author, license, version } */
+  function openShare(prefill = {}) {
     const project = o.getProject();
     const scripts = project.names().filter((n) => isScript(n) && n !== ENTRY && !n.startsWith('catalog/'));
     const moduleSel = shareForm.elements.module;
@@ -141,6 +157,14 @@ export function initCatalog(o) {
       shareError.hidden = false;
     }
     shareForm.elements.exports.value = scripts.length ? findExports(project.get(scripts[0])).join(', ') : '';
+    const f = shareForm.elements;
+    if (prefill.module && scripts.includes(prefill.module)) { f.module.value = prefill.module; f.exports.value = findExports(project.get(prefill.module)).join(', '); }
+    for (const k of ['title', 'name', 'description', 'author', 'version']) if (typeof prefill[k] === 'string') f[k].value = prefill[k];
+    if (prefill.name) f.name.dataset.edited = '1';
+    else if (prefill.title) f.name.value = slugify(prefill.title);
+    if (Array.isArray(prefill.tags)) f.tags.value = prefill.tags.join(', ');
+    if (Array.isArray(prefill.exports)) f.exports.value = prefill.exports.join(', ');
+    if (prefill.license && LICENSES.some(([id]) => id === prefill.license)) f.license.value = prefill.license;
     shareForm.querySelector('.share-submit').textContent = PUBLISH_URL ? 'Share' : 'Download package';
     shareDialog.showModal();
     shareForm.elements.title.focus();
@@ -200,5 +224,5 @@ export function initCatalog(o) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  return { openBrowser, openShare, addByName };
+  return { openBrowser, openShare, addByName, search: searchPackages, add, licenses: LICENSES.map(([id]) => id) };
 }

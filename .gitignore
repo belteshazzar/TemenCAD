@@ -68,4 +68,14 @@ dist/
 *.local
 .DS_Store
 public/api.txt
+public/api-catalog.json
 public/llms.txt
+
+# TemenCAD core (CMake build trees and the wasm artefact)
+build/
+core/wasm/dist/
+
+# Swift package binary artefact, built by core/swift/build-xcframework.sh
+core/swift/TemenCore.xcframework/
+core/swift/.build/
+.vscode/

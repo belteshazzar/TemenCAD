@@ -192,7 +192,55 @@ button.secondary:hover { background: var(--hover); }
 .msg pre { background: var(--sunken); padding: 6px 8px; border-radius: 4px; overflow: auto; font-size: 12px; margin: 6px 0; }
 .msg code { font-family: ui-monospace, monospace; font-size: 12px; }
 .msg.empty { color: var(--muted); align-self: center; background: transparent; border: 0; text-align: center; }
-.chat-form { display: flex; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--border); align-items: flex-end; }
+.msg.card { align-self: flex-start; background: var(--surface); border: 1px solid var(--accent); display: flex; flex-direction: column; gap: 6px; }
+.msg.card.download { flex-direction: row; align-items: baseline; gap: 8px; flex-wrap: wrap; border-color: var(--border); }
+.msg.card.download .card-text { flex-basis: 100%; }
+.msg.card a { color: var(--accent); font-weight: 600; text-decoration: none; }
+.msg.card a:hover { text-decoration: underline; }
+.card-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.card-note { color: var(--muted); font-size: 11px; }
+.card-actions button:disabled { opacity: 0.45; cursor: default; }
+.msg.card.image { border-color: var(--border); padding: 6px; gap: 4px; }
+.msg.card.image img { display: block; max-width: min(260px, 100%); border-radius: 4px; cursor: zoom-in; background: #fff; }
+.msg.reply { align-self: stretch; max-width: none; padding: 0; margin-top: -2px; display: flex; flex-direction: column; gap: 6px; white-space: normal; }
+.msg.reply .actions, .msg.event { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.msg.reply button, .msg.event button { padding: 2px 8px; font-size: 11px; }
+.msg.reply button:disabled, .msg.event button:disabled { opacity: 0.45; cursor: default; }
+.change-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.msg.event { align-self: center; color: var(--muted); font-size: 11px; padding: 2px 8px; border: 1px dashed var(--border); border-radius: 12px; white-space: normal; }
+.diff { border: 1px solid var(--border); border-radius: 6px; background: var(--surface); overflow: hidden; }
+.diff-file { padding: 4px 8px; font-size: 11px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.diff pre { margin: 0; padding: 4px 0; font-size: 11px; line-height: 1.4; overflow-x: auto; max-height: 320px; overflow-y: auto; }
+.diff pre span { display: block; padding: 0 8px; white-space: pre; }
+.diff .diff-add { color: #1a7f37; } .diff pre .diff-add { background: #e6ffec; }
+.diff .diff-del { color: #cf222e; } .diff pre .diff-del { background: #ffebe9; }
+.diff .diff-hunk { color: var(--muted); background: var(--panel); }
+.download-gone { color: var(--muted); font-weight: 600; }
+.check-field { display: flex; gap: 8px; align-items: center; margin: 10px 0 2px; }
+.muted.small { font-size: 11px; margin-top: 2px; }
+dialog.lightbox { padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: inherit; width: min(92vw, 1320px); max-width: none; max-height: 94vh; overflow: hidden; }
+dialog.lightbox::backdrop { background: rgb(0 0 0 / 0.6); }
+dialog.lightbox img { display: block; width: 100%; height: auto; max-height: calc(94vh - 44px); object-fit: contain; background: #fff; }
+.lightbox-bar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; }
+.lightbox-caption { flex: 1; color: var(--muted); font-size: 12px; }
+.lightbox-save { color: var(--accent); font-weight: 600; text-decoration: none; }
+.chat-form { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border); }
+.chat-row { display: flex; gap: 8px; align-items: flex-end; }
+.chat-attach { padding: 4px 8px; font-size: 14px; line-height: 1; align-self: stretch; }
+.chat-attachments { display: flex; gap: 6px; flex-wrap: wrap; }
+.attachment { position: relative; display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 3px 22px 3px 3px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); font-size: 11px; }
+.attachment img { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; background: #fff; }
+.attachment .att-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 4px; background: var(--panel); font-size: 10px; font-weight: 700; color: var(--muted); }
+.attachment .att-text { display: flex; flex-direction: column; min-width: 0; }
+.attachment .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment .att-role { color: var(--muted); }
+.attachment .att-remove { position: absolute; top: 2px; right: 2px; border: 0; background: none; color: var(--muted); padding: 0 4px; font-size: 13px; cursor: pointer; }
+.msg.user .msg-attachments { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.msg.user .msg-attachments .attachment { padding-right: 6px; background: rgb(255 255 255 / 0.6); }
+.msg.user .msg-attachments img { cursor: zoom-in; }
+#chat { position: relative; }
+.chat-drop { position: absolute; inset: 6px; display: grid; place-items: center; padding: 24px; text-align: center; border: 2px dashed var(--accent); border-radius: 10px; background: color-mix(in srgb, var(--panel) 88%, transparent); color: var(--accent); font-weight: 600; pointer-events: none; z-index: 5; }
+.chat-drop[hidden] { display: none; }
 .chat-input { flex: 1; resize: none; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
 .chat-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .chat-buttons { display: flex; gap: 6px; }
@@ -212,7 +260,8 @@ dialog.wide:not([open]) { display: none; }
 .catalog-tag:hover { background: var(--hover); color: var(--text); }
 .catalog-tag.on { background: var(--accent); color: #fff; }
 .catalog-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 300px; }
-.catalog-grid { overflow: auto; padding: 12px 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; align-content: start; }
+/* max-content rows: a card hides its overflow, so an auto row would shrink it to fit the dialog instead of letting the grid scroll */
+.catalog-grid { overflow: auto; padding: 12px 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-auto-rows: max-content; gap: 10px; align-content: start; }
 .catalog-card { display: block; text-align: left; padding: 0; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .catalog-card:hover { background: var(--surface); border-color: var(--accent); }
 .catalog-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
@@ -227,6 +276,20 @@ dialog.wide:not([open]) { display: none; }
 .catalog-detail pre { margin: 0; background: var(--sunken); padding: 6px 8px; border-radius: 4px; font-size: 11px; white-space: pre-wrap; word-break: break-all; }
 .catalog-actions { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
 .catalog-link { color: var(--accent); font-size: 12px; }
+/* Narrow screens: the search under the title, the tags on one scrolling row, and the selected shape's details under the cards instead of beside them */
+@media (max-width: 640px) {
+  .catalog-head { flex-wrap: wrap; }
+  .catalog-head h2 { flex: 1; }
+  .catalog-search { order: 1; flex: 1 0 calc(100% - 100px); min-width: 0; }
+  .catalog-status { order: 1; }
+  .catalog-tags { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
+  .catalog-tag { flex: none; white-space: nowrap; }
+  .catalog-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .catalog-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); } /* two cards across on the narrowest phones */
+  .catalog-detail { border-left: 0; border-top: 1px solid var(--border); max-height: min(40vh, 300px); }
+  .catalog-detail:has(> .catalog-hint) { display: none; }
+  .catalog-detail img { display: none; }
+}
 /* Share dialog */
 #share-dialog { width: min(520px, calc(100vw - 32px)); }
 .share-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -238,3 +301,68 @@ dialog { position: relative; }
   background: rgba(251,250,247,.85); border-radius: 8px; color: var(--muted); font-weight: 500; }
 .dialog-busy[hidden] { display: none; }
 .dialog-busy .spinner { width: 32px; height: 32px; border-radius: 50%; border: 4px solid var(--border); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+
+/* ---- Pointing and measuring in the 3D view (pointer.js) ---- */
+#view-tools { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; z-index: 20; }
+#view-tools button { height: 34px; padding: 0 10px; background: rgba(251,250,247,.92); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08); backdrop-filter: blur(2px); font-size: 12px; }
+#view-tools button:hover { background: var(--hover); }
+#view-tools button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+#viewport.pointing { cursor: crosshair; }
+.view-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 10; }
+.view-labels > div { position: absolute; left: 0; top: 0; white-space: nowrap; }
+.ref-tag { min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; color: #fff; font: 600 11px/18px system-ui, sans-serif; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.measure-tag { padding: 2px 6px; border-radius: 4px; background: #1a1a1a; color: #fff; font: 600 11px/1.3 ui-monospace, monospace; }
+.view-hint { position: absolute; top: 52px; left: 10px; padding: 4px 8px; border-radius: 6px; background: rgba(26,26,26,.78); color: #fff; font-size: 11px; z-index: 18; pointer-events: none; }
+.view-hint[hidden], .measure-panel[hidden] { display: none; }
+.measure-panel { position: absolute; top: 52px; right: 10px; min-width: 190px; padding: 8px 10px; background: rgba(251,250,247,.96); border: 1px solid var(--border);
+  border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.1); z-index: 19; font-size: 12px; display: flex; flex-direction: column; gap: 3px; }
+.measure-value { font: 600 18px ui-monospace, monospace; }
+.measure-detail { color: var(--muted); font-family: ui-monospace, monospace; font-size: 11px; }
+.measure-detail.strong { color: var(--text); font-weight: 600; }
+.measure-actions { display: flex; gap: 6px; margin-top: 4px; }
+.measure-actions button { padding: 2px 8px; font-size: 11px; }
+
+/* ---- Phones (desktop is unchanged) ----
+   Portrait: the 3D view on top, the chat (and file tabs) below; the view shrinks while typing.
+   Landscape: the 3D view beside the chat. Either way ⤢ expands the view to the whole screen. */
+#view-expand { display: none; }
+@media (max-width: 760px) and (orientation: portrait), (orientation: landscape) and (max-height: 520px) {
+  html, body { height: 100dvh; }
+  #app { height: 100dvh; }
+  #divider { display: none; }
+  #viewer-pane, #editor-pane { min-width: 0; min-height: 0; }
+  input, select, textarea, .chat-input { font-size: 16px; } /* below 16px iOS zooms the page on focus */
+  #view-expand { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0;
+    background: rgba(251,250,247,.92); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08); font-size: 16px; }
+  #view-tools { top: 8px; left: 8px; gap: 4px; }
+  #view-tools button { height: 34px; padding: 0 8px; }
+  #top-right { top: 8px; right: 8px; }
+  .view-hint { top: 48px; left: 8px; font-size: 11px; }
+  .measure-panel { top: auto; bottom: 8px; right: 8px; min-width: 160px; }
+  #console { left: 6px; right: 6px; bottom: 6px; max-height: 35%; font-size: 11px; padding: 4px 8px; }
+  #top-right .menu-items { max-height: calc(100dvh - 60px); overflow-y: auto; }
+  .chat-log { padding: 8px; }
+  .msg { max-width: 96%; }
+  .chat-form { padding: 6px 8px; }
+  .chat-attach { padding: 4px 6px; }
+  .attachment { max-width: 180px; }
+  dialog { max-width: calc(100vw - 16px); }
+  /* the view on its own, full screen */
+  body.view-expanded #viewer-pane { position: fixed; inset: 0; z-index: 50; height: auto; width: auto; }
+  body.view-expanded #editor-pane { visibility: hidden; }
+}
+@media (max-width: 760px) and (orientation: portrait) {
+  #app { flex-direction: column; }
+  #viewer-pane { flex: none; height: 38dvh; border-bottom: 1px solid var(--border); }
+  body.chat-typing #viewer-pane { height: 24dvh; } /* leave the chat room above the keyboard; chat.js sets the class */
+  #editor-pane { width: 100% !important; flex: 1; }
+  #view-tools button .label { display: none; } /* icons only in the short view */
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  #viewer-pane { flex: 1; }
+  #editor-pane { width: 50% !important; flex: none; }
+  #tabs { font-size: 12px; }
+  .chat-head { padding-top: 2px; padding-bottom: 2px; }
+}

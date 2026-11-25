@@ -10,7 +10,14 @@
     "cli": "node bin/temencad.mjs",
     "prebuild": "node scripts/api-text.mjs",
     "api": "node bin/temencad.mjs api",
-    "test": "node bin/temencad.mjs test test/"
+    "test": "node bin/temencad.mjs test test/",
+    "core:native": "cmake -S core -B build/native && cmake --build build/native -j8",
+    "core:wasm": "emcmake cmake -S core -B build/wasm && cmake --build build/wasm -j8",
+    "core:test": "node core/test/smoke.mjs",
+    "core:diff": "node core/test/diff.mjs",
+    "core:export": "node core/test/export-parity.mjs",
+    "core:pick": "node core/test/pick-parity.mjs",
+    "core:render": "node core/test/render-parity.mjs"
   },
   "devDependencies": {
     "vite": "^8.3.6"
@@ -25,9 +32,6 @@
     "@codemirror/view": "^6.43.15",
     "codemirror": "^6.0.2",
     "fflate": "^0.8.2",
-    "jpeg-js": "^0.4.4",
-    "manifold-3d": "^3.5.4",
-    "opentype.js": "^2.0.0",
     "three": "^0.187.0"
   },
   "bin": {
