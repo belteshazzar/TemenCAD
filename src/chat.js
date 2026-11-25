@@ -61,6 +61,16 @@ export function initChat({ root, host, onChange = () => {} }) {
   // chat only takes focus when tapped there; elsewhere it keeps focus ready for typing.
   const touch = matchMedia('(pointer: coarse)').matches;
   const focusInput = () => { if (!touch) input.focus(); };
+  // While the chat box has focus the phone layout shortens the 3D view (body.chat-typing) to leave the chat room above the keyboard.
+  // A press outside the box takes its focus on the way down: growing the view at that moment moves the page under the finger and the
+  // tap lands on something else, so the view grows back only once the press and its click are over.
+  let pressed = false;
+  const typing = () => document.body.classList.toggle('chat-typing', document.activeElement === input);
+  const settle = () => { if (!pressed) setTimeout(typing); };
+  input.addEventListener('focus', typing);
+  input.addEventListener('blur', settle);
+  addEventListener('pointerdown', () => { pressed = true; }, true);
+  for (const type of ['pointerup', 'pointercancel']) addEventListener(type, () => { pressed = false; settle(); }, true);
   if (matchMedia('(max-width: 760px), (max-height: 520px)').matches) input.placeholder = 'Describe a change, or attach a photo';
 
   const agent = new Agent({ ...host, showImage, saveAttachment });

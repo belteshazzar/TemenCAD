@@ -356,7 +356,7 @@ dialog { position: relative; }
 @media (max-width: 760px) and (orientation: portrait) {
   #app { flex-direction: column; }
   #viewer-pane { flex: none; height: 38dvh; border-bottom: 1px solid var(--border); }
-  #app:has(.chat-input:focus) #viewer-pane { height: 24dvh; } /* leave the chat room above the keyboard */
+  body.chat-typing #viewer-pane { height: 24dvh; } /* leave the chat room above the keyboard; chat.js sets the class */
   #editor-pane { width: 100% !important; flex: 1; }
   #view-tools button .label { display: none; } /* icons only in the short view */
 }
