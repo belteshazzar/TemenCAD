@@ -1,0 +1,43 @@
+name: Release the package
+
+# A tag v<version> builds the wasm core, packs the npm tarball with it inside, proves the tarball works when installed,
+# and attaches it to a GitHub release. Projects depend on that file:
+#   "temencad": "https://github.com/belteshazzar/TemenCAD/releases/download/v0.2.0/temencad-0.2.0.tgz"
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: The tag is the version in package.json
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $version (expected v$version)"
+            exit 1
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.10
+      - run: npm ci
+      - run: npm run core:wasm
+      - run: npm run core:test
+      - run: npm test
+      - name: Pack, install the tarball in an empty project and build a model with it
+        run: npm run pack:check -- --out release
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/temencad-*.tgz --verify-tag --generate-notes --title "TemenCAD ${GITHUB_REF_NAME#v}"

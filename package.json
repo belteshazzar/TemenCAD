@@ -1,8 +1,16 @@
 {
   "name": "temencad",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
+  "files": [
+    "bin/",
+    "src/",
+    "core/wasm/index.js",
+    "core/wasm/dist/",
+    "api.html",
+    ".claude/skills/temencad/"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -17,7 +25,8 @@
     "core:diff": "node core/test/diff.mjs",
     "core:export": "node core/test/export-parity.mjs",
     "core:pick": "node core/test/pick-parity.mjs",
-    "core:render": "node core/test/render-parity.mjs"
+    "core:render": "node core/test/render-parity.mjs",
+    "pack:check": "node scripts/pack-check.mjs"
   },
   "devDependencies": {
     "vite": "^8.3.6"

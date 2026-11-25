@@ -27,7 +27,7 @@ The build prints `ECHO` lines from `echo()`, warnings with file and line, and er
 - `src/runner.js` runs a project (fonts, meshes and images are decoded first); `src/modules.js` turns project files into ES modules; `src/headless.js` is the Node entry used by the CLI and the catalogue build; `src/worker.js` the browser worker.
 - `src/main.js` wires the app; `src/tabs.js` file tabs; `src/chat.js` and `src/agent.js` the in-app assistant (its system prompt embeds the API reference); `src/completions.js` autocomplete.
 - `api.html` the reference; `README.md` the user guide; `src/default-script.js` the demo script that shows every feature.
-- Related repositories: `TemenCAD-catalog` (shared shapes, static site, publish worker) and `TemenCAD-web` (product site), both depend on this one via `github:belteshazzar/TemenCAD`.
+- Related repositories: `TemenCAD-catalog` (shared shapes, static site, publish worker) and `TemenCAD-web` (product site), both depend on this one through a release tarball (`https://github.com/belteshazzar/TemenCAD/releases/download/v<version>/temencad-<version>.tgz`), because the built wasm is not in git and a `github:` dependency has none. A `v<version>` tag matching `package.json` runs `.github/workflows/release.yml`; `"files"` in `package.json` says what ships, and `npm run pack:check` installs the tarball in an empty project and builds a model with it.
 
 ## When adding an API function
 

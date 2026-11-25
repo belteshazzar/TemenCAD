@@ -49,6 +49,14 @@ npx temencad add parametric-hinge        # copy a catalogue package into ./main.
 npx temencad --list-plates
 ```
 
+To use it in another project, install a packaged release. The release carries the built core; the repository does not, so a `github:` dependency cannot build anything.
+
+```sh
+npm install https://github.com/belteshazzar/TemenCAD/releases/download/v0.2.0/temencad-0.2.0.tgz
+```
+
+The [releases page](https://github.com/belteshazzar/TemenCAD/releases) lists them. Pushing a `v<version>` tag that matches `package.json` builds the core, packs it, checks the tarball installs and builds a model on its own (`npm run pack:check`) and publishes it.
+
 `log()` and `echo()` go to stdout, warnings and errors to stderr with line numbers, and a failed build exits with code 1. Ghost and hidden parts are not exported, as in the app.
 
 Stack: Vite, Three.js (viewer), CodeMirror 6, and the TemenCAD core (`core/`): the [lamassu](https://github.com/mdy-docs/lamassu-js) JavaScript engine, the [Manifold](https://github.com/elalish/manifold) geometry kernel and the modelling API, compiled together into one WebAssembly module (fonts through stb_truetype, images through stb_image).
