@@ -21,4 +21,5 @@ jobs:
       - run: npm install
       - run: npm run core:wasm
       - run: npm test
+      - run: npm run pack:check # the release tarball installs and builds on its own
       - run: npm run build
