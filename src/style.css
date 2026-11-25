@@ -276,6 +276,20 @@ dialog.wide:not([open]) { display: none; }
 .catalog-detail pre { margin: 0; background: var(--sunken); padding: 6px 8px; border-radius: 4px; font-size: 11px; white-space: pre-wrap; word-break: break-all; }
 .catalog-actions { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
 .catalog-link { color: var(--accent); font-size: 12px; }
+/* Narrow screens: the search under the title, the tags on one scrolling row, and the selected shape's details under the cards instead of beside them */
+@media (max-width: 640px) {
+  .catalog-head { flex-wrap: wrap; }
+  .catalog-head h2 { flex: 1; }
+  .catalog-search { order: 1; flex: 1 0 calc(100% - 100px); min-width: 0; }
+  .catalog-status { order: 1; }
+  .catalog-tags { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
+  .catalog-tag { flex: none; white-space: nowrap; }
+  .catalog-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .catalog-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); } /* two cards across on the narrowest phones */
+  .catalog-detail { border-left: 0; border-top: 1px solid var(--border); max-height: min(40vh, 300px); }
+  .catalog-detail:has(> .catalog-hint) { display: none; }
+  .catalog-detail img { display: none; }
+}
 /* Share dialog */
 #share-dialog { width: min(520px, calc(100vw - 32px)); }
 .share-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
