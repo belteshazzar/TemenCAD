@@ -22,6 +22,8 @@ const DEFAULT_COLOR = '#8fb3ff';
 function describe(v) {
   if (isShape(v)) return 'a Shape';
   if (isSketch(v)) return 'a 2D sketch';
+  if (isPen(v)) return 'a pen outline that is not closed yet (finish it with .close())';
+  if (typeof v === 'function') return 'a function';
   if (isFace(v)) return `the ${v.name} face of a shape`;
   if (isPath(v)) return 'a path';
   if (isImage(v)) return 'an image';
@@ -34,6 +36,7 @@ function describe(v) {
 }
 function checkNumber(fn, name, v) {
   if (typeof v !== 'number' || Number.isNaN(v)) throw new TypeError(`${fn}: ${name} must be a number, got ${describe(v)}`);
+  if (v === Infinity || v === -Infinity) throw new RangeError(`${fn}: ${name} must be a finite number, got ${v}`);
   return v;
 }
 function checkPositive(fn, name, v) {
@@ -55,6 +58,86 @@ function checkVec(fn, name, v, n = 3) {
   if (!Array.isArray(v) || v.length !== n) throw new TypeError(`${fn}: ${name} must be an array of ${n} numbers, got ${describe(v)}`);
   for (let i = 0; i < v.length; i++) checkNumber(fn, `${name}[${i}]`, v[i]);
   return v;
+}
+/** An on/off option: true or false and nothing else, so { center: 'x' } is not quietly taken as true. */
+/** table[key] for a name the table itself holds: 'constructor' and 'toString' are on every object, and are not entries. */
+function entry(table, key) { return typeof key === 'string' && Object.keys(table).indexOf(key) >= 0 ? table[key] : undefined; }
+function checkFlag(fn, name, v) {
+  if (v !== true && v !== false) throw new TypeError(`${fn}: ${name} must be true or false, got ${describe(v)}`);
+  return v;
+}
+/** One of a few words: checkOneOf('hole', 'axis', axis, ['x', 'y', 'z']). */
+function checkOneOf(fn, name, v, words) {
+  if (typeof v !== 'string' || words.indexOf(v) < 0) {
+    const list = words.map((w) => `'${w}'`);
+    throw new TypeError(`${fn}: ${name} must be ${list.length > 1 ? `${list.slice(0, -1).join(', ')} or ${list[list.length - 1]}` : list[0]}, got ${describe(v)}`);
+  }
+  return v;
+}
+
+// ---- options: a misspelt or misplaced one is an error, never ignored ----------------------
+
+const AXIS_KEYS = ['x', 'y', 'z'];
+/** What { ... } makes: not an array, a Shape, a sketch or any other kind of thing. */
+function isPlain(v) {
+  if (v === null || typeof v !== 'object') return false;
+  const p = Object.getPrototypeOf(v);
+  return p === Object.prototype || p === null;
+}
+/** How many slips apart two names are: a letter changed, dropped or added, or two neighbours swapped. */
+function slips(a, b) {
+  let prev2 = null, prev = [];
+  for (let j = 0; j <= b.length; j++) prev.push(j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      const same = a[i - 1] === b[j - 1];
+      let d = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (same ? 0 : 1));
+      if (prev2 !== null && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d = Math.min(d, prev2[j - 2] + 1);
+      row.push(d);
+    }
+    prev2 = prev; prev = row;
+  }
+  return prev[b.length];
+}
+// other names people (and OpenSCAD) use for the same thing
+const ALSO_CALLED = {
+  radius: ['r'], r: ['radius'], height: ['h', 'length', 'thickness', 'depth'], h: ['height'], length: ['h', 'height'], depth: ['height', 'thickness'], thickness: ['height', 'depth'],
+  $fn: ['segments'], fn: ['segments'], facets: ['segments'], sides: ['segments'], resolution: ['segments'], steps: ['segments', 'slices'],
+  centre: ['center'], centered: ['center'], centred: ['center'], colour: ['color'], visible: ['hidden'], opacity: ['ghost'], transparent: ['ghost'],
+  rounding: ['r', 'radius'], fillet: ['r', 'radius'], spacing: ['letterSpacing', 'gap'], halign: ['align'], fontSize: ['size'], font_size: ['size'],
+  offset: ['at', 'gap'], position: ['at'], distance: ['gap'], margin: ['gap', 'border'], clearance: ['tolerance', 'gap'], play: ['tolerance', 'backlash'],
+  diameter: ['dowelDiameter'], d: ['dowelDiameter'], count: ['planets', 'dowels', 'lines'], n: ['teeth', 'planets', 'count'], z: ['teeth'], m: ['module'], mod: ['module'],
+  lead: ['pitch'], segs: ['segments'], tooth: ['teeth'],
+};
+/** The key that was probably meant, or undefined when none is close. */
+function meantKey(k, keys) {
+  const also = ALSO_CALLED[k];
+  if (Array.isArray(also)) for (const a of also) if (keys.indexOf(a) >= 0) return a;
+  const low = k.toLowerCase();
+  let best, bestD = Infinity;
+  for (const c of keys) {
+    const cl = c.toLowerCase();
+    const d = cl === low ? 0 : cl.length > 2 && low.length > 2 && (cl.indexOf(low) === 0 || low.indexOf(cl) === 0) ? 1 : slips(low, cl);
+    if (d < bestD) { best = c; bestD = d; }
+  }
+  return best !== undefined && bestD <= Math.floor(Math.min(k.length, best.length) / 3) ? best : undefined;
+}
+/** The error for a key a function does not take: unknownKey('sphere', 'segment', ['segments']). */
+function unknownKey(fn, k, keys, what = 'option') {
+  if (!keys.length) return new TypeError(`${fn}: unknown ${what} '${k}': it takes none`);
+  const meant = meantKey(k, keys);
+  return new TypeError(`${fn}: unknown ${what} '${k}'${meant === undefined ? '' : ` (did you mean '${meant}'?)`}; the ${what === 'axis' ? 'axes' : `${what}s`} are ${keys.join(', ')}`);
+}
+/**
+ * The options object of `fn`, checked: nothing given is {}; anything but a plain object, or a key
+ * the function does not take, is an error that names what it does take.
+ */
+function options(fn, opts, keys) {
+  if (opts === undefined) return {};
+  if (!isPlain(opts)) throw new TypeError(`${fn}: options must be an object${keys.length ? ` ({ ${keys.join(', ')} })` : ''}, got ${describe(opts)}`);
+  for (const k of Object.keys(opts)) if (keys.indexOf(k) < 0) throw unknownKey(fn, k, keys);
+  return opts;
 }
 
 function resizeFactors(fn, size, target, auto) {
@@ -96,8 +179,9 @@ function axisAngleMatrix(fn, degrees, v) {
 function mirrorNormal(fn, axis, n) {
   const names = n === 3 ? { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] } : { x: [1, 0], y: [0, 1] };
   if (typeof axis === 'string') {
-    if (!names[axis]) throw new Error(n === 3 ? `${fn}: axis must be 'x', 'y', 'z' or a normal [x, y, z]` : `${fn}: axis must be 'x', 'y' or a normal [x, y]`);
-    return names[axis];
+    const u = entry(names, axis);
+    if (!u) throw new TypeError(n === 3 ? `${fn}: axis must be 'x', 'y', 'z' or a normal [x, y, z], got ${describe(axis)}` : `${fn}: axis must be 'x', 'y' or a normal [x, y], got ${describe(axis)}`);
+    return u;
   }
   if (!Array.isArray(axis) || axis.length !== n) throw new TypeError(n === 3 ? `${fn}: axis must be 'x', 'y', 'z' or a normal [x, y, z], got ${describe(axis)}` : `${fn}: axis must be 'x', 'y' or a normal [x, y], got ${describe(axis)}`);
   checkVec(fn, 'normal', axis, n);
@@ -169,7 +253,7 @@ function withMeta(s, patch) { return new Shape(s.h, s.colorValue, Object.assign(
 /** Anchors of several shapes combined; the first shape wins on a clash. */
 function mergeAnchors(shapes) {
   const anchors = {};
-  for (const s of shapes) if (s.meta.anchors) for (const k of Object.keys(s.meta.anchors)) if (!(k in anchors)) anchors[k] = s.meta.anchors[k];
+  for (const s of shapes) if (s.meta.anchors) for (const k of Object.keys(s.meta.anchors)) if (entry(anchors, k) === undefined) anchors[k] = s.meta.anchors[k];
   return Object.keys(anchors).length ? Object.assign({}, shapes[0].meta, { anchors }) : shapes[0].meta;
 }
 
@@ -217,7 +301,7 @@ P.transform = function (m) {
 P.anchor = function (name, point, normal) {
   if (typeof name !== 'string' || !name.trim()) throw new TypeError(`anchor: expected a name, got ${describe(name)}`);
   if (point === undefined) {
-    const a = this.meta.anchors ? this.meta.anchors[name] : undefined;
+    const a = this.meta.anchors ? entry(this.meta.anchors, name) : undefined;
     if (!a) throw new Error(`anchor: "${name}" is not an anchor of this shape${this.meta.anchors ? ` (it has ${Object.keys(this.meta.anchors).map((k) => `'${k}'`).join(', ')})` : ''}`);
     return new Anchor(name, a.point, a.normal);
   }
@@ -252,9 +336,9 @@ P.bounds = function () {
   return { min, max, size, center };
 };
 P.align = function (spec = {}, to = [0, 0, 0]) {
-  if (typeof spec !== 'object' || spec === null) throw new TypeError(`align: first argument must be like { x: 'min' | 'center' | 'max', y, z }, got ${describe(spec)}`);
+  if (!isPlain(spec)) throw new TypeError(`align: first argument must be like { x: 'min' | 'center' | 'max', y, z }, got ${describe(spec)}`);
   for (const k of Object.keys(spec)) {
-    if (k !== 'x' && k !== 'y' && k !== 'z') throw new TypeError(`align: unknown axis "${k}" (use x, y, z)`);
+    if (AXIS_KEYS.indexOf(k) < 0) throw unknownKey('align', k, AXIS_KEYS, 'axis');
     const v = spec[k];
     if (v !== 'min' && v !== 'center' && v !== 'max') throw new TypeError(`align: ${k} must be 'min', 'center' or 'max', got ${describe(v)}`);
   }
@@ -270,8 +354,14 @@ P.align = function (spec = {}, to = [0, 0, 0]) {
   }
   return this.translate(d[0], d[1], d[2]);
 };
-P.resize = function (x, y = 0, z = 0, opts = {}) {
-  if (Array.isArray(x)) { opts = y && typeof y === 'object' ? y : {}; const v = x; x = v[0]; y = v[1] === undefined ? 0 : v[1]; z = v[2] === undefined ? 0 : v[2]; }
+P.resize = function (x, y = 0, z = 0, opts) {
+  if (Array.isArray(x)) {
+    if (z !== 0 || opts !== undefined) throw new TypeError(`resize: after a size array the only argument is options ({ auto }), got ${describe(opts === undefined ? z : opts)}`);
+    if (x.length !== 3) throw new TypeError(`resize: size must be [x, y, z] (0 keeps an axis unchanged), got ${describe(x)}`);
+    opts = y === 0 ? undefined : y; const v = x; x = v[0]; y = v[1]; z = v[2];
+  }
+  opts = options('resize', opts, ['auto']);
+  if (opts.auto !== undefined) checkFlag('resize', 'auto', opts.auto);
   const f = resizeFactors('resize', this.bounds().size, [x, y, z], !!opts.auto);
   return this.scale(f[0], f[1], f[2]);
 };
@@ -287,8 +377,8 @@ P.color = function (c) {
   if (typeof c !== 'string') throw new TypeError(`color: expected a '#rrggbb' string, got ${describe(c)}`);
   return new Shape(this.h, c, this.meta);
 };
-P.ghost = function (on = true) { return withMeta(this, { ghost: !!on }); };
-P.hide = function (on = true) { return withMeta(this, { hidden: !!on }); };
+P.ghost = function (on = true) { return withMeta(this, { ghost: checkFlag('ghost', 'on', on) }); };
+P.hide = function (on = true) { return withMeta(this, { hidden: checkFlag('hide', 'on', on) }); };
 P.toString = function () { return fmt(this); };
 
 // ---- primitives (cad.js) ---------------------------------------------------
@@ -319,16 +409,23 @@ function boxArgs(fn, first, optionKeys) {
   else { size = first.size === undefined ? [1, 1, 1] : size3(fn, first.size); opts = first; }
   for (const k of Object.keys(opts)) {
     if (k !== 'x' && k !== 'y' && k !== 'z' && k !== 'size' && optionKeys.indexOf(k) < 0) {
-      throw new TypeError(`${fn}: unknown option '${k}' (size is a number, [x, y, z] or { x, y, z }; options are ${optionKeys.join(', ')})`);
+      const meant = meantKey(k, ['x', 'y', 'z', 'size'].concat(optionKeys));
+      throw new TypeError(`${fn}: unknown option '${k}'${meant === undefined ? '' : ` (did you mean '${meant}'?)`} (size is a number, [x, y, z] or { x, y, z }; options are ${optionKeys.join(', ')})`);
     }
   }
   return { size, opts };
 }
 
-/** box(w, h, d), box(size) for a cube, box([x, y, z]), box({ x, y, z, center }), box({ size, center }); box([x, y, z], { center }) */
-function box(w = 1, h, d) {
+/** box(w, h, d), box(size) for a cube, box([x, y, z]), box({ x, y, z, center }), box({ size, center }); box([x, y, z], { center }), box(w, h, d, { center }) */
+function box(w = 1, h, d, o) {
   let center = true;
-  if (typeof w === 'object' && w !== null) {
+  if (typeof w !== 'object' || w === null) {
+    let last = o;
+    if (last === undefined && isPlain(d)) { last = d; d = undefined; }
+    else if (last === undefined && d === undefined && isPlain(h)) { last = h; h = undefined; }
+    const opts = options('box', last, ['center']);
+    if (opts.center !== undefined) center = checkFlag('box', 'center', opts.center);
+  } else {
     const a = boxArgs('box', w, ['center']);
     let opts = a.opts;
     if (Array.isArray(w) && h !== undefined) {
@@ -337,7 +434,7 @@ function box(w = 1, h, d) {
       for (const k of Object.keys(h)) merged[k] = h[k];
       opts = boxArgs('box', merged, ['center']).opts;
     } else if (h !== undefined || d !== undefined) throw new TypeError(`box: give the size once: box(w, h, d), box([x, y, z]) or box({ x, y, z })`);
-    if (opts.center !== undefined) center = opts.center;
+    if (opts.center !== undefined) center = checkFlag('box', 'center', opts.center);
     w = a.size[0]; h = a.size[1]; d = a.size[2];
   }
   if (h === undefined) h = w;
@@ -347,35 +444,48 @@ function box(w = 1, h, d) {
 }
 const cube = box;
 
-function sphere(r = 1, opts = {}) {
-  let segments = opts.segments === undefined ? 32 : opts.segments;
-  if (typeof r === 'object' && r !== null) { const o = r; r = o.r === undefined ? 1 : o.r; segments = o.segments === undefined ? 32 : o.segments; }
+/** Everything in one object, sphere({ r, segments }): the object, checked, once nothing follows it. */
+function oneObject(fn, first, rest, keys) {
+  for (const v of rest) if (v !== undefined) throw new TypeError(`${fn}: with ${fn}({ ${keys.join(', ')} }) everything goes in the one object, got a second argument ${describe(v)}`);
+  return options(fn, first, keys);
+}
+function sphere(r = 1, opts) {
+  if (isPlain(r)) { opts = oneObject('sphere', r, [opts], ['r', 'segments']); r = opts.r === undefined ? 1 : opts.r; }
+  else opts = options('sphere', opts, ['segments']);
+  const segments = opts.segments === undefined ? 32 : opts.segments;
   checkPositive('sphere', 'radius', r); checkInt('sphere', 'segments', segments, 3);
   return new Shape(cad.sphere(r, segments));
 }
 
-function cylinder(r = 1, h = 1, opts = {}) {
-  let r1 = r, r2 = r, segments = 32, center = true;
-  if (typeof r === 'object' && r !== null) {
-    const o = r;
-    r = o.r === undefined ? 1 : o.r;
-    r1 = o.r1 === undefined ? r : o.r1;
-    r2 = o.r2 === undefined ? r : o.r2;
-    h = o.h === undefined ? 1 : o.h;
-    segments = o.segments === undefined ? 32 : o.segments;
-    center = o.center === undefined ? true : o.center;
+function cylinder(r = 1, h, opts) {
+  let r1, r2;
+  if (isPlain(r)) {
+    opts = oneObject('cylinder', r, [h, opts], ['r', 'r1', 'r2', 'h', 'segments', 'center']);
+    r = opts.r === undefined ? 1 : opts.r;
+    r1 = opts.r1 === undefined ? r : opts.r1;
+    r2 = opts.r2 === undefined ? r : opts.r2;
+    h = opts.h === undefined ? 1 : opts.h;
+    if (opts.r !== undefined && (opts.r1 === undefined) !== (opts.r2 === undefined)) checkNonNegative('cylinder', 'r', r);
+    checkNonNegative('cylinder', 'r1', r1); checkNonNegative('cylinder', 'r2', r2);
   } else {
-    segments = opts.segments === undefined ? 32 : opts.segments;
-    center = opts.center === undefined ? true : opts.center;
+    opts = options('cylinder', opts, ['segments', 'center']);
+    if (h === undefined) h = 1;
+    r1 = r2 = checkPositive('cylinder', 'radius', r);
   }
-  checkNonNegative('cylinder', 'r1', r1); checkNonNegative('cylinder', 'r2', r2); checkPositive('cylinder', 'height', h); checkInt('cylinder', 'segments', segments, 3);
+  const segments = opts.segments === undefined ? 32 : opts.segments;
+  const center = opts.center === undefined ? true : checkFlag('cylinder', 'center', opts.center);
+  checkPositive('cylinder', 'height', h); checkInt('cylinder', 'segments', segments, 3);
   if (r1 === 0 && r2 === 0) throw new RangeError('cylinder: at least one radius must be greater than 0');
   const s = new Shape(cad.cylinder(h, r1, r2, segments, 1));
   return center ? s : s.translate(0, h / 2, 0);
 }
 
-function cone(r = 1, h = 1, opts = {}) {
-  return cylinder(Object.assign({ r1: r, r2: 0, h }, opts));
+function cone(r = 1, h = 1, opts) {
+  opts = options('cone', opts, ['segments', 'center']);
+  checkPositive('cone', 'radius', r); checkPositive('cone', 'height', h);
+  if (opts.segments !== undefined) checkInt('cone', 'segments', opts.segments, 3);
+  if (opts.center !== undefined) checkFlag('cone', 'center', opts.center);
+  return cylinder({ r1: r, r2: 0, h, segments: opts.segments, center: opts.center });
 }
 
 // ---- booleans ------------------------------------------------------------------
@@ -475,8 +585,14 @@ Q.scale = function (x = 1, y) {
   if (x === 0 || y === 0) throw new RangeError('scale: factors must not be 0');
   return new Sketch(cad.csScale(this.h, x, y));
 };
-Q.resize = function (x, y = 0, opts = {}) {
-  if (Array.isArray(x)) { opts = y && typeof y === 'object' ? y : {}; const v = x; x = v[0]; y = v[1] === undefined ? 0 : v[1]; }
+Q.resize = function (x, y = 0, opts) {
+  if (Array.isArray(x)) {
+    if (opts !== undefined) throw new TypeError(`resize: after a size array the only argument is options ({ auto }), got ${describe(opts)}`);
+    if (x.length !== 2) throw new TypeError(`resize: size must be [x, y] (0 keeps an axis unchanged), got ${describe(x)}`);
+    opts = y === 0 ? undefined : y; const v = x; x = v[0]; y = v[1];
+  }
+  opts = options('resize', opts, ['auto']);
+  if (opts.auto !== undefined) checkFlag('resize', 'auto', opts.auto);
   const f = resizeFactors('resize', this.bounds().size, [x, y], !!opts.auto);
   return this.scale(f[0], f[1]);
 };
@@ -495,22 +611,25 @@ Q.subtract = function (...o) { return difference2d(this, ...o); };
 Q.intersect = function (...o) { return intersect2d(this, ...o); };
 Q.hull = function (...o) { return hull2d(this, ...o); };
 /** Grow (positive) or shrink (negative) the region by delta. opts: { join: 'round' | 'miter' | 'square', segments } */
-Q.offset = function (delta = 1, opts = {}) {
+Q.offset = function (delta = 1, opts) {
+  opts = options('offset', opts, ['join', 'segments']);
   const join = opts.join === undefined ? 'round' : opts.join;
   const segments = opts.segments === undefined ? 16 : opts.segments;
-  checkNumber('offset', 'delta', delta);
-  const j = JOIN[join];
+  checkNumber('offset', 'delta', delta); checkInt('offset', 'segments', segments, 1);
+  const j = entry(JOIN, join);
   if (j === undefined) throw new TypeError(`offset: join must be 'round', 'miter' or 'square', got ${describe(join)}`);
   return new Sketch(cad.csOffset(this.h, delta, j, 2, segments));
 };
 /** Round every corner with radius r (clamped so adjacent corners never overlap). */
-Q.fillet = function (r = 1, opts = {}) {
+Q.fillet = function (r = 1, opts) {
+  opts = options('fillet', opts, ['segments']);
   const segments = opts.segments === undefined ? 8 : opts.segments;
   checkPositive('fillet', 'radius', r); checkInt('fillet', 'segments', segments, 1);
   return sketchFromRings(this.toPolygons().map((ring) => processCorners(ring, r, segments)), FILL.positive);
 };
 /** Cut every corner back by distance d along both edges. */
-Q.chamfer = function (d = 1) {
+Q.chamfer = function (d = 1, opts) {
+  options('chamfer', opts, []);
   checkPositive('chamfer', 'distance', d);
   return sketchFromRings(this.toPolygons().map((ring) => processCorners(ring, d, 0)), FILL.positive);
 };
@@ -585,29 +704,35 @@ function processCorners(ring, amount, segments) {
 
 // ---- 2D primitives
 
-function circle(r = 1, opts = {}) {
-  let segments = opts.segments === undefined ? 48 : opts.segments;
-  if (typeof r === 'object' && r !== null) { const o = r; r = o.r === undefined ? 1 : o.r; segments = o.segments === undefined ? 48 : o.segments; }
+function circle(r = 1, opts) {
+  if (isPlain(r)) { opts = oneObject('circle', r, [opts], ['r', 'segments']); r = opts.r === undefined ? 1 : opts.r; }
+  else opts = options('circle', opts, ['segments']);
+  const segments = opts.segments === undefined ? 48 : opts.segments;
   checkPositive('circle', 'radius', r); checkInt('circle', 'segments', segments, 3);
   return new Sketch(cad.csCircle(r, segments));
 }
-function ellipse(rx = 1, ry = 0.5, opts = {}) {
+function ellipse(rx = 1, ry = 0.5, opts) {
+  opts = options('ellipse', opts, ['segments']);
   const segments = opts.segments === undefined ? 48 : opts.segments;
-  checkPositive('ellipse', 'rx', rx); checkPositive('ellipse', 'ry', ry);
+  checkPositive('ellipse', 'rx', rx); checkPositive('ellipse', 'ry', ry); checkInt('ellipse', 'segments', segments, 3);
   return circle(1, { segments }).scale(rx, ry);
 }
-function rect(w = 1, h, opts = {}) {
+function rect(w = 1, h, opts) {
+  if (isPlain(h) && opts === undefined) { opts = h; h = undefined; } // rect(w, { center }): a square
+  opts = options('rect', opts, ['center']);
   if (h === undefined) h = w;
-  const center = opts.center === undefined ? true : opts.center;
+  const center = opts.center === undefined ? true : checkFlag('rect', 'center', opts.center);
   checkPositive('rect', 'width', w); checkPositive('rect', 'height', h);
   return new Sketch(cad.csSquare(w, h, center ? 1 : 0));
 }
 const square = rect;
-function roundedRect(w = 1, h, r = 0.1, opts = {}) {
+function roundedRect(w = 1, h, r = 0.1, opts) {
+  opts = options('roundedRect', opts, ['center', 'segments']);
   if (h === undefined) h = w;
-  const center = opts.center === undefined ? true : opts.center;
+  const center = opts.center === undefined ? true : checkFlag('roundedRect', 'center', opts.center);
   const segments = opts.segments === undefined ? 8 : opts.segments;
   checkPositive('roundedRect', 'width', w); checkPositive('roundedRect', 'height', h); checkNonNegative('roundedRect', 'radius', r);
+  checkInt('roundedRect', 'segments', segments, 1);
   r = Math.min(r, w / 2, h / 2);
   if (r <= 0) return rect(w, h, { center });
   const pts = [];
@@ -629,16 +754,20 @@ function regularPolygon(sides = 6, r = 1) {
   return sketchFromPoints(pts, 'regularPolygon');
 }
 /** Arbitrary polygon from [[x, y], ...]. Pass { holes: [[...], ...] } for holes. */
-function polygon2d(points, opts = {}) {
+function polygon2d(points, opts) {
+  opts = options('polygon2d', opts, ['holes']);
   const holes = opts.holes === undefined ? [] : opts.holes;
+  if (!Array.isArray(holes)) throw new TypeError(`polygon2d: holes must be an array of outlines, each [[x, y], ...], got ${describe(holes)}`);
   const rings = [checkPoints(points, 'polygon2d')].concat(holes.map((h, i) => checkPoints(h, `polygon2d hole ${i}`)));
   return sketchFromRings(rings, FILL.evenOdd);
 }
 /** Teardrop: a circle with a point at +y so a horizontal hole prints without sagging. */
-function teardrop(r = 1, opts = {}) {
+function teardrop(r = 1, opts) {
+  opts = options('teardrop', opts, ['angle', 'flat', 'segments']);
   const angle = opts.angle === undefined ? 45 : opts.angle;
   const flat = opts.flat;
   const segments = opts.segments === undefined ? 48 : opts.segments;
+  if (flat !== undefined) checkPositive('teardrop', 'flat', flat);
   checkPositive('teardrop', 'radius', r); checkNumber('teardrop', 'angle', angle); checkInt('teardrop', 'segments', segments, 8);
   if (angle <= 0 || angle >= 90) throw new RangeError('teardrop: angle must be between 0 and 90 degrees');
   const a = (angle * Math.PI) / 180, apex = r / Math.cos(a);
@@ -647,14 +776,14 @@ function teardrop(r = 1, opts = {}) {
   const n = Math.max(4, Math.round((segments * (to - from)) / (2 * Math.PI)));
   for (let i = 0; i <= n; i++) { const t = from + ((to - from) * i) / n; pts.push([r * Math.cos(t), r * Math.sin(t)]); }
   if (flat !== undefined && flat < apex) {
-    checkPositive('teardrop', 'flat', flat);
     const h = Math.max(flat, r * Math.sin(Math.PI / 2 - a) + 1e-6), x = (apex - h) * Math.tan(a);
     pts.push([x, h], [-x, h]);
   } else pts.push([0, apex]);
   return sketchFromPoints(pts, 'teardrop');
 }
 /** Circle with a flat top for bridging. */
-function bridgedCircle(r = 1, opts = {}) {
+function bridgedCircle(r = 1, opts) {
+  opts = options('bridgedCircle', opts, ['angle', 'segments']);
   const angle = opts.angle === undefined ? 45 : opts.angle;
   const segments = opts.segments === undefined ? 48 : opts.segments;
   checkPositive('bridgedCircle', 'radius', r); checkNumber('bridgedCircle', 'angle', angle); checkInt('bridgedCircle', 'segments', segments, 8);
@@ -664,9 +793,10 @@ function bridgedCircle(r = 1, opts = {}) {
   return circle(r, { segments }).add(rect(2 * half, r - y + 1e-3, { center: false }).translate(-half, y));
 }
 /** Capsule / slot: two semicircles `length` apart (centre to centre) with radius r. */
-function slot(length = 2, r = 0.5, opts = {}) {
+function slot(length = 2, r = 0.5, opts) {
+  opts = options('slot', opts, ['segments']);
   const segments = opts.segments === undefined ? 32 : opts.segments;
-  checkNonNegative('slot', 'length', length); checkPositive('slot', 'radius', r);
+  checkNonNegative('slot', 'length', length); checkPositive('slot', 'radius', r); checkInt('slot', 'segments', segments, 3);
   if (length === 0) return circle(r, { segments });
   return hull2d(circle(r, { segments }).translate(-length / 2, 0), circle(r, { segments }).translate(length / 2, 0));
 }
@@ -675,33 +805,35 @@ function slot(length = 2, r = 0.5, opts = {}) {
 
 const DEFAULT_FONT = 'Inter';
 /** Text as a 2D sketch, baseline on y = 0, starting at x = 0. opts: { size=10, font, align, letterSpacing=0, kerning=true, curveSegments=8 } */
-function text(str, opts = {}) {
-  if (typeof str !== 'string') throw new TypeError(`text: first argument must be a string, got ${describe(str)}`);
-  const size = opts.size === undefined ? 10 : opts.size;
+const TEXT_KEYS = ['size', 'font', 'align', 'letterSpacing', 'kerning', 'curveSegments'];
+function text(str, opts) { return textSketch('text', str, options('text', opts, TEXT_KEYS)); }
+/** text() for a caller that has checked the option names itself and reports under its own name. */
+function textSketch(fn, str, opts) {
+  if (typeof str !== 'string') throw new TypeError(`${fn}: first argument must be a string, got ${describe(str)}`);
+  const size = opts.size === undefined ? 10 : checkPositive(fn, 'size', opts.size);
   const font = opts.font === undefined ? DEFAULT_FONT : opts.font;
-  const align = opts.align === undefined ? 'left' : opts.align;
-  const letterSpacing = opts.letterSpacing === undefined ? 0 : opts.letterSpacing;
-  const kerning = opts.kerning === undefined ? true : opts.kerning;
-  const curveSegments = opts.curveSegments === undefined ? 8 : opts.curveSegments;
-  if (opts.size !== undefined) checkPositive('text', 'size', size);
-  if (align !== 'left' && align !== 'center' && align !== 'right') throw new TypeError(`text: align must be 'left', 'center' or 'right', got ${describe(align)}`);
+  const align = opts.align === undefined ? 'left' : checkOneOf(fn, 'align', opts.align, ['left', 'center', 'right']);
+  const letterSpacing = opts.letterSpacing === undefined ? 0 : checkNumber(fn, 'letterSpacing', opts.letterSpacing);
+  const kerning = opts.kerning === undefined ? true : checkFlag(fn, 'kerning', opts.kerning);
+  const curveSegments = opts.curveSegments === undefined ? 8 : checkInt(fn, 'curveSegments', opts.curveSegments, 1);
+  if (typeof font !== 'string') throw new TypeError(`${fn}: font must be a font name (a string, or what importing a font file gives), got ${describe(font)}`);
   const out = cad.textOutlines(str, String(font), size, align === 'center' ? 1 : align === 'right' ? 2 : 0, letterSpacing, kerning ? 1 : 0, curveSegments);
   // Font contours use non-zero winding (holes run the opposite way).
   return sketchFromRings(out.rings, FILL.nonZero);
 }
 /** Text extruded to `height` (mm). Same opts as text(), plus { height=1 }. */
-function text3d(str, opts = {}) {
+function text3d(str, opts) {
+  opts = options('text3d', opts, TEXT_KEYS.concat(['height']));
   const height = opts.height === undefined ? 1 : opts.height;
   checkPositive('text3d', 'height', height);
-  const textOpts = Object.assign({}, opts);
-  delete textOpts.height;
-  return extrude(text(str, textOpts), height);
+  return extrude(textSketch('text3d', str, opts), height);
 }
 
 // ---- 3D <-> 2D
 
 /** Flatten a solid onto the ground plane: its footprint, or with { cut: y } the section at that height. */
-function projection(shape, opts = {}) {
+function projection(shape, opts) {
+  opts = options('projection', opts, ['cut']);
   const cut = opts.cut === undefined ? false : opts.cut;
   if (!isShape(shape)) throw new TypeError(`projection: first argument must be a Shape, got ${describe(shape)}`);
   if (cut === false) return new Sketch(cad.project(shape.h));
@@ -709,20 +841,31 @@ function projection(shape, opts = {}) {
   return new Sketch(cad.slice(shape.h, y));
 }
 /** Extrude a sketch along +Y. opts: { center=false, twist=0, scale=1 | [sx, sy], slices } */
-function extrude(sk, h = 1, opts = {}) {
-  const center = opts.center === undefined ? false : opts.center;
+const EXTRUDE_KEYS = ['center', 'twist', 'scale', 'slices'];
+function extrude(sk, h = 1, opts) {
+  if (!isSketch(sk)) throw new TypeError(`extrude: first argument must be a 2D sketch (circle, rect, …), got ${describe(sk)}`);
+  return extrudeSketch('extrude', sk, h, options('extrude', opts, EXTRUDE_KEYS));
+}
+/** extrude() for a caller that has checked the sketch and the option names and reports under its own name. */
+function extrudeSketch(fn, sk, h, opts) {
+  const center = opts.center === undefined ? false : checkFlag(fn, 'center', opts.center);
   const twist = opts.twist === undefined ? 0 : opts.twist;
   const scale = opts.scale === undefined ? 1 : opts.scale;
   let slices = opts.slices;
-  if (!isSketch(sk)) throw new TypeError(`extrude: first argument must be a 2D sketch (circle, rect, …), got ${describe(sk)}`);
-  checkPositive('extrude', 'height', h); checkNumber('extrude', 'twist', twist);
+  checkPositive(fn, 'height', h); checkNumber(fn, 'twist', twist);
+  if (Array.isArray(scale)) {
+    if (scale.length !== 2) throw new TypeError(`${fn}: scale must be a number or [sx, sy], got ${describe(scale)}`);
+    checkNonNegative(fn, 'scale[0]', scale[0]); checkNonNegative(fn, 'scale[1]', scale[1]);
+  } else checkNonNegative(fn, 'scale', scale);
+  if (slices !== undefined) checkInt(fn, 'slices', slices, 0);
   const top = Array.isArray(scale) ? scale : [scale, scale];
   if (slices === undefined) slices = twist ? Math.max(1, Math.ceil(Math.abs(twist) / 5)) : 0;
   const s = new Shape(cad.extrude(sk.h, h, slices, twist, top[0], top[1]));
   return center ? s.translate(0, -h / 2, 0) : s;
 }
 /** Revolve a sketch around the Y axis; sketch x is the radius (>= 0), sketch y is height. opts: { angle=360, start=0, segments=64 } */
-function revolve(sk, opts = {}) {
+function revolve(sk, opts) {
+  opts = options('revolve', opts, ['angle', 'start', 'segments']);
   const angle = opts.angle === undefined ? 360 : opts.angle;
   const start = opts.start === undefined ? 0 : opts.start;
   const segments = opts.segments === undefined ? 64 : opts.segments;
@@ -736,17 +879,21 @@ function revolve(sk, opts = {}) {
 
 // ---- solids built from sketches (cad.js)
 
-function torus(r = 1, tube = 0.3, opts = {}) {
+function torus(r = 1, tube = 0.3, opts) {
+  opts = options('torus', opts, ['segments', 'tubeSegments']);
   const segments = opts.segments === undefined ? 48 : opts.segments;
   const tubeSegments = opts.tubeSegments === undefined ? 24 : opts.tubeSegments;
   checkPositive('torus', 'radius', r); checkPositive('torus', 'tube', tube);
+  checkInt('torus', 'segments', segments, 3); checkInt('torus', 'tubeSegments', tubeSegments, 3);
+  if (tube > r) throw new RangeError(`torus: the tube radius (${tube}) must not be larger than the ring radius (${r})`);
   return revolve(circle(tube, { segments: tubeSegments }).translate(r, 0), { segments });
 }
 /** Extrude a 2D polygon (array of [x, y]) up along Y by h. */
-function polygon(points, h = 1, opts = {}) { return extrude(polygon2d(points), h, opts); }
+function polygon(points, h = 1, opts) { return extrudeSketch('polygon', sketchFromPoints(points, 'polygon'), h, options('polygon', opts, EXTRUDE_KEYS)); }
 /** Regular n-sided prism with circumradius r and height h, centred. */
-function prism(sides = 6, r = 1, h = 1, opts = {}) {
-  const center = opts.center === undefined ? true : opts.center;
+function prism(sides = 6, r = 1, h = 1, opts) {
+  opts = options('prism', opts, ['center']);
+  const center = opts.center === undefined ? true : checkFlag('prism', 'center', opts.center);
   checkInt('prism', 'sides', sides, 3); checkPositive('prism', 'radius', r); checkPositive('prism', 'height', h);
   return extrude(regularPolygon(sides, r), h, { center });
 }
@@ -755,8 +902,10 @@ function prism(sides = 6, r = 1, h = 1, opts = {}) {
  * roundedBox({ x, y, z, r, ...opts }) or roundedBox({ size, r, ...opts }).
  * opts: { edges: 'all' | 'vertical', segments, center }
  */
-function roundedBox(w = 1, h, d, r = 0.1, opts = {}) {
-  if (typeof w === 'object' && w !== null) {
+function roundedBox(w = 1, h, d, r = 0.1, opts) {
+  if (typeof w !== 'object' || w === null) opts = options('roundedBox', opts, ['edges', 'segments', 'center']);
+  else {
+    if (r !== 0.1 || opts !== undefined) throw new TypeError(`roundedBox: give the size once: roundedBox(w, h, d, r), roundedBox([x, y, z], r) or roundedBox({ x, y, z, r })`);
     const keys = ['r', 'radius', 'edges', 'segments', 'center'];
     let o;
     if (Array.isArray(w)) { // roundedBox([x, y, z], r, opts)
@@ -774,14 +923,14 @@ function roundedBox(w = 1, h, d, r = 0.1, opts = {}) {
     r = o.opts.r !== undefined ? o.opts.r : o.opts.radius !== undefined ? o.opts.radius : 0.1;
     opts = o.opts;
   }
-  const edges = opts.edges === undefined ? 'all' : opts.edges;
+  const edges = opts.edges === undefined ? 'all' : checkOneOf('roundedBox', 'edges', opts.edges, ['all', 'vertical']);
   const segments = opts.segments;
-  const center = opts.center === undefined ? true : opts.center;
+  const center = opts.center === undefined ? true : checkFlag('roundedBox', 'center', opts.center);
   if (h === undefined) h = w;
   if (d === undefined) d = w;
   checkPositive('roundedBox', 'width', w); checkPositive('roundedBox', 'height', h); checkPositive('roundedBox', 'depth', d);
   checkNonNegative('roundedBox', 'radius', r);
-  if (edges !== 'all' && edges !== 'vertical') throw new TypeError(`roundedBox: edges must be 'all' or 'vertical', got ${describe(edges)}`);
+  if (segments !== undefined) checkInt('roundedBox', 'segments', segments, edges === 'vertical' ? 1 : 3);
   r = Math.min(r, w / 2, h / 2, d / 2);
   let s;
   if (r <= 0) s = box(w, h, d);
@@ -811,6 +960,7 @@ function SketchBuilder(points) {
   if (points) for (const p of points) this.lineTo(p[0], p[1]);
 }
 const B = SketchBuilder.prototype;
+function isPen(v) { return v !== null && typeof v === 'object' && Object.getPrototypeOf(v) === SketchBuilder.prototype; }
 B.current = function () { return this.pts.length ? this.pts[this.pts.length - 1] : null; };
 B._push = function (x, y) {
   const c = this.current();
@@ -829,8 +979,10 @@ B.lineTo = function (x, y) { checkNumber('lineTo', 'x', x); checkNumber('lineTo'
 B.line = function (dx, dy = 0) { checkNumber('line', 'dx', dx); checkNumber('line', 'dy', dy); const c = this.current() || [0, 0]; return this._push(c[0] + dx, c[1] + dy); };
 B.horizontal = function (dx) { return this.line(dx, 0); };
 B.vertical = function (dy) { return this.line(0, dy); };
-B.arcTo = function (x, y, opts = {}) {
-  const r = opts.r, side = opts.side === undefined ? 'left' : opts.side, large = !!opts.large, segments = opts.segments === undefined ? 48 : opts.segments;
+B.arcTo = function (x, y, opts) {
+  opts = options('arcTo', opts, ['r', 'side', 'large', 'segments']);
+  const r = opts.r, side = opts.side === undefined ? 'left' : checkOneOf('arcTo', 'side', opts.side, ['left', 'right']);
+  const large = opts.large === undefined ? false : checkFlag('arcTo', 'large', opts.large), segments = opts.segments === undefined ? 48 : opts.segments;
   checkNumber('arcTo', 'x', x); checkNumber('arcTo', 'y', y); checkPositive('arcTo', 'r', r); checkInt('arcTo', 'segments', segments, 8);
   const c = this.current(); if (!c) throw new Error('arcTo: moveTo first');
   const dx = x - c[0], dy = y - c[1], d = Math.hypot(dx, dy);
@@ -839,14 +991,14 @@ B.arcTo = function (x, y, opts = {}) {
   const hh = Math.sqrt(Math.max(0, r * r - (d / 2) ** 2));
   const left = [-dy / d, dx / d];
   const ccw = side === 'left';
-  if (side !== 'left' && side !== 'right') throw new TypeError(`arcTo: side must be 'left' or 'right', got ${describe(side)}`);
   const sgn = (ccw ? 1 : -1) * (large ? -1 : 1);
   const cx = c[0] + dx / 2 + left[0] * hh * sgn, cy = c[1] + dy / 2 + left[1] * hh * sgn;
   return this._arc(cx, cy, r, Math.atan2(c[1] - cy, c[0] - cx), Math.atan2(y - cy, x - cx), ccw, segments);
 };
-B.tangentArcTo = function (x, y, opts = {}) {
+B.tangentArcTo = function (x, y, opts) {
+  opts = options('tangentArcTo', opts, ['segments']);
   const segments = opts.segments === undefined ? 48 : opts.segments;
-  checkNumber('tangentArcTo', 'x', x); checkNumber('tangentArcTo', 'y', y);
+  checkNumber('tangentArcTo', 'x', x); checkNumber('tangentArcTo', 'y', y); checkInt('tangentArcTo', 'segments', segments, 8);
   const c = this.current(); if (!c || !this.lastDir) throw new Error('tangentArcTo: draw a segment first, so there is a direction to be tangent to');
   const tx = this.lastDir[0], ty = this.lastDir[1], tl = Math.hypot(tx, ty), n = [-ty / tl, tx / tl];
   const ex = x - c[0], ey = y - c[1];
@@ -857,7 +1009,8 @@ B.tangentArcTo = function (x, y, opts = {}) {
   return this._arc(cx, cy, r, Math.atan2(c[1] - cy, c[0] - cx), Math.atan2(y - cy, x - cx), t > 0, segments);
 };
 /** A quadratic Bézier from the current point to (x, y), pulled toward the control point (cx, cy). opts: { segments = 16 } */
-B.quadTo = function (cx, cy, x, y, opts = {}) {
+B.quadTo = function (cx, cy, x, y, opts) {
+  opts = options('quadTo', opts, ['segments']);
   const segments = opts.segments === undefined ? 16 : opts.segments;
   checkNumber('quadTo', 'cx', cx); checkNumber('quadTo', 'cy', cy); checkNumber('quadTo', 'x', x); checkNumber('quadTo', 'y', y);
   checkInt('quadTo', 'segments', segments, 1);
@@ -869,7 +1022,8 @@ B.quadTo = function (cx, cy, x, y, opts = {}) {
   return this;
 };
 /** A cubic Bézier from the current point to (x, y) with control points (c1x, c1y) and (c2x, c2y). opts: { segments = 16 } */
-B.bezierTo = function (c1x, c1y, c2x, c2y, x, y, opts = {}) {
+B.bezierTo = function (c1x, c1y, c2x, c2y, x, y, opts) {
+  opts = options('bezierTo', opts, ['segments']);
   const segments = opts.segments === undefined ? 16 : opts.segments;
   checkNumber('bezierTo', 'c1x', c1x); checkNumber('bezierTo', 'c1y', c1y); checkNumber('bezierTo', 'c2x', c2x); checkNumber('bezierTo', 'c2y', c2y);
   checkNumber('bezierTo', 'x', x); checkNumber('bezierTo', 'y', y); checkInt('bezierTo', 'segments', segments, 1);
@@ -895,12 +1049,13 @@ B.fillet = function (r) {
   return this;
 };
 B.points = function () { return this.pts.map((p) => [p[0], p[1]]); };
-B.close = function (opts = {}) {
-  const mirror = opts.mirror, segments = opts.segments === undefined ? 8 : opts.segments;
+B.close = function (opts) {
+  opts = options('close', opts, ['mirror', 'segments']);
+  const mirror = opts.mirror, segments = opts.segments === undefined ? 8 : checkInt('close', 'segments', opts.segments, 1);
+  if (mirror !== undefined) checkOneOf('close', 'mirror', mirror, ['x', 'y']);
   let pts = this.pts.map((p) => [p[0], p[1]]), radii = this.radii.slice();
   if (mirror) {
-    const i = mirror === 'x' ? 1 : mirror === 'y' ? 0 : null;
-    if (i === null) throw new TypeError(`close: mirror must be 'x' or 'y', got ${describe(mirror)}`);
+    const i = mirror === 'x' ? 1 : 0;
     const back = [], backR = [];
     for (let k = pts.length - 1; k >= 0; k--) {
       const q = [pts[k][0], pts[k][1]]; q[i] = -q[i];
@@ -960,13 +1115,14 @@ function linearArray(shape, count = 2, step = 1) {
   for (let i = 0; i < count; i++) out.push(shape.translate(v[0] * i, v[1] * i, v[2] * i));
   return out;
 }
-/** count copies around an axis. opts: { radius=0, axis='y', start=0, sweep=360, rotateCopies=true } */
-function polarArray(shape, count = 6, opts = {}) {
+/** count copies around an axis. opts: { radius=0, axis='y', start=0, sweep=360, rotateCopies=true }; rotateCopies: false moves each copy round the circle without turning it. */
+function polarArray(shape, count = 6, opts) {
+  opts = options('polarArray', opts, ['radius', 'axis', 'start', 'sweep', 'rotateCopies']);
   const radius = opts.radius === undefined ? 0 : opts.radius;
-  const axis = opts.axis === undefined ? 'y' : opts.axis;
+  const axis = opts.axis === undefined ? 'y' : checkOneOf('polarArray', 'axis', opts.axis, ['x', 'y', 'z']);
   const start = opts.start === undefined ? 0 : opts.start;
   const sweep = opts.sweep === undefined ? 360 : opts.sweep;
-  const rotateCopies = opts.rotateCopies === undefined ? true : opts.rotateCopies;
+  const rotateCopies = opts.rotateCopies === undefined ? true : checkFlag('polarArray', 'rotateCopies', opts.rotateCopies);
   checkShape('polarArray', 'shape', shape); checkInt('polarArray', 'count', count);
   checkNumber('polarArray', 'radius', radius); checkNumber('polarArray', 'start', start); checkNumber('polarArray', 'sweep', sweep);
   const full = Math.abs(sweep) >= 360 - 1e-9;
@@ -975,19 +1131,22 @@ function polarArray(shape, count = 6, opts = {}) {
   for (let i = 0; i < count; i++) {
     const a = start + stepA * i;
     let sh = shape;
-    if (radius) sh = sh.translate(axis === 'x' ? [0, radius, 0] : [radius, 0, 0]);
-    const rot = axis === 'x' ? [a, 0, 0] : axis === 'y' ? [0, a, 0] : axis === 'z' ? [0, 0, a] : null;
-    if (!rot) throw new Error("polarArray: axis must be 'x', 'y' or 'z'");
-    if (rotateCopies || radius) sh = sh.rotate(rot[0], rot[1], rot[2]);
+    const out0 = axis === 'x' ? [0, radius, 0] : [radius, 0, 0];
+    const rot = axis === 'x' ? [a, 0, 0] : axis === 'y' ? [0, a, 0] : [0, 0, a];
+    if (rotateCopies) sh = (radius ? sh.translate(out0) : sh).rotate(rot[0], rot[1], rot[2]);
+    else if (radius) sh = sh.translate(rotationMatrix(rot[0], rot[1], rot[2]).map((row) => row[0] * out0[0] + row[1] * out0[1] + row[2] * out0[2])); // moved round the circle, not turned
     out.push(sh);
   }
   return out;
 }
 /** grid(shape, [nx, nz], [dx, dz], { center }) on the ground plane */
-function grid(shape, counts = [], steps = [], opts = {}) {
+function grid(shape, counts = [], steps = [], opts) {
+  opts = options('grid', opts, ['center']);
+  if (!Array.isArray(counts) || counts.length > 2) throw new TypeError(`grid: counts must be [nx, nz], got ${describe(counts)}`);
+  if (!Array.isArray(steps) || steps.length > 2) throw new TypeError(`grid: steps must be [dx, dz], got ${describe(steps)}`);
   const nx = counts[0] === undefined ? 2 : counts[0], nz = counts[1] === undefined ? 2 : counts[1];
   const dx = steps[0] === undefined ? 1 : steps[0], dz = steps[1] === undefined ? dx : steps[1];
-  const center = opts.center === undefined ? true : opts.center;
+  const center = opts.center === undefined ? true : checkFlag('grid', 'center', opts.center);
   checkShape('grid', 'shape', shape); checkInt('grid', 'nx', nx); checkInt('grid', 'nz', nz); checkNumber('grid', 'dx', dx); checkNumber('grid', 'dz', dz);
   const ox = center ? -((nx - 1) * dx) / 2 : 0, oz = center ? -((nz - 1) * dz) / 2 : 0;
   const out = [];
@@ -1006,25 +1165,26 @@ let declaredProfile = null;
 /** The profile in force: the one the script declared, or the defaults. */
 const printProfile = () => (declaredProfile === null ? PROFILE_DEFAULT : declaredProfile);
 
-function printer(opts = {}) {
-  if (!opts || typeof opts !== 'object') throw new TypeError(`printer: expected { nozzle, layer, holeCompensation, material }, got ${describe(opts)}`);
+function printer(opts) {
+  opts = options('printer', opts, ['nozzle', 'layer', 'holeCompensation', 'material']);
   const p = Object.assign({}, PROFILE_DEFAULT, opts, { declared: true });
   checkPositive('printer', 'nozzle', p.nozzle); checkPositive('printer', 'layer', p.layer); checkNonNegative('printer', 'holeCompensation', p.holeCompensation);
   if (p.material !== null && typeof p.material !== 'string') throw new TypeError(`printer: material must be a string, got ${describe(p.material)}`);
-  for (const k of Object.keys(opts)) if (!(k in PROFILE_DEFAULT)) throw new TypeError(`printer: unknown option "${k}"; use nozzle, layer, holeCompensation, material`);
   declaredProfile = Object.freeze(p);
   return declaredProfile;
 }
 const roundUp = (v, step) => { const n = Math.ceil(v / step - 1e-9); return +(n * step).toFixed(6); };
 /** Wall thickness rounded up to whole extrusion lines; opts: { lines } for a count instead. */
-function wall(t, opts = {}) {
+function wall(t, opts) {
+  opts = options('wall', opts, ['lines']);
   const nozzle = printProfile().nozzle;
   if (opts.lines !== undefined) { checkPositive('wall', 'lines', opts.lines); return +(Math.round(opts.lines) * nozzle).toFixed(6); }
   checkPositive('wall', 't', t);
   return roundUp(t, nozzle);
 }
 /** A height rounded up to whole layers; opts: { count } for a layer count instead. */
-function layers(h, opts = {}) {
+function layers(h, opts) {
+  opts = options('layers', opts, ['count']);
   const layer = printProfile().layer;
   if (opts.count !== undefined) { checkPositive('layers', 'count', opts.count); return +(Math.round(opts.count) * layer).toFixed(6); }
   checkPositive('layers', 'h', h);
@@ -1032,7 +1192,7 @@ function layers(h, opts = {}) {
 }
 function allowance(fn, kind) {
   if (typeof kind === 'number') return checkNumber(fn, 'allowance', kind);
-  if (typeof kind !== 'string' || !(kind in FITS)) throw new TypeError(`${fn}: kind must be ${Object.keys(FITS).map((k) => `'${k}'`).join(' | ')} or a number in mm, got ${describe(kind)}`);
+  if (entry(FITS, kind) === undefined) throw new TypeError(`${fn}: kind must be ${Object.keys(FITS).map((k) => `'${k}'`).join(' | ')} or a number in mm, got ${describe(kind)}`);
   return FITS[kind];
 }
 /** The hole diameter to model so a part of diameter d fits it. */
@@ -1063,9 +1223,11 @@ function screw(size) {
 const OVERSHOOT = 1; // cutters poke this far above y = 0 so subtractions cut cleanly through the top face
 
 /** A cutter for a screw hole: axis Y, top surface y = 0, shank going down `length`. */
-function screwHole(size, length = 10, opts = {}) {
-  const type = opts.type === undefined ? 'clearance' : opts.type;
+function screwHole(size, length = 10, opts) {
+  opts = options('screwHole', opts, ['type', 'headDepth', 'tolerance', 'segments', 'bridge']);
+  const type = opts.type === undefined ? 'clearance' : checkOneOf('screwHole', 'type', opts.type, ['clearance', 'tap', 'countersunk', 'counterbore']);
   const headDepth = opts.headDepth;
+  if (headDepth !== undefined) checkPositive('screwHole', 'headDepth', headDepth);
   const tolerance = opts.tolerance === undefined ? 0.2 : opts.tolerance;
   const segments = opts.segments === undefined ? 32 : opts.segments;
   const bridge = opts.bridge === undefined ? 0 : opts.bridge;
@@ -1082,28 +1244,29 @@ function screwHole(size, length = 10, opts = {}) {
     const head = (hd + tolerance) / 2, depth = headDepth === undefined ? hh : headDepth;
     if (bridge > 0) return union(revolve(polygon2d([[0, -L], [shank, -L], [shank, -depth - bridge], [0, -depth - bridge]]), { segments }), revolve(polygon2d([[0, -depth], [head, -depth], [head, O], [0, O]]), { segments }));
     profile = [[0, -L], [shank, -L], [shank, -depth], [head, -depth], [head, O], [0, O]];
-  } else if (type === 'countersunk') {
+  } else {
     const top = (s.csk + tolerance) / 2;
     const depth = top - shank;
     if (bridge > 0) return union(revolve(polygon2d([[0, -L], [shank, -L], [shank, -depth - bridge], [0, -depth - bridge]]), { segments }), revolve(polygon2d([[0, -depth], [shank, -depth], [top, 0], [top, O], [0, O]]), { segments }));
     profile = [[0, -L], [shank, -L], [shank, -depth], [top, 0], [top, O], [0, O]];
-  } else {
-    throw new Error(`screwHole: unknown type "${type}"`);
   }
   return revolve(polygon2d(profile), { segments });
 }
 /** A printable hole cutter along `axis`; horizontal holes get a teardrop (default), bridge or round section. */
-function hole(r = 1, length = 10, opts = {}) {
-  const axis = opts.axis === undefined ? 'z' : opts.axis;
-  const shape = opts.shape === undefined ? 'teardrop' : opts.shape;
-  const angle = opts.angle === undefined ? 45 : opts.angle;
+function hole(r = 1, length = 10, opts) {
+  opts = options('hole', opts, ['axis', 'shape', 'angle', 'flat', 'tolerance', 'segments']);
+  const axis = opts.axis === undefined ? 'z' : checkOneOf('hole', 'axis', opts.axis, ['x', 'y', 'z']);
+  const shape = opts.shape === undefined ? 'teardrop' : checkOneOf('hole', 'shape', opts.shape, ['teardrop', 'bridge', 'round']);
+  const angle = opts.angle === undefined ? 45 : checkNumber('hole', 'angle', opts.angle);
   const flat = opts.flat;
   let tolerance = opts.tolerance;
   const segments = opts.segments === undefined ? 48 : opts.segments;
   if (tolerance === undefined) { const p = printProfile(); tolerance = p.declared ? p.holeCompensation : 0; }
   checkPositive('hole', 'radius', r); checkPositive('hole', 'length', length); checkNonNegative('hole', 'tolerance', tolerance);
-  if (axis !== 'x' && axis !== 'y' && axis !== 'z') throw new TypeError(`hole: axis must be 'x', 'y' or 'z', got ${describe(axis)}`);
-  if (shape !== 'teardrop' && shape !== 'bridge' && shape !== 'round') throw new TypeError(`hole: shape must be 'teardrop', 'bridge' or 'round', got ${describe(shape)}`);
+  // a vertical or a round hole is a plain circle; the teardrop and the bridge need enough of one to shape
+  checkInt('hole', 'segments', segments, axis === 'y' || shape === 'round' ? 3 : 8);
+  if (angle <= 0 || angle >= 90) throw new RangeError(`hole: angle must be between 0 and 90 degrees, got ${angle}`);
+  if (flat !== undefined) checkPositive('hole', 'flat', flat);
   const R = r + tolerance / 2;
   if (axis === 'y') return cylinder(R, length, { segments });
   const section = shape === 'teardrop' ? teardrop(R, { angle, flat, segments }) : shape === 'bridge' ? bridgedCircle(R, { angle, segments }) : circle(R, { segments });
@@ -1111,19 +1274,21 @@ function hole(r = 1, length = 10, opts = {}) {
   return axis === 'x' ? s.rotate(0, 90, 0) : s;
 }
 /** Hexagonal nut pocket cutter: axis Y, top at y = 0. opts: { depth, tolerance=0.2 } */
-function nutPocket(size, opts = {}) {
-  const tolerance = opts.tolerance === undefined ? 0.2 : opts.tolerance;
+function nutPocket(size, opts) {
+  opts = options('nutPocket', opts, ['depth', 'tolerance']);
+  const tolerance = opts.tolerance === undefined ? 0.2 : checkNumber('nutPocket', 'tolerance', opts.tolerance);
   const nut = screw(size).nut;
-  const d = opts.depth === undefined ? nut[1] : opts.depth;
+  const d = opts.depth === undefined ? nut[1] : checkPositive('nutPocket', 'depth', opts.depth);
   const r = (nut[0] + tolerance) / Math.sqrt(3);
   return prism(6, r, d + OVERSHOOT).rotate(0, 30, 0).translate(0, OVERSHOOT / 2 - d / 2, 0);
 }
 /** Heat-set insert hole cutter: axis Y, top at y = 0. opts: { depth, tolerance=0, segments } */
-function heatInsert(size, opts = {}) {
-  const tolerance = opts.tolerance === undefined ? 0 : opts.tolerance;
-  const segments = opts.segments === undefined ? 32 : opts.segments;
+function heatInsert(size, opts) {
+  opts = options('heatInsert', opts, ['depth', 'tolerance', 'segments']);
+  const tolerance = opts.tolerance === undefined ? 0 : checkNumber('heatInsert', 'tolerance', opts.tolerance);
+  const segments = opts.segments === undefined ? 32 : checkInt('heatInsert', 'segments', opts.segments, 3);
   const s = screw(size);
-  const d = opts.depth === undefined ? s.d * 2 : opts.depth;
+  const d = opts.depth === undefined ? s.d * 2 : checkPositive('heatInsert', 'depth', opts.depth);
   return cylinder((s.insert + tolerance) / 2, d + OVERSHOOT, { segments }).translate(0, OVERSHOOT / 2 - d / 2, 0);
 }
 
@@ -1142,7 +1307,7 @@ const AXES = 'xyz';
 
 /** A face of a shape's bounding box: { name, normal, center, min, max, size, u, v }. */
 function Face(shape, name) {
-  const f = FACES[name];
+  const f = entry(FACES, name);
   if (!f) throw new TypeError(`face: expected one of ${FACE_NAMES.join(', ')}, got ${describe(name)}`);
   const b = shape.bounds();
   this.name = name; this.shape = shape;
@@ -1160,12 +1325,12 @@ Face.prototype.point = function (at = [0, 0]) {
   if (Array.isArray(at)) {
     if (at.length !== 2) throw new TypeError(`${this.name} face: an offset is [${this.u}, ${this.v}], got ${describe(at)}`);
     p[AXES.indexOf(this.u)] += checkNumber('at', this.u, at[0]); p[AXES.indexOf(this.v)] += checkNumber('at', this.v, at[1]);
-  } else if (at && typeof at === 'object') {
+  } else if (isPlain(at)) {
+    for (const k of Object.keys(at)) if (AXIS_KEYS.indexOf(k) < 0) throw unknownKey('at', k, AXIS_KEYS, 'offset key');
     for (const k of AXES) if (at[k] !== undefined) p[AXES.indexOf(k)] += checkNumber('at', k, at[k]);
   } else throw new TypeError(`at: expected [u, v] or { x, y, z }, got ${describe(at)}`);
   return p;
 };
-const checkFace = (fn, f) => { if (!isFace(f)) throw new TypeError(`${fn}: expected a face (shape.face('top')), got ${describe(f)}`); return f; };
 
 /** Rotation (degrees about X, Y, Z) that turns +Y onto a unit direction. */
 function rotationToward(n) {
@@ -1177,31 +1342,46 @@ function rotationToward(n) {
   return [tilt, turn, 0];
 }
 /** Put a shape's origin on a point of a face or on an anchor, +Y turned along the normal. */
-function at(shape, target, offset = [0, 0], opts = {}) {
+function at(shape, target, offset, opts) {
+  checkShape('at', 'shape', shape);
+  if (opts === undefined && isPlain(offset)) { // s.at(target, { gap }): the offset is left out
+    const keys = Object.keys(offset);
+    let axes = 0;
+    for (const k of keys) if (AXIS_KEYS.indexOf(k) >= 0) axes++;
+    if (keys.length && !axes) { opts = offset; offset = undefined; }
+    else if (axes && axes < keys.length) throw new TypeError(`at: an offset ({ x, y, z }) and the options ({ gap, orient }) are two arguments: s.at(target, offset, options), got ${describe(offset)}`);
+  }
+  opts = options('at', opts, ['gap', 'orient']);
   const gap = opts.gap === undefined ? 0 : opts.gap;
-  const orient = opts.orient === undefined ? true : opts.orient;
+  const orient = opts.orient === undefined ? true : checkFlag('at', 'orient', opts.orient);
   checkNumber('at', 'gap', gap);
   if (isAnchor(target)) {
     const n = target.normal === null ? [0, 1, 0] : target.normal;
     const p = target.point.map((v, k) => v + n[k] * gap);
-    if (Array.isArray(offset) && offset.length === 3) for (let k = 0; k < 3; k++) p[k] += checkNumber('at', 'xyz'[k], offset[k]);
+    if (offset !== undefined) {
+      if (!Array.isArray(offset) || offset.length !== 3) throw new TypeError(`at: an offset from an anchor is [dx, dy, dz], got ${describe(offset)}`);
+      for (let k = 0; k < 3; k++) p[k] += checkNumber('at', 'xyz'[k], offset[k]);
+    }
     const rot = rotationToward(n);
     const s = orient && target.normal ? shape.rotate(rot[0], rot[1], rot[2]) : shape;
     return s.translate(p[0], p[1], p[2]);
   }
-  const face = checkFace('at', target);
+  if (!isFace(target)) throw new TypeError(`at: expected a face (shape.face('top')) or an anchor (shape.anchor('name')), got ${describe(target)}`);
+  const face = target;
   const f = FACES[face.name];
-  const p = face.point(offset);
+  const p = face.point(offset === undefined ? [0, 0] : offset);
   for (let k = 0; k < 3; k++) p[k] += face.normal[k] * gap;
   const s = orient && (f.rotate[0] || f.rotate[1] || f.rotate[2]) ? shape.rotate(f.rotate[0], f.rotate[1], f.rotate[2]) : shape;
   return s.translate(p[0], p[1], p[2]);
 }
 /** Put a shape on a face of another: its opposite face touches the target face. opts: { at, gap, align } */
-function placeOn(shape, base, faceName = 'top', opts = {}) {
+function placeOn(shape, base, faceName = 'top', opts) {
+  if (opts === undefined && isPlain(faceName)) { opts = faceName; faceName = 'top'; } // placeOn(base, { gap }): on top
+  opts = options('placeOn', opts, ['at', 'gap', 'align']);
   const offset = opts.at === undefined ? [0, 0] : opts.at;
   const gap = opts.gap === undefined ? 0 : opts.gap;
-  const align = opts.align === undefined ? 'center' : opts.align;
-  checkShape('placeOn', 'base', base); checkNumber('placeOn', 'gap', gap);
+  const align = opts.align === undefined ? 'center' : checkOneOf('placeOn', 'align', opts.align, ['center', 'keep']);
+  checkShape('placeOn', 'shape', shape); checkShape('placeOn', 'base', base); checkNumber('placeOn', 'gap', gap);
   const face = new Face(base, faceName);
   const f = FACES[faceName];
   const b = shape.bounds();
@@ -1210,15 +1390,19 @@ function placeOn(shape, base, faceName = 'top', opts = {}) {
   const mine = f.sign > 0 ? b.min[f.axis] : b.max[f.axis];
   d[f.axis] = target[f.axis] + f.sign * gap - mine;
   if (align === 'center') { d[f.u] = target[f.u] - b.center[f.u]; d[f.v] = target[f.v] - b.center[f.v]; }
-  else if (align !== 'keep') throw new TypeError(`placeOn: align must be 'center' or 'keep', got ${describe(align)}`);
   return shape.translate(d[0], d[1], d[2]);
 }
 const RELATIONS = { x: { left: -1, right: 1 }, y: { below: -1, above: 1 }, z: { back: -1, front: 1 } };
 /** Align bounding boxes axis by axis: 'min' | 'center' | 'max', or a side of the other shape to sit against. */
-function alignTo(shape, other, spec = {}, opts = {}) {
+function alignTo(shape, other, spec = {}, opts) {
+  opts = options('alignTo', opts, ['gap']);
   const gap = opts.gap === undefined ? 0 : opts.gap;
-  checkShape('alignTo', 'other', other); checkNonNegative('alignTo', 'gap', gap);
-  if (!spec || typeof spec !== 'object') throw new TypeError(`alignTo: expected { x, y, z }, got ${describe(spec)}`);
+  checkShape('alignTo', 'shape', shape); checkShape('alignTo', 'other', other); checkNonNegative('alignTo', 'gap', gap);
+  if (!isPlain(spec)) throw new TypeError(`alignTo: expected { x, y, z }, got ${describe(spec)}`);
+  for (const k of Object.keys(spec)) {
+    if (k === 'gap') throw new TypeError(`alignTo: gap is an option, after the axes: s.alignTo(other, { x: 'right' }, { gap: ${describe(spec[k])} })`);
+    if (AXIS_KEYS.indexOf(k) < 0) throw unknownKey('alignTo', k, AXIS_KEYS, 'axis');
+  }
   const a = shape.bounds(), b = other.bounds();
   const d = [0, 0, 0];
   for (const k of AXES) {
@@ -1264,9 +1448,10 @@ function overlap(a, b) { checkShape('overlap', 'a', a); checkShape('overlap', 'b
 function interference(a, b) { checkShape('interference', 'a', a); checkShape('interference', 'b', b); return cad.volume(cad.boolean(a.h, b.h, 2)); }
 const intersects = (a, b) => interference(a, b) > 1e-9;
 /** Smallest distance between the surfaces of two shapes; 0 when they touch or overlap. opts: { searchLength } */
-function clearance(a, b, opts = {}) {
+function clearance(a, b, opts) {
+  opts = options('clearance', opts, ['searchLength']);
   checkShape('clearance', 'a', a); checkShape('clearance', 'b', b);
-  if (opts.searchLength !== undefined) checkNumber('clearance', 'searchLength', opts.searchLength);
+  if (opts.searchLength !== undefined) checkPositive('clearance', 'searchLength', opts.searchLength);
   if (interference(a, b) > 1e-9) return 0;
   const L = opts.searchLength === undefined ? diag(a) + diag(b) + 1 : opts.searchLength;
   // Manifold's min-gap cost grows with the search radius (every triangle pair within it is measured),
@@ -1290,7 +1475,8 @@ function toPoint(fn, v) {
 }
 const fmtMm = (v) => (Math.abs(v - Math.round(v)) < 0.005 ? String(Math.round(v)) : v.toFixed(2).replace(/0$/, ''));
 /** A dimension between a and b; returns the length. opts: { label, offset } */
-function dimension(a, b, opts = {}) {
+function dimension(a, b, opts) {
+  opts = options('dimension', opts, ['label', 'offset']);
   let pa = toPoint('dimension', a), pb = toPoint('dimension', b);
   const length = Math.hypot(pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]);
   if (opts.offset !== undefined) { const o = toPoint('dimension', opts.offset); pa = pa.map((v, i) => v + o[i]); pb = pb.map((v, i) => v + o[i]); }
@@ -1349,7 +1535,8 @@ function triangulateRings(rings) {
   return out;
 }
 /** Loft (skin) between 2D profiles stacked along Y. loft([a, b, c], 30) or loft([a, b], [0, 12]); opts: { segments=64 } */
-function loft(profiles, heights = 1, opts = {}) {
+function loft(profiles, heights = 1, opts) {
+  opts = options('loft', opts, ['segments']);
   const segments = opts.segments === undefined ? 64 : opts.segments;
   if (!Array.isArray(profiles) || profiles.length < 2) throw new TypeError(`loft: need an array of at least 2 sketches, got ${describe(profiles)}`);
   for (let i = 0; i < profiles.length; i++) if (!isSketch(profiles[i])) throw new TypeError(`loft: profiles[${i}] must be a 2D sketch, got ${describe(profiles[i])}`);
@@ -1471,7 +1658,8 @@ T.transform = function (m) {
 };
 T.reverse = function () { return new Path(this.points.slice().reverse(), this.closed); };
 T.close = function () { return new Path(this.points, true); };
-T.smooth = function (opts = {}) {
+T.smooth = function (opts) {
+  opts = options('smooth', opts, ['segments']);
   const segments = opts.segments === undefined ? 8 : opts.segments;
   checkInt('smooth', 'segments', segments, 1);
   return new Path(catmullRom(this.points, segments, this.closed), this.closed);
@@ -1511,15 +1699,21 @@ T.bounds = function () {
 T.sweep = function (profile, opts) { return sweep(profile, this, opts); };
 
 /** Polyline through points. opts: { closed, smooth } */
-function path(points, opts = {}) {
-  const closed = !!opts.closed, smooth = opts.smooth === undefined ? false : opts.smooth;
+function path(points, opts) {
+  opts = options('path', opts, ['closed', 'smooth']);
+  const closed = opts.closed === undefined ? false : checkFlag('path', 'closed', opts.closed), smooth = opts.smooth === undefined ? false : opts.smooth;
+  if (smooth !== true && smooth !== false) {
+    if (typeof smooth !== 'number') throw new TypeError(`path: smooth must be true, false or the number of segments between points, got ${describe(smooth)}`);
+    checkInt('path', 'smooth', smooth, 1);
+  }
   let p = new Path(checkPathPoints('path', points), closed);
   if (smooth) p = p.smooth({ segments: smooth === true ? 8 : smooth });
   return p;
 }
 function line(a, b) { return new Path(checkPathPoints('line', [a, b]), false); }
 /** Arc on the ground plane centred on the origin: from +X, `angle` degrees counter-clockwise seen from above. */
-function arc(r = 1, angle = 90, opts = {}) {
+function arc(r = 1, angle = 90, opts) {
+  opts = options('arc', opts, ['segments']);
   checkPositive('arc', 'radius', r); checkNumber('arc', 'angle', angle);
   if (angle === 0) throw new RangeError('arc: angle must not be 0');
   const n = opts.segments === undefined ? Math.max(2, Math.ceil((Math.abs(angle) / 360) * 64)) : opts.segments;
@@ -1529,7 +1723,8 @@ function arc(r = 1, angle = 90, opts = {}) {
   return new Path(pts, Math.abs(Math.abs(angle) - 360) < EPS);
 }
 /** Helix around the Y axis, starting at [r, 0, 0], rising to `height` over `turns` turns. */
-function helix(r = 1, height = 1, turns = 1, opts = {}) {
+function helix(r = 1, height = 1, turns = 1, opts) {
+  opts = options('helix', opts, ['segments']);
   const segments = opts.segments === undefined ? 48 : opts.segments;
   checkPositive('helix', 'radius', r); checkNumber('helix', 'height', height); checkNumber('helix', 'turns', turns);
   if (turns === 0) throw new RangeError('helix: turns must not be 0');
@@ -1540,7 +1735,9 @@ function helix(r = 1, height = 1, turns = 1, opts = {}) {
   return new Path(pts, false);
 }
 /** Cubic Bezier from p0 to p3 with control points p1, p2. */
-function bezier(p0, p1, p2, p3, opts = {}) {
+function bezier(p0, p1, p2, p3, opts) {
+  if (p1 === undefined && Array.isArray(p0) && Array.isArray(p0[0])) throw new TypeError(`bezier: the four points are separate arguments, bezier(p0, p1, p2, p3), got one array of ${p0.length}`);
+  opts = options('bezier', opts, ['segments']);
   const segments = opts.segments === undefined ? 32 : opts.segments;
   const a = checkPathPoint('bezier', p0, 0), b = checkPathPoint('bezier', p1, 1), c = checkPathPoint('bezier', p2, 2), d = checkPathPoint('bezier', p3, 3);
   checkInt('bezier', 'segments', segments, 1);
@@ -1608,7 +1805,8 @@ function pathFrames(points, closed, mode, upHint) {
   return out;
 }
 /** Sweep a 2D profile (or a function of t returning one) along a path. opts: { frame, up, twist, scale, segments } */
-function sweep(profile, p, opts = {}) {
+function sweep(profile, p, opts) {
+  opts = options('sweep', opts, ['frame', 'up', 'twist', 'scale', 'segments']);
   const frame = opts.frame === undefined ? 'minimal' : opts.frame;
   let up = opts.up;
   const twist = opts.twist === undefined ? 0 : opts.twist;
@@ -1620,6 +1818,7 @@ function sweep(profile, p, opts = {}) {
   if (frame !== 'minimal' && frame !== 'upright') throw new TypeError(`sweep: frame must be 'minimal' or 'upright', got ${describe(frame)}`);
   if (up !== undefined) { if (!Array.isArray(up) || up.length !== 3) throw new TypeError('sweep: up must be [x, y, z]'); up = vnorm(up.map((v, i) => checkNumber('sweep', `up[${i}]`, v))); }
   checkNumber('sweep', 'twist', twist);
+  if (Array.isArray(scale) && scale.length !== 2) throw new TypeError(`sweep: scale must be a number or [sx, sy], got ${describe(scale)}`);
   const sx = Array.isArray(scale) ? scale[0] : scale, sy = Array.isArray(scale) ? scale[1] : scale;
   checkPositive('sweep', 'scale', sx); checkPositive('sweep', 'scale', sy);
   checkInt('sweep', 'segments', segments, 3);
@@ -1806,7 +2005,7 @@ function edgeFilter(fn, edges) {
   if (typeof edges === 'function') return edges;
   const names = Array.isArray(edges) ? edges : [edges];
   const fns = names.map((n) => {
-    const f = typeof n === 'string' ? EDGE_FILTERS[n] : undefined;
+    const f = entry(EDGE_FILTERS, n);
     if (!f) throw new TypeError(`${fn}: edges must be 'all', 'top', 'bottom', 'horizontal', 'vertical', 'convex', 'concave', a list of those, or a function, got ${describe(n)}`);
     return f;
   });
@@ -1949,11 +2148,13 @@ function filletPass(shape, kind, amount, o, concavePass) {
   return { shape: wrap(shape, h), count: parts.length };
 }
 /** Round (fillet) or bevel (chamfer) the sharp edges of a solid with planar faces. opts: { edges, segments=8, minAngle=30 } */
-function filletEdges(kind, shape, amount, opts = {}) {
+function filletEdges(kind, shape, amount, opts) {
+  if (!isShape(shape)) throw new TypeError(`${kind}: expected a Shape, got ${describe(shape)}`);
+  opts = options(kind, opts, kind === 'fillet' ? ['edges', 'segments', 'minAngle'] : ['edges', 'minAngle']);
   const edges = opts.edges === undefined ? 'all' : opts.edges;
   const segments = opts.segments === undefined ? 8 : opts.segments;
-  const minAngle = opts.minAngle === undefined ? 30 : opts.minAngle;
-  if (!isShape(shape)) throw new TypeError(`${kind}: expected a Shape, got ${describe(shape)}`);
+  const minAngle = opts.minAngle === undefined ? 30 : checkPositive(kind, 'minAngle', opts.minAngle);
+  if (minAngle >= 180) throw new RangeError(`${kind}: minAngle must be less than 180 degrees, got ${minAngle}`);
   checkPositive(kind, kind === 'fillet' ? 'radius' : 'distance', amount);
   checkInt(kind, 'segments', segments, 1);
   const want = edgeFilter(kind, edges);
@@ -1975,37 +2176,46 @@ P.chamfer = function (d, opts) { return filletEdges('chamfer', this, d, opts); }
 const LAY = { top: [0, 0, 0], bottom: [180, 0, 0], front: [90, 0, 0], back: [90, 180, 0], right: [90, 90, 0], left: [90, -90, 0] };
 const LETTER_OVERLAP = 0.01;
 function toLetterSketch(fn, what, opts) {
-  if (isSketch(what)) return what;
-  if (typeof what === 'string') return text(what, { size: opts.size === undefined ? 6 : opts.size, font: opts.font, align: opts.align === undefined ? 'center' : opts.align });
+  if (isSketch(what)) {
+    for (const k of ['size', 'font', 'align']) if (opts[k] !== undefined) throw new TypeError(`${fn}: ${k} is for text; a sketch is laid as it is drawn (scale or move the sketch itself)`);
+    return what;
+  }
+  if (typeof what === 'string') return textSketch(fn, what, { size: opts.size === undefined ? 6 : opts.size, font: opts.font, align: opts.align === undefined ? 'center' : opts.align });
   throw new TypeError(`${fn}: expected a 2D sketch or a string, got ${describe(what)}`);
 }
 /** The solid of the lettering, placed on the target: from -below to +above along the normal. */
 function lettering(fn, what, target, opts, below, above) {
   const depth = opts.depth === undefined ? 1 : opts.depth;
-  const at = opts.at === undefined ? [0, 0] : opts.at;
+  const at = opts.at;
   const angle = opts.angle === undefined ? 0 : opts.angle;
-  const center = opts.center === undefined ? true : opts.center;
+  const center = opts.center === undefined ? true : checkFlag(fn, 'center', opts.center);
   checkPositive(fn, 'depth', depth); checkNumber(fn, 'angle', angle);
   let sk = toLetterSketch(fn, what, opts);
   if (center) sk = sk.center();
   if (angle) sk = sk.rotate(angle);
   let solid = extrude(sk, below + above).translate(0, -below, 0);
   let point, rot;
-  if (isFace(target)) { rot = LAY[target.name]; point = target.point(at); }
-  else if (isAnchor(target)) { rot = rotationToward(target.normal === null ? [0, 1, 0] : target.normal); point = target.point.map((v, k) => v + (Array.isArray(at) && at.length === 3 ? at[k] : 0)); }
+  if (isFace(target)) { rot = LAY[target.name]; point = target.point(at === undefined ? [0, 0] : at); }
+  else if (isAnchor(target)) {
+    if (at !== undefined) checkVec(fn, 'at (from an anchor, [dx, dy, dz])', at);
+    rot = rotationToward(target.normal === null ? [0, 1, 0] : target.normal); point = target.point.map((v, k) => v + (at === undefined ? 0 : at[k]));
+  }
   else throw new TypeError(`${fn}: expected a face (shape.face('top')) or an anchor, got ${describe(target)}`);
   if (rot[0] || rot[1] || rot[2]) solid = solid.rotate(rot[0], rot[1], rot[2]);
   return solid.translate(point[0], point[1], point[2]);
 }
 /** Raise a sketch or text out of a face by depth. */
-function emboss(shape, what, target, opts = {}) {
+const LETTER_KEYS = ['depth', 'at', 'angle', 'center', 'size', 'font', 'align'];
+function emboss(shape, what, target, opts) {
   if (!isShape(shape)) throw new TypeError(`emboss: expected a Shape, got ${describe(shape)}`);
+  opts = options('emboss', opts, LETTER_KEYS);
   const d = opts.depth === undefined ? 1 : opts.depth;
   return shape.add(lettering('emboss', what, target, Object.assign({}, opts, { depth: d }), LETTER_OVERLAP, d));
 }
 /** Cut a sketch or text into a face by depth. */
-function engrave(shape, what, target, opts = {}) {
+function engrave(shape, what, target, opts) {
   if (!isShape(shape)) throw new TypeError(`engrave: expected a Shape, got ${describe(shape)}`);
+  opts = options('engrave', opts, LETTER_KEYS);
   const d = opts.depth === undefined ? 1 : opts.depth;
   return shape.subtract(lettering('engrave', what, target, Object.assign({}, opts, { depth: d }), d, LETTER_OVERLAP));
 }
@@ -2077,27 +2287,30 @@ function checkImage(fn, img) {
   return img;
 }
 /** A relief plate whose top rises with the image's brightness. opts: { width=50, depth, height=5, base=1, invert, smooth=0, gamma=1, resolution=200, center=true } */
-function heightmap(img, opts = {}) {
+const HEIGHTMAP_KEYS = ['width', 'depth', 'height', 'base', 'invert', 'smooth', 'gamma', 'resolution', 'center'];
+function heightmap(img, opts) { return relief('heightmap', img, options('heightmap', opts, HEIGHTMAP_KEYS)); }
+/** heightmap() for a caller that has checked the option names and reports under its own name. */
+function relief(fn, img, opts) {
   const width = opts.width === undefined ? 50 : opts.width;
   let depth = opts.depth;
   const height = opts.height === undefined ? 5 : opts.height;
   const base = opts.base === undefined ? 1 : opts.base;
-  const invert = !!opts.invert;
+  const invert = opts.invert === undefined ? false : checkFlag(fn, 'invert', opts.invert);
   const smooth = opts.smooth === undefined ? 0 : opts.smooth;
   const gamma = opts.gamma === undefined ? 1 : opts.gamma;
   const resolution = opts.resolution === undefined ? 200 : opts.resolution;
-  const center = opts.center === undefined ? true : opts.center;
-  const src = checkImage('heightmap', img);
-  checkPositive('heightmap', 'width', width); checkNonNegative('heightmap', 'height', height); checkPositive('heightmap', 'base', base);
-  checkInt('heightmap', 'resolution', resolution, 2); checkInt('heightmap', 'smooth', smooth, 0); checkPositive('heightmap', 'gamma', gamma);
+  const center = opts.center === undefined ? true : checkFlag(fn, 'center', opts.center);
+  const src = checkImage(fn, img);
+  checkPositive(fn, 'width', width); checkNonNegative(fn, 'height', height); checkPositive(fn, 'base', base);
+  checkInt(fn, 'resolution', resolution, 2); checkInt(fn, 'smooth', smooth, 0); checkPositive(fn, 'gamma', gamma);
   const isFn = typeof src === 'function';
   if (depth === undefined) depth = isFn ? width : (width * src.height) / src.width;
-  checkPositive('heightmap', 'depth', depth);
+  checkPositive(fn, 'depth', depth);
   const nx = Math.min(resolution, isFn ? resolution : Math.max(2, src.width));
   const nz = Math.max(2, Math.round((nx * depth) / width));
   let image = isFn ? imageFromFunction(nx, nz, (i, j) => {
     const v = src((i / (nx - 1) - (center ? 0.5 : 0)) * width, (j / (nz - 1) - (center ? 0.5 : 0)) * depth);
-    return f32(checkNumber('heightmap', 'function value', v));
+    return f32(checkNumber(fn, 'function value', v));
   }) : src.resize(nx, nz);
   if (smooth) image = image.blur(smooth);
   if (gamma !== 1) image = image.gamma(gamma);
@@ -2113,7 +2326,8 @@ function boxMesh(w, h, dd) {
   return [pos, tris];
 }
 /** A lithophane: thick where dark, thin where light. opts: { width=80, depth, minThickness=0.8, maxThickness=3, border=0, smooth=1, gamma=1, resolution=300, upright=false } */
-function lithophane(img, opts = {}) {
+function lithophane(img, opts) {
+  opts = options('lithophane', opts, ['width', 'depth', 'minThickness', 'maxThickness', 'border', 'smooth', 'gamma', 'resolution', 'upright']);
   const width = opts.width === undefined ? 80 : opts.width;
   const minThickness = opts.minThickness === undefined ? 0.8 : opts.minThickness;
   const maxThickness = opts.maxThickness === undefined ? 3 : opts.maxThickness;
@@ -2121,13 +2335,13 @@ function lithophane(img, opts = {}) {
   const smooth = opts.smooth === undefined ? 1 : opts.smooth;
   const gamma = opts.gamma === undefined ? 1 : opts.gamma;
   const resolution = opts.resolution === undefined ? 300 : opts.resolution;
-  const upright = !!opts.upright;
+  const upright = opts.upright === undefined ? false : checkFlag('lithophane', 'upright', opts.upright);
   const src = checkImage('lithophane', img);
   checkPositive('lithophane', 'width', width); checkPositive('lithophane', 'minThickness', minThickness); checkPositive('lithophane', 'maxThickness', maxThickness);
   checkNonNegative('lithophane', 'border', border);
   if (maxThickness <= minThickness) throw new RangeError('lithophane: maxThickness must be greater than minThickness');
   const d = opts.depth !== undefined ? opts.depth : typeof src === 'function' ? width : (width * src.height) / src.width;
-  let s = heightmap(src, { width, depth: d, height: maxThickness - minThickness, base: minThickness, invert: true, smooth, gamma, resolution });
+  let s = relief('lithophane', src, { width, depth: d, height: maxThickness - minThickness, base: minThickness, invert: true, smooth, gamma, resolution });
   if (border > 0) {
     const outer = boxMesh(width + 2 * border, maxThickness, d + 2 * border), inner = boxMesh(width, maxThickness + 2, d);
     const frame = new Shape(manifoldFromTriangles('lithophane', outer[0], outer[1])).subtract(new Shape(manifoldFromTriangles('lithophane', inner[0], inner[1])));
@@ -2339,7 +2553,9 @@ function svgDeclarations(s, into) {
  * opts: { segments = 16 (per curve; arcs and circles get 4× that per turn), id (only that element and what it holds),
  *         width or height (scale the drawing uniformly to that size in mm) }
  */
-function svg(markup, opts = {}) {
+function svg(markup, opts) { return svgSketch(markup, options('svg', opts, ['segments', 'id', 'width', 'height'])); }
+/** svg() with its options checked; `file` names an imported drawing in the warnings. */
+function svgSketch(markup, opts, file) {
   if (typeof markup !== 'string') throw new TypeError(`svg: expected the SVG markup as a string, got ${describe(markup)}`);
   const segments = opts.segments === undefined ? 16 : opts.segments;
   checkInt('svg', 'segments', segments, 1);
@@ -2360,7 +2576,7 @@ function svg(markup, opts = {}) {
   }
   const src = markup.replace(/<!--[\s\S]*?-->/g, '').replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '').replace(/<\?[\s\S]*?\?>/g, '').replace(/<!DOCTYPE[^>]*>/gi, '');
   const warned = {};
-  const warnOnce = (key, msg) => { if (!warned[key]) { warned[key] = true; cad.warn(opts.file === undefined ? msg : `${opts.file}: ${msg}`); } };
+  const warnOnce = (key, msg) => { if (!warned[key]) { warned[key] = true; cad.warn(file === undefined ? msg : `${file}: ${msg}`); } };
   const stack = [];
   let state = { m: SVG_ID, fill: true, rule: 'nonzero', stroke: false, skip: false, chosen: opts.id === undefined };
   let root = null, found = opts.id === undefined;
@@ -2437,8 +2653,10 @@ function svg(markup, opts = {}) {
 }
 
 /** SVG path data (the d attribute) as a Sketch in its own units, Y flipped to point up. opts: { segments = 16, evenOdd = false } */
-function svgPath(d, opts = {}) {
+function svgPath(d, opts) {
   if (typeof d !== 'string') throw new TypeError(`svgPath: expected path data as a string, got ${describe(d)}`);
+  opts = options('svgPath', opts, ['segments', 'evenOdd']);
+  if (opts.evenOdd !== undefined) checkFlag('svgPath', 'evenOdd', opts.evenOdd);
   const segments = opts.segments === undefined ? 16 : opts.segments;
   checkInt('svgPath', 'segments', segments, 1);
   const rings = svgPathRings(d, segments).map((r) => r.map((p) => [p[0], -p[1]])).filter((r) => r.length >= 3);
@@ -2449,7 +2667,7 @@ function svgPath(d, opts = {}) {
 /** `import logo from './logo.svg'` evaluates to this; `import { markup } from './logo.svg'` is the file's text. */
 function __temenText(name) { return cad.readText(name); }
 function __temenSvg(name, markup) {
-  try { return svg(markup, { file: name }); } catch (e) { e.message = `${name}: ${e.message}`; throw e; }
+  try { return svgSketch(markup, {}, name); } catch (e) { e.message = `${name}: ${e.message}`; throw e; }
 }
 
 // ---- DXF (dxf.js) -------------------------------------------------------------------------------
@@ -2559,16 +2777,17 @@ function dxfSpline(degree, knots, ctrl, weights, per) {
 
 /**
  * The drawing's pieces as polylines in drawing coordinates, with origin and scale applied, plus its dimensions.
- * opts: { layer, origin, scale, segments, file }; dimsOnly reads the dimensions alone (and warns about nothing else).
+ * opts: { layer, origin, scale, segments }; dimsOnly reads the dimensions alone (and warns about nothing else);
+ * `file` names an imported drawing in the warnings.
  */
-function dxfRead(source, fn, opts, dimsOnly) {
+function dxfRead(source, fn, opts, dimsOnly, file) {
   const layer = opts.layer, origin = opts.origin === undefined ? [0, 0] : opts.origin, scale = opts.scale === undefined ? 1 : opts.scale;
   const segments = opts.segments === undefined ? 48 : opts.segments;
   if (layer !== undefined && typeof layer !== 'string') throw new TypeError(`${fn}: layer must be a string, got ${describe(layer)}`);
   checkVec(fn, 'origin', origin, 2); checkPositive(fn, 'scale', scale); checkInt(fn, 'segments', segments, 3);
   const { entities, blocks } = dxfEntities(source, fn);
   const warned = {};
-  const warn = (key, msg) => { if (!warned[key]) { warned[key] = true; cad.warn(`${opts.file === undefined ? '' : `${opts.file}: `}${fn}: ${msg}`); } };
+  const warn = (key, msg) => { if (!warned[key]) { warned[key] = true; cad.warn(`${file === undefined ? '' : `${file}: `}${fn}: ${msg}`); } };
   const pieces = [], dims = [];
   const world = [scale, 0, 0, scale, -origin[0] * scale, -origin[1] * scale];
   const finite = (pts) => pts.every((q) => Number.isFinite(q[0]) && Number.isFinite(q[1]));
@@ -2637,7 +2856,7 @@ function dxfRead(source, fn, opts, dimsOnly) {
       return;
     }
     if (t === 'INSERT') {
-      const name = dxfValue(e, 2, ''), b = blocks[name];
+      const name = dxfValue(e, 2, ''), b = entry(blocks, name);
       if (!b) { warn(`block ${name}`, `INSERT of the block "${name}", which the drawing does not define, is skipped`); return; }
       if (depth > 32) { warn('nest', 'blocks nested more than 32 deep are skipped (a block that inserts itself?)'); return; }
       if (dxfNumber(e, 70, 1) > 1 || dxfNumber(e, 71, 1) > 1) warn('array', 'INSERT arrays (rows and columns) place only the first copy');
@@ -2717,11 +2936,12 @@ function dxfJoin(pieces) {
 }
 
 /** A DXF drawing as a Sketch. opts: { layer, origin: [x, y], scale, segments (per full circle, 48) } */
-function dxf(source, opts = {}) {
+function dxf(source, opts) { return dxfSketch(source, options('dxf', opts, ['layer', 'origin', 'scale', 'segments'])); }
+function dxfSketch(source, opts, file) {
   const fn = 'dxf';
-  const { pieces } = dxfRead(source, fn, opts);
+  const { pieces } = dxfRead(source, fn, opts, false, file);
   const outlines = dxfJoin(pieces);
-  const prefix = opts.file === undefined ? '' : `${opts.file}: `;
+  const prefix = file === undefined ? '' : `${file}: `;
   const open = outlines.filter((o) => !o.closed && o.points.length >= 3).length;
   if (open) cad.warn(`${prefix}${fn}: ${open === 1 ? 'an outline was' : `${open} outlines were`} open and ${open === 1 ? 'has' : 'have'} been closed with a straight line`);
   const rings = outlines.map((o) => o.points).filter((r) => r.length >= 3);
@@ -2732,9 +2952,10 @@ function dxf(source, opts = {}) {
 }
 
 /** The value of a dimension in a DXF drawing (OpenSCAD's dxf_dim): the first one, or the one whose text is `name`. opts: { layer, origin, scale } */
-function dxfDim(source, name, opts = {}) {
-  if (name !== null && typeof name === 'object' && !Array.isArray(name)) { opts = name; name = undefined; }
+function dxfDim(source, name, opts) {
+  if (isPlain(name) && opts === undefined) { opts = name; name = undefined; }
   if (name !== undefined && typeof name !== 'string') throw new TypeError(`dxfDim: name must be a string, got ${describe(name)}`);
+  opts = options('dxfDim', opts, ['layer', 'origin', 'scale']);
   const { dims } = dxfRead(source, 'dxfDim', opts, true);
   const d = dims.find((x) => name === undefined || name === '' || x.name === name);
   if (!d) {
@@ -2751,7 +2972,8 @@ function dxfDim(source, name, opts = {}) {
 }
 
 /** Where the first two loose single lines of a DXF drawing cross, extended if need be (OpenSCAD's dxf_cross). opts: { layer, origin, scale } */
-function dxfCross(source, opts = {}) {
+function dxfCross(source, opts) {
+  opts = options('dxfCross', opts, ['layer', 'origin', 'scale']);
   const { pieces } = dxfRead(source, 'dxfCross', opts);
   const lines = dxfJoin(pieces).filter((o) => !o.closed && o.points.length === 2).slice(0, 2);
   if (lines.length < 2) throw new RangeError(`dxfCross: the drawing needs two lines that touch nothing else${opts.layer === undefined ? '' : ` on layer "${opts.layer}"`}`);
@@ -2764,7 +2986,7 @@ function dxfCross(source, opts = {}) {
 
 /** `import part from './part.dxf'` evaluates to this; `import { source } from './part.dxf'` is the file's text. */
 function __temenDxf(name, source) {
-  try { return dxf(source, { file: name }); } catch (e) { e.message = `${name}: ${e.message}`; throw e; }
+  try { return dxfSketch(source, {}, name); } catch (e) { e.message = `${name}: ${e.message}`; throw e; }
 }
 
 // ---- printability (print.js) -------------------------------------------------------------------
@@ -2833,14 +3055,16 @@ function summarise(faces) {
   return { area, worstAngle: worst, lowest: faces.length ? lowest : null, faces: faces.length };
 }
 /** Overhangs of a shape: { area, worstAngle, lowest, faces } for faces steeper than angle (default 45). */
-function overhangs(s, opts = {}) {
+function overhangs(s, opts) {
+  opts = options('overhangs', opts, ['angle']);
   const angle = opts.angle === undefined ? 45 : opts.angle;
   checkNumber('overhangs', 'angle', angle);
   const m = meshOf('overhangs', s);
   return summarise(overhangFaces(m.positions, m.indices, angle));
 }
 /** Overhangs with nothing of the shape beneath them: islands and bridges. */
-function unsupported(s, opts = {}) {
+function unsupported(s, opts) {
+  opts = options('unsupported', opts, ['angle']);
   const angle = opts.angle === undefined ? 45 : opts.angle;
   checkNumber('unsupported', 'angle', angle);
   const m = meshOf('unsupported', s);
@@ -2849,17 +3073,20 @@ function unsupported(s, opts = {}) {
   return summarise(faces);
 }
 /** The thinnest wall, by casting rays inward from a sample of faces: { thickness, at }. */
-function minWallThickness(s, opts = {}) {
+function minWallThickness(s, opts) {
+  opts = options('minWallThickness', opts, ['samples']);
   const samples = opts.samples === undefined ? 600 : opts.samples;
-  checkPositive('minWallThickness', 'samples', samples);
+  checkInt('minWallThickness', 'samples', samples, 1);
   checkShape('minWallThickness', 'shape', s);
   return cad.minWall(s.h, samples);
 }
 /** A printing verdict: overhang and unsupported areas, the thinnest wall, and the problems found. opts: { angle=45, minWall=0.8, maxUnsupported=1 } */
-function printability(s, opts = {}) {
-  const angle = opts.angle === undefined ? 45 : opts.angle;
-  const minWall = opts.minWall === undefined ? 0.8 : opts.minWall;
-  const maxUnsupported = opts.maxUnsupported === undefined ? 1 : opts.maxUnsupported;
+function printability(s, opts) {
+  opts = options('printability', opts, ['angle', 'minWall', 'maxUnsupported']);
+  const angle = opts.angle === undefined ? 45 : checkNumber('printability', 'angle', opts.angle);
+  const minWall = opts.minWall === undefined ? 0.8 : checkNonNegative('printability', 'minWall', opts.minWall);
+  const maxUnsupported = opts.maxUnsupported === undefined ? 1 : checkNonNegative('printability', 'maxUnsupported', opts.maxUnsupported);
+  checkShape('printability', 'shape', s);
   const over = overhangs(s, { angle }), un = unsupported(s, { angle }), wall = minWallThickness(s);
   const m = meshOf('printability', s);
   const bounds = meshStats(m.positions, m.indices).bounds;
@@ -2884,9 +3111,10 @@ function minkowski(a, b) {
 }
 P.minkowski = function (b) { return minkowski(this, b); };
 /** Round all convex edges and corners with radius r (grows the shape by r). */
-P.round = function (r = 1, opts = {}) {
+P.round = function (r = 1, opts) {
+  opts = options('round', opts, ['segments']);
   const segments = opts.segments === undefined ? 16 : opts.segments;
-  checkPositive('round', 'radius', r);
+  checkPositive('round', 'radius', r); checkInt('round', 'segments', segments, 3);
   return minkowski(this, sphere(r, { segments }));
 };
 /** Unique face planes [nx, ny, nz, d] of a mesh (n . p = d), or null past `limit` planes. */
@@ -2912,9 +3140,10 @@ function facePlanes(shape, limit) {
 }
 const isConvex = (shape) => Math.abs(hull(shape).volume() - shape.volume()) < 1e-6 * Math.max(1, shape.volume());
 /** Shrink the solid inward by t on every face: exact plane trimming for convex solids, a Minkowski difference otherwise. */
-P.erode = function (t = 1, opts = {}) {
+P.erode = function (t = 1, opts) {
+  opts = options('erode', opts, ['segments']);
   const segments = opts.segments === undefined ? 16 : opts.segments;
-  checkPositive('erode', 'thickness', t);
+  checkPositive('erode', 'thickness', t); checkInt('erode', 'segments', segments, 3);
   const planes = isConvex(this) ? facePlanes(this, 128) : null;
   if (planes) {
     let h = this.h;
@@ -2926,12 +3155,13 @@ P.erode = function (t = 1, opts = {}) {
 };
 const SIDES = { top: [0, 1, 0], bottom: [0, -1, 0], left: [-1, 0, 0], right: [1, 0, 0], front: [0, 0, 1], back: [0, 0, -1] };
 /** Hollow a solid to a wall thickness t. opts: { open: 'top' | ['top', 'front'], segments } */
-function shell(shape, t = 1, opts = {}) {
+function shell(shape, t = 1, opts) {
+  opts = options('shell', opts, ['open', 'segments']);
   const open = opts.open === undefined ? [] : opts.open;
   const segments = opts.segments === undefined ? 12 : opts.segments;
-  checkShape('shell', 'shape', shape); checkPositive('shell', 'thickness', t);
-  const opens = (Array.isArray(open) ? open : [open]).filter((o) => o);
-  for (const o of opens) if (!SIDES[o]) throw new TypeError(`shell: open must be one of ${Object.keys(SIDES).join(', ')}, got ${describe(o)}`);
+  checkShape('shell', 'shape', shape); checkPositive('shell', 'thickness', t); checkInt('shell', 'segments', segments, 3);
+  const opens = Array.isArray(open) ? open : [open];
+  for (const o of opens) if (typeof o !== 'string' || Object.keys(SIDES).indexOf(o) < 0) throw new TypeError(`shell: open must be one of ${Object.keys(SIDES).join(', ')} (or an array of them), got ${describe(o)}`);
   const inner = shape.erode(t, { segments });
   if (inner.isEmpty()) throw new RangeError(`shell: thickness ${t} leaves no interior; use a smaller value`);
   const cutters = [inner];
@@ -2955,7 +3185,8 @@ P.shell = function (t, opts) { return shell(this, t, opts); };
  * tan(angle), like OpenSCAD's roof(). Built exactly: per outline edge, hull(cone at a, cone at b) is cut
  * from the straight extrusion, in small batches with staggered cone heights. opts: { angle=45, segments=16, tolerance=0.01 }
  */
-function roof(sk, opts = {}) {
+function roof(sk, opts) {
+  opts = options('roof', opts, ['angle', 'segments', 'tolerance']);
   const angle = opts.angle === undefined ? 45 : opts.angle;
   const segments = opts.segments === undefined ? 16 : opts.segments;
   const tolerance = opts.tolerance === undefined ? 0.01 : opts.tolerance;
@@ -2995,9 +3226,9 @@ Q.roof = function (opts) { return roof(this, opts); };
 // Involute spur and helical gears and a matching rack, metric module system. The gear lies on the
 // ground plane with its axis along Y and its base on y = 0, like an extrude; tooth 0 points along +X.
 
-function checkGearOpts(fn, o) {
+function checkGearOpts(fn, o, teeth = 20) {
   const m = o.module === undefined ? 1 : o.module;
-  const z = o.teeth === undefined ? 20 : o.teeth;
+  const z = o.teeth === undefined ? teeth : o.teeth;
   const pa = o.pressureAngle === undefined ? 20 : o.pressureAngle;
   const backlash = o.backlash === undefined ? 0 : o.backlash;
   const segments = o.segments === undefined ? 8 : o.segments;
@@ -3017,18 +3248,21 @@ function gearDistance(module, teeth1, teeth2) {
  *         addendum = 1, dedendum = 1.25 (tooth height above and below the pitch circle, in modules) }
  * backlash thins every tooth at the pitch circle by that many mm (give each gear of a pair half the play wanted).
  */
-function gear2d(opts = {}) {
-  const g = checkGearOpts('gear2d', opts);
+const GEAR2D_KEYS = ['module', 'teeth', 'pressureAngle', 'backlash', 'bore', 'segments', 'addendum', 'dedendum'];
+function gear2d(opts) { return gearOutline('gear2d', options('gear2d', opts, GEAR2D_KEYS)); }
+/** gear2d() for a caller that has checked the option names and reports under its own name. */
+function gearOutline(fn, opts) {
+  const g = checkGearOpts(fn, opts);
   const bore = opts.bore === undefined ? 0 : opts.bore;
   const addendum = opts.addendum === undefined ? 1 : opts.addendum;
   const dedendum = opts.dedendum === undefined ? 1.25 : opts.dedendum;
-  checkNonNegative('gear2d', 'bore', bore); checkPositive('gear2d', 'addendum', addendum); checkPositive('gear2d', 'dedendum', dedendum);
+  checkNonNegative(fn, 'bore', bore); checkPositive(fn, 'addendum', addendum); checkPositive(fn, 'dedendum', dedendum);
   const m = g.m, z = g.z;
   const rp = (m * z) / 2, rb = rp * Math.cos(rad(g.pa)), ra = rp + addendum * m, rf = Math.max(rp - dedendum * m, m * 0.25);
-  if (bore / 2 >= rf) throw new RangeError(`gear2d: bore ${bore} does not fit inside the root circle (diameter ${(2 * rf).toFixed(2)})`);
+  if (bore / 2 >= rf) throw new RangeError(`${fn}: bore ${bore} does not fit inside the root circle (diameter ${(2 * rf).toFixed(2)})`);
   const inv = (a) => Math.tan(a) - a;
   const half = Math.PI / (2 * z) - g.backlash / (2 * rp) + inv(rad(g.pa)); // half the tooth angle at the base circle
-  if (half <= 0) throw new RangeError(`gear2d: backlash ${g.backlash} leaves no tooth`);
+  if (half <= 0) throw new RangeError(`${fn}: backlash ${g.backlash} leaves no tooth`);
   // involute parameter at the tip, stopped early if the two flanks would cross (pointed teeth)
   let tMax = Math.sqrt(Math.max(0, ra * ra - rb * rb)) / rb;
   while (tMax > 0 && tMax - Math.atan(tMax) >= half) tMax *= 0.98;
@@ -3061,15 +3295,18 @@ function gear2d(opts = {}) {
  * An involute spur or helical gear: axis along Y, base on y = 0, tooth 0 pointing along +X.
  * opts: gear2d's, plus { thickness = 5, helix = 0 (helix angle in degrees; the sign is the hand) }
  */
-function gear(opts = {}) {
-  const g = checkGearOpts('gear', opts);
+const GEAR_KEYS = GEAR2D_KEYS.concat(['thickness', 'helix']);
+function gear(opts) { return gearSolid('gear', options('gear', opts, GEAR_KEYS)); }
+/** gear() for a caller that has checked the option names and reports under its own name. */
+function gearSolid(fn, opts) {
+  const g = checkGearOpts(fn, opts);
   const thickness = opts.thickness === undefined ? 5 : opts.thickness;
   const helix = opts.helix === undefined ? 0 : opts.helix;
-  checkPositive('gear', 'thickness', thickness); checkNumber('gear', 'helix', helix);
-  if (Math.abs(helix) >= 60) throw new RangeError(`gear: helix angle must be under 60 degrees, got ${helix}`);
+  checkPositive(fn, 'thickness', thickness); checkNumber(fn, 'helix', helix);
+  if (Math.abs(helix) >= 60) throw new RangeError(`${fn}: helix angle must be under 60 degrees, got ${helix}`);
   const rp = (g.m * g.z) / 2;
   const twist = helix ? deg((thickness * Math.tan(rad(helix))) / rp) : 0;
-  const sk = gear2d(opts);
+  const sk = gearOutline(fn, opts);
   return extrude(sk, thickness, twist ? { twist, slices: Math.max(8, Math.ceil(Math.abs(twist) / 2)) } : {});
 }
 /**
@@ -3077,16 +3314,18 @@ function gear(opts = {}) {
  * tooth meets a gap; a helical pair gets opposite hands. Returns [first, second].
  * opts: gear()'s with teeth: [teeth1, teeth2]; backlash is split between the two.
  */
-function gearPair(opts = {}) {
+function gearPair(opts) {
+  opts = options('gearPair', opts, GEAR_KEYS);
   const teeth = opts.teeth === undefined ? [20, 10] : opts.teeth;
   if (!Array.isArray(teeth) || teeth.length !== 2) throw new TypeError(`gearPair: teeth must be [teeth1, teeth2], got ${describe(teeth)}`);
   const m = opts.module === undefined ? 1 : opts.module;
   const backlash = opts.backlash === undefined ? 0 : opts.backlash;
   const helix = opts.helix === undefined ? 0 : opts.helix;
-  const a = gear(Object.assign({}, opts, { teeth: teeth[0], backlash: backlash / 2, helix }));
+  checkNonNegative('gearPair', 'backlash', backlash); checkNumber('gearPair', 'helix', helix);
+  const a = gearSolid('gearPair', Object.assign({}, opts, { teeth: teeth[0], backlash: backlash / 2, helix }));
   // the second gear faces the first with its 180-degree direction: a gap must be there
   const turn = teeth[1] % 2 === 0 ? 180 / teeth[1] : 0;
-  const b = gear(Object.assign({}, opts, { teeth: teeth[1], backlash: backlash / 2, helix: -helix }))
+  const b = gearSolid('gearPair', Object.assign({}, opts, { teeth: teeth[1], backlash: backlash / 2, helix: -helix }))
     .rotate(0, turn, 0)
     .translate(gearDistance(m, teeth[0], teeth[1]), 0, 0);
   return [a, b];
@@ -3096,8 +3335,9 @@ function gearPair(opts = {}) {
  * pointing toward -Z, base on y = 0, centred along X.
  * opts: { module = 1, teeth = 10, pressureAngle = 20, backlash = 0, thickness = 5, height (backing below the roots) = 2 * module }
  */
-function rack(opts = {}) {
-  const g = checkGearOpts('rack', Object.assign({ teeth: 10 }, opts));
+function rack(opts) {
+  opts = options('rack', opts, ['module', 'teeth', 'pressureAngle', 'backlash', 'thickness', 'height']);
+  const g = checkGearOpts('rack', opts, 10);
   const thickness = opts.thickness === undefined ? 5 : opts.thickness;
   const height = opts.height === undefined ? 2 * g.m : opts.height;
   checkPositive('rack', 'thickness', thickness); checkPositive('rack', 'height', height);
@@ -3125,19 +3365,21 @@ function rack(opts = {}) {
  * A helical ring meshes with gears of the same helix sign. A small pinion inside a ring hits the ring's tips
  * unless they are shortened; planetary() works out the addendum, and ringAddendum() gives it for a pair.
  */
-function ringGear(opts = {}) {
-  const g = checkGearOpts('ringGear', Object.assign({ teeth: 36 }, opts));
+function ringGear(opts) { return ringSolid('ringGear', options('ringGear', opts, ['module', 'teeth', 'pressureAngle', 'thickness', 'rim', 'backlash', 'helix', 'segments', 'addendum'])); }
+/** ringGear() for a caller that has checked the option names and reports under its own name. */
+function ringSolid(fn, opts) {
+  const g = checkGearOpts(fn, opts, 36);
   const thickness = opts.thickness === undefined ? 5 : opts.thickness;
   const rim = opts.rim === undefined ? 2 * g.m : opts.rim;
   const helix = opts.helix === undefined ? 0 : opts.helix;
   const addendum = opts.addendum === undefined ? 1 : opts.addendum;
-  checkPositive('ringGear', 'thickness', thickness); checkPositive('ringGear', 'rim', rim); checkNumber('ringGear', 'helix', helix);
-  checkPositive('ringGear', 'addendum', addendum);
-  if (Math.abs(helix) >= 60) throw new RangeError(`ringGear: helix angle must be under 60 degrees, got ${helix}`);
+  checkPositive(fn, 'thickness', thickness); checkPositive(fn, 'rim', rim); checkNumber(fn, 'helix', helix);
+  checkPositive(fn, 'addendum', addendum);
+  if (Math.abs(helix) >= 60) throw new RangeError(`${fn}: helix angle must be under 60 degrees, got ${helix}`);
   const rp = (g.m * g.z) / 2;
   // the tooth spaces are an external gear's teeth, made 1.25 modules tall so the ring's roots leave the
   // same tip clearance an external gear does; offset widens them so the circular space grows by backlash
-  let cut = gear2d({ module: g.m, teeth: g.z, pressureAngle: g.pa, segments: g.segments, addendum: 1.25 });
+  let cut = gearOutline(fn, { module: g.m, teeth: g.z, pressureAngle: g.pa, segments: g.segments, addendum: 1.25 });
   if (g.backlash > 0) cut = cut.offset((g.backlash * Math.cos(rad(g.pa))) / 2, { join: 'round', segments: 8 });
   const n = Math.max(96, 8 * g.z);
   const round = (r) => circle(r / Math.cos(Math.PI / n), { segments: n }); // circumscribed, so the facets sit on r
@@ -3166,7 +3408,8 @@ function ringAddendum(ringTeeth, pinionTeeth, pressureAngle = 20) {
  * opts: { module = 1, sun = 12, planet = 12, planets = 3, thickness = 5, pressureAngle = 20, helix = 0,
  *         backlash = 0 (split between the two meshes), rim, sunBore = 0, planetBore = 0, segments = 8 }
  */
-function planetary(opts = {}) {
+function planetary(opts) {
+  opts = options('planetary', opts, ['module', 'sun', 'planet', 'planets', 'thickness', 'pressureAngle', 'helix', 'backlash', 'rim', 'sunBore', 'planetBore', 'segments']);
   const m = opts.module === undefined ? 1 : opts.module;
   const zs = opts.sun === undefined ? 12 : opts.sun;
   const zp = opts.planet === undefined ? 12 : opts.planet;
@@ -3176,6 +3419,8 @@ function planetary(opts = {}) {
   const helix = opts.helix === undefined ? 0 : opts.helix;
   checkPositive('planetary', 'module', m); checkInt('planetary', 'sun', zs, 5); checkInt('planetary', 'planet', zp, 5); checkInt('planetary', 'planets', N, 1);
   checkNonNegative('planetary', 'backlash', backlash);
+  if (opts.sunBore !== undefined) checkNonNegative('planetary', 'sunBore', opts.sunBore);
+  if (opts.planetBore !== undefined) checkNonNegative('planetary', 'planetBore', opts.planetBore);
   const zr = zs + 2 * zp;
   if ((zs + zr) % N !== 0) {
     const ok = [];
@@ -3188,19 +3433,19 @@ function planetary(opts = {}) {
   const common = { module: m, thickness, pressureAngle: opts.pressureAngle, segments: opts.segments, backlash: backlash / 2 };
   // planet 1 at +X with its tooth 0 facing the ring's space there; the sun turns half a tooth when that
   // planet also has a tooth facing the sun (an even count)
-  const sun = gear(Object.assign({}, common, { teeth: zs, helix, bore: opts.sunBore }))
+  const sun = gearSolid('planetary', Object.assign({}, common, { teeth: zs, helix, bore: opts.sunBore }))
     .rotate(0, zp % 2 === 0 ? 180 / zs : 0, 0).name('sun');
   // carrier kinematics: moving a planet round the orbit by θ, with the sun held, turns it by θ × sun / planet
   // about its own axis (beyond the orbit's own turn); the ring then moves by whole teeth, so it can stay put
   const planets = [];
   for (let i = 0; i < N; i++) {
     const a = (360 * i) / N;
-    planets.push(gear(Object.assign({}, common, { teeth: zp, helix: -helix, bore: opts.planetBore }))
+    planets.push(gearSolid('planetary', Object.assign({}, common, { teeth: zp, helix: -helix, bore: opts.planetBore }))
       .rotate(0, (a * zs) / zp, 0).translate(d, 0, 0).rotate(0, a, 0).name(`planet ${i + 1}`));
   }
   const tips = ringAddendum(zr, zp, opts.pressureAngle === undefined ? 20 : opts.pressureAngle);
   if (tips < 0.3) throw new RangeError(`planetary: ${zp}-tooth planets are too small for a ${zr}-tooth ring (the ring's teeth would have to be cut to ${tips.toFixed(2)} module); use bigger planets`);
-  const ring = ringGear(Object.assign({}, common, { teeth: zr, helix: -helix, rim: opts.rim, addendum: tips })).name('ring');
+  const ring = ringSolid('planetary', Object.assign({}, common, { teeth: zr, helix: -helix, rim: opts.rim, addendum: tips })).name('ring');
   return { sun, planets, ring };
 }
 
@@ -3253,24 +3498,24 @@ function parseThreadSize(size) {
  *         tolerance (mm on the diameter: the rod shrinks, the hole grows; a hole defaults to the printer's
  *         holeCompensation once printer() is declared), chamfer = true (45° lead-in at both ends), segments = 32 (per turn) }
  */
-function thread(opts = {}) {
+function thread(opts) {
+  opts = options('thread', opts, ['size', 'pitch', 'length', 'internal', 'profile', 'starts', 'left', 'tolerance', 'chamfer', 'segments']);
   const spec = parseThreadSize(opts.size === undefined ? 'M8' : opts.size);
   const pitch = opts.pitch !== undefined ? opts.pitch : spec.pitch;
   if (pitch === undefined) throw new TypeError('thread: give a pitch for a diameter size, or a size like \'M8\'');
   checkPositive('thread', 'pitch', pitch);
   const length = opts.length === undefined ? 10 : opts.length;
-  const internal = !!opts.internal;
+  const internal = opts.internal === undefined ? false : checkFlag('thread', 'internal', opts.internal);
   const profileName = opts.profile !== undefined ? opts.profile : spec.profile !== undefined ? spec.profile : 'iso';
   const starts = opts.starts !== undefined ? opts.starts : spec.starts !== undefined ? spec.starts : 1;
-  const left = !!opts.left;
-  const chamfer = opts.chamfer === undefined ? true : !!opts.chamfer;
+  const left = opts.left === undefined ? false : checkFlag('thread', 'left', opts.left);
+  const chamfer = opts.chamfer === undefined ? true : checkFlag('thread', 'chamfer', opts.chamfer);
   const segments = opts.segments === undefined ? 32 : opts.segments;
   let tolerance = opts.tolerance;
   if (tolerance === undefined) { const pp = printProfile(); tolerance = internal && pp.declared ? pp.holeCompensation : 0; }
   checkPositive('thread', 'length', length); checkInt('thread', 'starts', starts, 1); checkInt('thread', 'segments', segments, 8);
   checkNonNegative('thread', 'tolerance', tolerance);
-  const prof = typeof profileName === 'string' ? THREAD_PROFILES[profileName] : undefined;
-  if (!prof) throw new TypeError(`thread: profile must be 'iso', 'trapezoid' or 'square', got ${describe(profileName)}`);
+  const prof = THREAD_PROFILES[checkOneOf('thread', 'profile', profileName, ['iso', 'trapezoid', 'square'])];
   const form = internal ? prof.internal : prof.external;
   const d = spec.d;
   if (pitch >= d / 2) throw new RangeError(`thread: pitch ${pitch} is too coarse for a ${d} mm thread`);
@@ -3381,11 +3626,13 @@ function spreadPoints(region, n) {
  *         tolerance = 0.2 (added to the dowel holes' diameter), wall = 1.5 (least material around a hole),
  *         layout = false (turn every piece onto a cut face, side by side on the plate, gap = 5) }
  */
-function split(shape, at, opts = {}) {
+function split(shape, at, opts) {
   checkShape('split', 'shape', shape);
-  if (!at || typeof at !== 'object' || Array.isArray(at)) throw new TypeError(`split: expected a plane like { y: 40 } or { x: [-30, 30] }, got ${describe(at)}`);
+  opts = options('split', opts, ['dowels', 'dowelDiameter', 'dowelLength', 'tolerance', 'wall', 'layout', 'gap']);
+  const layout = opts.layout === undefined ? false : checkFlag('split', 'layout', opts.layout);
+  if (!isPlain(at)) throw new TypeError(`split: expected a plane like { y: 40 } or { x: [-30, 30] }, got ${describe(at)}`);
   const keys = Object.keys(at);
-  if (keys.length !== 1 || !SPLIT_TURN[keys[0]]) throw new TypeError(`split: give exactly one axis, x, y or z, got ${describe(at)}`);
+  if (keys.length !== 1 || AXIS_KEYS.indexOf(keys[0]) < 0) throw new TypeError(`split: give exactly one axis, x, y or z, got ${describe(at)}`);
   const axis = keys[0];
   const values = (Array.isArray(at[axis]) ? at[axis] : [at[axis]]).map((v, i) => checkNumber('split', `${axis}[${i}]`, v)).sort((p, q) => p - q);
   if (!values.length) throw new TypeError('split: give at least one position');
@@ -3437,7 +3684,7 @@ function split(shape, at, opts = {}) {
     }
   }
   let out;
-  if (opts.layout) {
+  if (layout) {
     // every piece on a cut face: the first one flips its top cut face down, the others already sit on one
     const laid = pieces.map((p, i) => (i === 0 ? p.rotate(180, 0, 0) : p).onPlate());
     for (const p of pins) laid.push(p.onPlate());
@@ -3511,10 +3758,24 @@ function collect(items, nameHint) {
   }
   return out;
 }
+const SHOW_KEYS = ['name', 'color', 'ghost', 'hidden'];
 /** show(shape | [shapes], { name, color, ghost, hidden }) */
 const show = (...args) => {
   const last = args[args.length - 1];
-  const opts = args.length > 1 && last && typeof last === 'object' && !isShape(last) && !Array.isArray(last) ? args.pop() : null;
+  let opts = null;
+  if (args.length > 1 && isPlain(last)) {
+    // a trailing { ... } is the options, unless it holds shapes: then it is named parts, like a returned { body, lid }
+    let parts = false, settings = false;
+    for (const k of Object.keys(last)) {
+      const v = last[k];
+      if (SHOW_KEYS.indexOf(k) >= 0 && !isShape(v)) settings = true;
+      else if (isShape(v) || Array.isArray(v) || isPlain(v)) parts = true;
+    }
+    if (parts && settings) throw new TypeError(`show: an object after the shapes is either the options ({ ${SHOW_KEYS.join(', ')} }) or named parts ({ body, lid }), not both, got keys ${Object.keys(last).join(', ')}`);
+    if (!parts) opts = options('show', args.pop(), SHOW_KEYS);
+  }
+  if (opts && opts.ghost !== undefined) checkFlag('show', 'ghost', opts.ghost);
+  if (opts && opts.hidden !== undefined) checkFlag('show', 'hidden', opts.hidden);
   for (let s of collect(args)) {
     if (opts) {
       if (opts.name !== undefined) s = s.name(opts.name);
@@ -3546,6 +3807,11 @@ export async function run(result) {
     parts.push({ h: s.h, name, named: s.meta.name !== undefined, color: s.colorValue, ghost: !!s.meta.ghost, hidden: !!s.meta.hidden });
   }
   return { parts, profile: declaredProfile };
+}
+
+// a sketch method called on a pen: the outline was never closed, which reads better than "extrude is not a function"
+for (const k of Object.keys(Q)) {
+  if (B[k] === undefined) B[k] = function () { throw new TypeError(`${k}: the outline is not closed yet: finish the pen with .close() first (sketch()...close().${k}(...))`); };
 }
 
 export const api = {

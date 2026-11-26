@@ -55,6 +55,7 @@ Scripts run on TemenCAD's own engine in every host (browser, CLI, phone), which 
 
 ## Common errors
 
+- "sphere: unknown option 'segment' (did you mean 'segments'?); the options are segments", "cylinder: center must be true or false, got 1", "grid: counts must be [nx, nz], got 3": every function checks its arguments, and a misspelt option, an argument of the wrong kind or a value out of range stops the build instead of building from a default. The message names the function and what it takes; fix that call.
 - "mesh is not a closed, manifold solid": a hand-built `polyhedron` or a sweep whose bend is tighter than the profile. Increase the bend radius or the segment length.
 - "X is empty (no volume) and was skipped": a subtraction removed everything, or a sketch was extruded with height 0.
 - An imported file is "not a script, font, mesh, image, SVG or DXF file": only `.js`, `.mjs`, `.json`, `.ttf`, `.otf`, `.stl`, `.png`, `.jpg`, `.svg`, `.dxf` can be imported.

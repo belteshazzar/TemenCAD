@@ -26,11 +26,11 @@
       <aside class="toc" aria-label="Sections"><div class="toc-title">On this page</div><ol id="toc"></ol></aside>
     <main class="api">
 <h2>TemenCAD API</h2>
-      <p class="lead">Your script is JavaScript (a strict subset; see <em>Script language</em> at the end). Return a shape (or an array of shapes), or call <code>show(shape)</code>. Units are millimetres, Y is up, the build plate is y&nbsp;=&nbsp;0. Every operation returns a new shape; nothing is mutated.</p>
+      <p class="lead">Your script is JavaScript (a strict subset; see <em>Script language</em> at the end). Return a shape (or an array of shapes), or call <code>show(shape)</code>. Units are millimetres, Y is up, the build plate is y&nbsp;=&nbsp;0. Every operation returns a new shape; nothing is mutated. Arguments are checked: a misspelt option, an argument of the wrong kind or a value out of range stops the build with an error that names the function and says what it takes.</p>
       <h3>3D primitives</h3>
       <pre>box(w, h, d)                                      // box centred on the origin; box(10) is a cube
 box([x, y, z]) / box({ x, y, z })                 // the size as an array or an object (vectors you already have)
-box({ x, y, z, center: false })                   // corner on the origin; also box([x, y, z], { center }), box({ size, center })
+box({ x, y, z, center: false })                   // corner on the origin; also box(w, h, d, { center }), box([x, y, z], { center }), box({ size, center })
 cone(r, h)                                        // cone along Y with base radius r
 cube(size)                                        // alias of box
 cylinder(r, h, { segments, center })              // along Y, centred; center: false puts the base on y = 0
@@ -71,7 +71,8 @@ sk.transform([[a, b, tx], [c, d, ty], [0, 0, 1]]) // affine map (3x3, 2x3 or 2x2
 bridgedCircle(r, { angle, segments })             // circle with a flat ceiling above `angle` from vertical, for the slicer to bridge
 square(size)                                      // alias of rect
 sk.subtract(other)                                // 2D difference
-text(str, { size, font, align, letterSpacing })   // outline, baseline y = 0; align 'left' | 'center' | 'right'
+text(str, { size, font, align, letterSpacing, kerning, curveSegments })  // outline, baseline y = 0; align 'left' | 'center' | 'right';
+                                                  //   kerning: false sets letters by their advance alone; curveSegments (8) is the points per curve
 sk.toPolygons()                                   // outline rings as [[x, y], ...][]
 sk.translate(x, y)                                // move
 // fonts: 'Inter' (default), 'Inter Bold', 'Nunito Bold', 'Source Serif 4', 'JetBrains Mono', or an imported .ttf</pre>
@@ -192,7 +193,7 @@ sharpEdges(s, minAngle)                           // the edges found: [{ p0, p1,
 // less than minAngle (30°) are left alone, so the facets of cylinders and spheres are not treated as edges.
 // Convex edges lose material, concave edges (where a boss meets a plate) gain a fillet. Corners are mitred.</pre>
       <h3>Lettering on a face</h3>
-      <pre>s.emboss(sketch | 'text', face | anchor, { depth, at, angle, size, font, center })  // raise a sketch or text out of a face by depth (default 1)
+      <pre>s.emboss(sketch | 'text', face | anchor, { depth, at, angle, size, font, align, center })  // raise a sketch or text out of a face by depth (default 1)
 s.engrave(sketch | 'text', face | anchor, opts)   // cut it in by depth
 // Laid on the face so it reads from outside: top as a drawing seen from above; front, back, left and right upright with
 // x to the viewer's right; bottom seen from below. Centred on the face (or on at: [u, v]) unless center is false;
@@ -206,8 +207,9 @@ s.anchor(name)                                    // get it back: { name, point,
 s.at(anchor, [dx, dy, dz]?, { gap })              // put s's origin on an anchor, +Y turned along its direction (if it has one)
 a.alignTo(b, { x, y, z }, { gap })                // per axis: 'min' | 'center' | 'max' match that side of b, or sit against it:
                                                   //   x: 'left' | 'right', y: 'below' | 'above', z: 'back' | 'front'; axes left out stay put
-s.at(face, [u, v], { gap, orient })               // put s's origin on the face with +Y along the normal: cutters and bosses built on y = 0 land on it
+s.at(face, [u, v]?, { gap, orient })              // put s's origin on the face with +Y along the normal: cutters and bosses built on y = 0 land on it
 part.placeOn(base, 'top', { at, gap, align })     // part's opposite face touches base's face, centred on it (align 'keep' only moves along the normal)
+// The offset of at() and the face of placeOn() can be left out before the options: s.at(face, { gap: 1 }), part.placeOn(base, { gap: 0.2 }).
 distance(a, b)                                    // between faces (along the first one's normal), anchors, [x, y, z] points, in any mix
 gridPattern(nu, nv, du, dv)                       // nu × nv [u, v] points at that pitch, centred
 rectPattern(w, d)                                 // the four corners of a w × d rectangle as [u, v] points
@@ -233,20 +235,21 @@ union(a, b, ...)                                  // merge; arrays of shapes are
       <h3>Arrays (return arrays; wrap in union() to merge)</h3>
       <pre>grid(s, [nx, nz], [dx, dz], { center })           // nx × nz copies on the ground plane
 linearArray(s, count, [dx, dy, dz])               // count copies stepped by a vector (a number = X step)
-polarArray(s, count, { radius, axis, start, sweep }) // count copies around an axis; sweep in degrees</pre>
+polarArray(s, count, { radius, axis, start, sweep, rotateCopies })  // count copies around an axis; sweep in degrees;
+                                                  //   rotateCopies: false moves each copy round the circle without turning it</pre>
       <h3>Gears</h3>
-      <pre>gear({ module, teeth, pressureAngle, thickness, helix, backlash, bore })  // involute spur gear (helix: angle in degrees, sign is the hand);
+      <pre>gear({ module, teeth, pressureAngle, thickness, helix, backlash, bore, segments })  // involute spur gear (helix: angle in degrees, sign is the hand);
                                                   //   axis Y, base on y = 0, tooth 0 along +X. Defaults: module 1, 20 teeth, 20°, 5 mm thick
-gear2d({ module, teeth, pressureAngle, backlash, bore, addendum, dedendum })  // its outline as a 2D sketch;
+gear2d({ module, teeth, pressureAngle, backlash, bore, addendum, dedendum, segments })  // its outline as a 2D sketch;
                                                   //   addendum / dedendum: tooth height above / below the pitch circle in modules (1, 1.25)
 gearDistance(module, teeth1, teeth2)              // centre distance of a meshing pair: module × (teeth1 + teeth2) / 2
 gearPair({ module, teeth: [t1, t2], ... })        // [first, second]: second along +X at gearDistance, turned to mesh; helical pairs get opposite hands
 rack({ module, teeth, pressureAngle, thickness, height, backlash })  // straight rack: pitch line along X at z = 0, teeth toward -Z
-ringGear({ module, teeth, thickness, rim, backlash, helix, addendum })  // internal gear: teeth inside a rim, centred, a tooth space along +X;
+ringGear({ module, teeth, pressureAngle, thickness, rim, backlash, helix, addendum, segments })  // internal gear: teeth inside a rim, centred, a tooth space along +X;
                                                   //   an external gear meshes inside it at module × (ring - gear teeth) / 2
 ringAddendum(ringTeeth, pinionTeeth, pressureAngle)  // the ring tooth height (≤ 1 module) that keeps that pinion clear of the ring's tips;
                                                   //   pinions under about 15 teeth need it: ringGear({ ..., addendum: ringAddendum(36, 12) })
-planetary({ module, sun, planet, planets, thickness, backlash, helix, rim, sunBore, planetBore })  // { sun, planets: [...], ring },
+planetary({ module, sun, planet, planets, thickness, pressureAngle, backlash, helix, rim, sunBore, planetBore, segments })  // { sun, planets: [...], ring },
                                                   //   assembled and phased; ring teeth = sun + 2 × planet; (sun + ring) must divide by planets;
                                                   //   the ring's tips are shortened with ringAddendum() when the planets are small
 // Give printed pairs backlash: 0.1–0.2 mm (gearPair splits it between the two). Cut gears under 17 teeth (at 20°) are undercut at the root;
@@ -260,12 +263,12 @@ planetary({ module, sun, planet, planets, thickness, backlash, helix, rim, sunBo
 // chamfer (default true): a 45° lead-in on rods, flared entries on holes, at both ends; give a hole cutter the hole's exact length
 // segments: samples per turn (32); an M8 × 20 rod is about 40k triangles</pre>
       <h3>Holes and screw helpers (cutters to subtract)</h3>
-      <pre>hole(r, length, { axis, shape, angle, flat, tolerance })  // centred on the origin along axis 'x' | 'y' | 'z'; horizontal holes get shape
+      <pre>hole(r, length, { axis, shape, angle, flat, tolerance, segments })  // centred on the origin along axis 'x' | 'y' | 'z'; horizontal holes get shape
                                                   //   'teardrop' (default: a 45° point on top) | 'bridge' (flat ceiling) | 'round'
-heatInsert(size, { depth, tolerance })            // hole for a heat-set insert (axis Y, top surface at y = 0)
+heatInsert(size, { depth, tolerance, segments })  // hole for a heat-set insert (axis Y, top surface at y = 0)
 nutPocket(size, { depth, tolerance })             // hexagonal nut pocket
 screw(size)                                       // dimensions: { d, clearance, head, csk, nut, insert, tap }
-screwHole(size, length, { type, tolerance, bridge })  // type 'clearance' | 'tap' | 'countersunk' | 'counterbore' (axis Y, top at y = 0);
+screwHole(size, length, { type, tolerance, bridge, headDepth, segments })  // type 'clearance' | 'tap' | 'countersunk' | 'counterbore' (axis Y, top at y = 0);
                                                   //   bridge: 0.2 leaves one layer between head recess and shank to print head-down, then drill out
 SCREWS                                            // the table those come from
 // sizes 'M2' 'M2.5' 'M3' 'M4' 'M5' 'M6' 'M8'. Translate a cutter to the part's top face, then subtract it.

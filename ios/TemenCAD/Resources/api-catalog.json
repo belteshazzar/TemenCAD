@@ -157,7 +157,7 @@
   {
    "label": "text",
    "snippet": "text('${text}', { size: ${10} })",
-   "detail": "(str, { size, font, align, letterSpacing })",
+   "detail": "(str, { size, font, align, letterSpacing, kerning, curveSegments })",
    "info": "2D text outline, baseline at y = 0. Fonts: 'Inter', 'Inter Bold', 'Nunito Bold', 'Source Serif 4', 'JetBrains Mono'.",
    "kind": "function"
   },
@@ -493,7 +493,7 @@
   {
    "label": "polarArray",
    "snippet": "polarArray(${shape}, ${count}, { radius: ${r} })",
-   "detail": "(shape, count, { radius, axis, start, sweep })",
+   "detail": "(shape, count, { radius, axis, start, sweep, rotateCopies })",
    "info": "count copies around an axis (returns an array).",
    "kind": "function"
   },
@@ -507,14 +507,14 @@
   {
    "label": "gear",
    "snippet": "gear({ module: ${1}, teeth: ${20}, thickness: ${5} })",
-   "detail": "({ module, teeth, pressureAngle, thickness, helix, backlash, bore })",
+   "detail": "({ module, teeth, pressureAngle, thickness, helix, backlash, bore, segments })",
    "info": "Involute spur or helical gear: axis Y, base on y = 0, tooth 0 along +X.",
    "kind": "function"
   },
   {
    "label": "gear2d",
    "snippet": "gear2d({ module: ${1}, teeth: ${20} })",
-   "detail": "({ module, teeth, pressureAngle, backlash, bore })",
+   "detail": "({ module, teeth, pressureAngle, backlash, bore, addendum, dedendum, segments })",
    "info": "The outline of an involute gear as a 2D sketch.",
    "kind": "function"
   },
@@ -542,7 +542,7 @@
   {
    "label": "ringGear",
    "snippet": "ringGear({ module: ${1}, teeth: ${36}, thickness: ${5} })",
-   "detail": "({ module, teeth, thickness, rim, backlash, helix })",
+   "detail": "({ module, teeth, pressureAngle, thickness, rim, backlash, helix, addendum, segments })",
    "info": "Internal (ring) gear: teeth inside a rim, centred on the origin, axis Y.",
    "kind": "function"
   },
@@ -556,7 +556,7 @@
   {
    "label": "planetary",
    "snippet": "planetary({ module: ${1}, sun: ${12}, planet: ${12}, planets: ${3}, backlash: ${0.2} })",
-   "detail": "({ module, sun, planet, planets, thickness, backlash, helix, rim, sunBore, planetBore })",
+   "detail": "({ module, sun, planet, planets, thickness, pressureAngle, backlash, helix, rim, sunBore, planetBore, segments })",
    "info": "A planetary set { sun, planets, ring }, assembled and phased; ring teeth = sun + 2 x planet.",
    "kind": "function"
   },
@@ -577,14 +577,14 @@
   {
    "label": "hole",
    "snippet": "hole(${r}, ${length}, { axis: '${z}' })",
-   "detail": "(r, length, { axis: 'x' | 'y' | 'z', shape: 'teardrop' | 'bridge' | 'round', angle, flat, tolerance })",
+   "detail": "(r, length, { axis: 'x' | 'y' | 'z', shape: 'teardrop' | 'bridge' | 'round', angle, flat, tolerance, segments })",
    "info": "Printable hole cutter centred on the origin; horizontal holes get a teardrop top by default.",
    "kind": "function"
   },
   {
    "label": "screwHole",
    "snippet": "screwHole('${M3}', ${length})",
-   "detail": "(size, length, { type: 'clearance' | 'tap' | 'countersunk' | 'counterbore', tolerance, bridge })",
+   "detail": "(size, length, { type: 'clearance' | 'tap' | 'countersunk' | 'counterbore', tolerance, bridge, headDepth, segments })",
    "info": "Cutter for a screw hole: axis Y, top surface at y = 0. Sizes M2 M2.5 M3 M4 M5 M6 M8.",
    "kind": "function"
   },
@@ -598,7 +598,7 @@
   {
    "label": "heatInsert",
    "snippet": "heatInsert('${M3}')",
-   "detail": "(size, { depth, tolerance })",
+   "detail": "(size, { depth, tolerance, segments })",
    "info": "Heat-set insert hole cutter: axis Y, top at y = 0.",
    "kind": "function"
   },
@@ -910,7 +910,7 @@
   {
    "label": "emboss",
    "snippet": "emboss('${text}', ${face}, { depth: ${1} })",
-   "detail": "(sketch | 'text', face | anchor, { depth, at, angle, size, font, center })",
+   "detail": "(sketch | 'text', face | anchor, { depth, at, angle, size, font, align, center })",
    "info": "Raise a sketch or text out of a face, oriented to read from outside.",
    "kind": "method",
    "on": "shape"
@@ -918,7 +918,7 @@
   {
    "label": "engrave",
    "snippet": "engrave('${text}', ${face}, { depth: ${0.6} })",
-   "detail": "(sketch | 'text', face | anchor, { depth, at, angle, size, font, center })",
+   "detail": "(sketch | 'text', face | anchor, { depth, at, angle, size, font, align, center })",
    "info": "Cut a sketch or text into a face.",
    "kind": "method",
    "on": "shape"
