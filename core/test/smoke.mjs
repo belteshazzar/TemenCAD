@@ -529,6 +529,115 @@ for (const [src, re] of [['box([1, 2])', /box: size must be \[x, y, z\]/], ['box
   check(`${src} is an error`, !r.ok && re.test(r.error?.message ?? ''), r.error?.message);
 }
 
+// 4r2. every function checks its arguments: a misspelt option, a wrong shape of argument or a value
+// out of range is an error that names the function, what was given and what it takes, never
+// geometry built from the defaults.
+for (const [src, re] of [
+  // a misspelt option names the one that was meant and lists what the function takes
+  ['sphere(5, { segment: 8 })', /sphere: unknown option 'segment' \(did you mean 'segments'\?\); the options are segments/],
+  ['cylinder(5, 10, { centre: true })', /cylinder: unknown option 'centre' \(did you mean 'center'\?\)/],
+  ['gear({ module: 1, teeth: 12, height: 5 })', /gear: unknown option 'height' \(did you mean 'thickness'\?\)/],
+  ['printability(box(10), { minwall: 1 })', /printability: unknown option 'minwall' \(did you mean 'minWall'\?\)/],
+  ['circle(5).chamfer(1, { segments: 3 })', /chamfer: unknown option 'segments': it takes none/],
+  ['box(10).fillet(1, { edge: "top" })', /fillet: unknown option 'edge' \(did you mean 'edges'\?\)/],
+  ['circle(5).extrude(5, { slice: 3 })', /extrude: unknown option 'slice' \(did you mean 'slices'\?\); the options are center, twist, scale, slices/],
+  ['text("a", { sise: 5 })', /text: unknown option 'sise' \(did you mean 'size'\?\)/],
+  ['thread({ size: "M8", lenght: 10 })', /thread: unknown option 'lenght' \(did you mean 'length'\?\)/],
+  ['split(box(10), { x: 0 }, { dowel: 2 })', /split: unknown option 'dowel' \(did you mean 'dowels'\?\)/],
+  ['show(box(1), { colour: "red" })', /show: unknown option 'colour' \(did you mean 'color'\?\)/],
+  ['printer({ nozle: 0.4 })', /printer: unknown option 'nozle' \(did you mean 'nozzle'\?\)/],
+  ['box(10).align({ w: "min" })', /align: unknown axis 'w'; the axes are x, y, z/],
+  ['box(10).at(box(5).face("top"), [0, 0], { gp: 1 })', /at: unknown option 'gp'; the options are gap, orient/],
+  // a function that builds on another reports under its own name
+  ['gearPair({ teeth: [20, 10], bore: -1 })', /gearPair: bore must not be negative/],
+  ['planetary({ sun: 12, planet: 12, sunBore: -2 })', /planetary: sunBore must not be negative/],
+  ['text3d("a", { size: 5, hight: 2 })', /text3d: unknown option 'hight' \(did you mean 'height'\?\)/],
+  ['box(10).emboss("A", "top", { deep: 1 })', /emboss: unknown option 'deep'/],
+  ['polygon(6, 5, 10)', /polygon: need an array of at least 3 \[x, y\] points, got 6/],
+  // the import's own name for a drawing is not an option of svg() or dxf()
+  ['svg(\'<svg><rect width="5" height="5"/></svg>\', { file: "x" })', /svg: unknown option 'file'/],
+  ['dxf("0\\nEOF\\n", { file: "x" })', /dxf: unknown option 'file'/],
+  // options that are not an object, and the all-in-one-object forms
+  ['sphere(5, 8)', /sphere: options must be an object \(\{ segments \}\), got 8/],
+  ['rect(10, 5, true)', /rect: options must be an object \(\{ center \}\), got true/],
+  ['thread("M8", 10)', /thread: options must be an object/],
+  ['cylinder({ radius: 5, height: 10 })', /cylinder: unknown option 'radius' \(did you mean 'r'\?\); the options are r, r1, r2, h, segments, center/],
+  ['sphere({ r: 5 }, { segments: 8 })', /sphere: with sphere\(\{ r, segments \}\) everything goes in the one object/],
+  // arguments of the wrong shape used to be read as empty options, and the defaults built
+  ['sphere([5])', /sphere: radius must be a number, got an array \[5\]/],
+  ['cylinder([5, 10])', /cylinder: radius must be a number, got an array/],
+  ['circle([5])', /circle: radius must be a number, got an array/],
+  ['grid(box(1), 3, 10)', /grid: counts must be \[nx, nz\], got 3/],
+  ['box(1).resize([10, 0])', /resize: size must be \[x, y, z\]/],
+  ['bezier([[0, 0, 0], [1, 1, 0], [2, 0, 0], [3, 0, 0]])', /bezier: the four points are separate arguments/],
+  ['box(10).at(box(5).face("top"), { gap: 1, x: 2 })', /at: an offset .* and the options .* are two arguments/],
+  ['box(10).alignTo(box(20), { x: "min", gap: 1 })', /alignTo: gap is an option, after the axes/],
+  ['box(10).engrave(circle(2), "top", { size: 5 })', /engrave: size is for text/],
+  ['show(box(1), { name: "a", part: box(2) })', /show: an object after the shapes is either the options .* or named parts/],
+  // flags are true or false, words are one of a list, numbers are finite and in range
+  ['cylinder(5, 10, { center: 1 })', /cylinder: center must be true or false, got 1/],
+  ['thread({ size: "M8", length: 10, internal: 1 })', /thread: internal must be true or false, got 1/],
+  ['split(box(10), { x: 0 }, { layout: "row" })', /split: layout must be true or false, got "row"/],
+  ['box(1).ghost(0.5)', /ghost: on must be true or false, got 0\.5/],
+  ['show(box(1), { hidden: "no" })', /show: hidden must be true or false, got "no"/],
+  ['roundedBox(10, 10, 10, 1, { edges: "vert" })', /roundedBox: edges must be 'all' or 'vertical', got "vert"/],
+  ['screwHole("M3", 10, { type: "capp" })', /screwHole: type must be 'clearance', 'tap', 'countersunk' or 'counterbore', got "capp"/],
+  ['shell(box(10), 1, { open: "up" })', /shell: open must be one of top, bottom, left, right, front, back/],
+  ['cylinder(5, Infinity)', /cylinder: height must be a finite number, got Infinity/],
+  ['roundedRect(10, 5, 1, { segments: 0 })', /roundedRect: segments must be an integer ≥ 1, got 0/],
+  ['box(10).round(1, { segments: 2 })', /round: segments must be an integer ≥ 3, got 2/],
+  ['teardrop(5, { flat: "yes" })', /teardrop: flat must be a number, got "yes"/],
+  ['torus(2, 10)', /torus: the tube radius \(10\) must not be larger than the ring radius \(2\)/],
+  ['box(10).fillet(1, { minAngle: 200 })', /fillet: minAngle must be less than 180 degrees, got 200/],
+  // a name every object answers to ('constructor', 'toString') is not a face, an axis, a join or a profile
+  ['box(1).mirror("constructor")', /mirror: axis must be 'x', 'y', 'z' or a normal \[x, y, z\], got "constructor"/],
+  ['box(1).face("constructor")', /face: expected one of top, bottom, front, back, right, left, got "constructor"/],
+  ['circle(5).offset(1, { join: "toString" })', /offset: join must be 'round', 'miter' or 'square', got "toString"/],
+  ['box(10).fillet(1, { edges: "valueOf" })', /fillet: edges must be 'all'/],
+  ['thread({ size: "M8", length: 10, profile: "constructor" })', /thread: profile must be 'iso', 'trapezoid' or 'square', got "constructor"/],
+  ['box(10).anchor("constructor")', /anchor: "constructor" is not an anchor of this shape/],
+  // a pen that was never closed says so
+  ['sketch().moveTo(0, 0).lineTo(5, 0).lineTo(5, 5).extrude(1)', /extrude: the outline is not closed yet: finish the pen with \.close\(\) first/],
+  ['extrude(sketch().moveTo(0, 0).lineTo(5, 0).lineTo(5, 5), 2)', /extrude: first argument must be a 2D sketch .* got a pen outline that is not closed yet/],
+]) {
+  r = rt.run({ 'main.js': `return ${src};` });
+  check(`${src} is an error`, !r.ok && re.test(r.error?.message ?? ''), r.ok ? 'built without an error' : r.error?.message);
+}
+// the forms that are accepted: options after the numbers everywhere, everything in one object, and
+// the options of at() and placeOn() without an offset or a face before them
+r = rt.run({ 'main.js': `
+  const top = box(20).face('top');
+  echo('box', box(2, 3, 4, { center: false }).bounds().min, box(2, { center: false }).bounds().max);
+  echo('one', sphere({ r: 5, segments: 16 }).bounds().size, cylinder({ r: 2, h: 10, center: false }).bounds().min[1], cylinder({ r1: 2, r2: 1, h: 3 }).bounds().size[1]);
+  echo('rect', rect(10, { center: false }).bounds().min);
+  echo('at', box(2).at(top, { gap: 1 }).bounds().min[1], box(2).placeOn(box(20), { gap: 1 }).bounds().min[1]);
+  echo('rack', rack({ module: 1, teeth: undefined, thickness: 2 }).bounds().size[0]);
+  show(box(1), { name: 'a', color: '#ff0000', ghost: true, hidden: false });
+  show(box(1), { body: box(2), lid: box(3) });
+  return [];
+` });
+{
+  const echoed = (k) => (r.messages.find((m) => m.text.includes(`"${k}"`)) ?? { text: '' }).text.replace(/^ECHO \(line \d+\): /, '');
+  check('accepted argument forms run', r.ok, r.error?.message);
+  check('box takes { center } after its numbers', echoed('box') === '"box", [0, 0, 0], [2, 2, 2]', echoed('box'));
+  check('sphere and cylinder take everything in one object', echoed('one') === '"one", [10, 10, 10], 0, 3', echoed('one'));
+  check('rect(w, { center }) is a square', echoed('rect') === '"rect", [0, 0]', echoed('rect'));
+  check('at() and placeOn() take their options without an offset', echoed('at') === '"at", 10, 11', echoed('at')); // at() puts the origin on the face, placeOn() the underside
+  check('rack keeps its own default of 10 teeth', near(Number(echoed('rack').split(', ')[1]), 10 * Math.PI, 1e-6), echoed('rack'));
+  check('show: options on one shape, named parts after another', r.ok && r.parts.length === 4 && r.parts[0].name === 'a' && r.parts[0].ghost === true && r.parts[2].name === 'body', r.ok ? r.parts.map((p) => p.name).join() : '');
+}
+// polarArray { rotateCopies: false } with a radius: each copy goes round the circle and keeps its own
+// orientation (the option used to be ignored whenever a radius was given)
+r = rt.run({ 'main.js': `
+  const turned = polarArray(box(2, 2, 6), 4, { radius: 10 }), kept = polarArray(box(2, 2, 6), 4, { radius: 10, rotateCopies: false });
+  const round = (v) => v.map((x) => Math.round(x) + 0);
+  echo('turned', turned.map((s) => round(s.bounds().size)), 'kept', kept.map((s) => round(s.bounds().size)));
+  echo('same', kept.every((s, i) => round(s.bounds().center).join() === round(turned[i].bounds().center).join()), round(kept[1].bounds().center));
+  return kept;
+` });
+check('polarArray rotateCopies: false keeps each copy as it was drawn', r.ok && r.messages.some((m) => m.text.endsWith('"turned", [[2, 2, 6], [6, 2, 2], [2, 2, 6], [6, 2, 2]], "kept", [[2, 2, 6], [2, 2, 6], [2, 2, 6], [2, 2, 6]]')), r.error?.message ?? r.messages.map((m) => m.text).join(' | '));
+check('and puts it where the turned copy is', r.ok && r.messages.some((m) => m.text.endsWith('"same", true, [0, 0, -10]')), r.ok ? r.messages.map((m) => m.text).join(' | ') : '');
+
 // 4s. the same script gives the same mesh whatever ran before it. Manifold collapses a lazy boolean
 // chain only where no other shape holds its nodes, and shapes the collector has not freed yet used to
 // count, so the triangulation followed the collector's timing (here: how many boxes came first).
